@@ -43,3 +43,6 @@
 	url = git@github.com:fluffleswaffles/linux.git
 	branch = e6
 	shallow = true
+[submodule "linux/yamashell"]
+	path = linux/yamashell
+	url = git@github.com:fluffleswaffles/yamashell.git
