@@ -13,7 +13,7 @@ import sys
 LIBDIRS = ['lib', 'usr/lib', 'usr/lib/weston']
 # data dirs under usr/share that are read at runtime, the rest goes
 KEEP_SHARE = {'X11', 'fonts', 'fontconfig', 'weston', 'libinput', 'wayland',
-	'apk', 'misc', 'terminfo', 'icons', 'xkeyboard-config-2', 'applications', 'pixmaps'}
+	'apk', 'misc', 'terminfo', 'icons', 'xkeyboard-config-2', 'applications', 'pixmaps', 'dbus-1'}
 
 
 def is_elf(p):

@@ -18,12 +18,13 @@ APK="$DL/apkt/sbin/apk.static"
 MIRROR=https://dl-cdn.alpinelinux.org/alpine
 REL=v3.24
 PKGS="busybox musl alpine-keys weston weston-backend-drm weston-shell-desktop
-weston-terminal seatd libudev-zero font-hack foot"
+weston-terminal seatd libudev-zero font-hack foot dbus libnotify"
 # what has to keep working after the prune
 ROOTS="usr/bin/weston usr/bin/weston-terminal usr/bin/seatd usr/bin/foot
 usr/libexec/weston-desktop-shell usr/libexec/weston-keyboard
 usr/lib/weston/desktop-shell.so usr/lib/libweston-14/drm-backend.so
-lib/ld-musl-armhf.so.1"
+lib/ld-musl-armhf.so.1
+usr/bin/dbus-daemon usr/bin/dbus-uuidgen usr/bin/notify-send usr/lib/libelogind.so.0"
 
 # stamp next to the dir, not in it (all of it goes into the initramfs)
 [ -e "$OUT.done" ] && exit 0

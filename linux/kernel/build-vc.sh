@@ -57,6 +57,7 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/e6-term %s 755 0 0\n' "$HERE/../initramfs/e6-term.sh"
 	printf 'file /usr/bin/fps %s 755 0 0\n' "$HERE/../initramfs/fps.sh"
 	printf 'file /etc/e6-check.sh %s 755 0 0\n' "$HERE/../initramfs/e6-check.sh"
+	printf 'file /etc/passwd %s 644 0 0\nfile /etc/group %s 644 0 0\n' "$HERE/../initramfs/passwd" "$HERE/../initramfs/group"
 	printf 'file /etc/fonts/local.conf %s 644 0 0\n' "$HERE/../initramfs/fonts-local.conf"
 	for f in vc-loader-a vc-loader-b vc-main; do
 		printf 'file /lib/firmware/vc/%s.bin %s 644 0 0\n' "$f" "$KOUT/vcfw/$f.bin"
@@ -81,12 +82,12 @@ make -C "$KSRC" O="$KOUT" olddefconfig
 make -C "$KSRC" O="$KOUT" -j"$(nproc)" zImage
 make -C "$KSRC" O="$KOUT" scripts_dtc
 
-for v in vc vc-565 vc-565-gpu vc-565-charger vc-khrn vc-gl; do
+for v in vc vc-565 vc-565-gpu vc-565-gpu-dma vc-565-charger vc-khrn vc-gl; do
 	"$KOUT/scripts/dtc/dtc" -I dts -O dtb -i "$HERE/../boot" \
 		-o "$KOUT/e6-$v.dtb" "$HERE/../boot/e6-$v.dts"
 done
 
 echo
 echo "zImage: $KOUT/arch/arm/boot/zImage"
-echo "DTB:    $KOUT/e6-vc-565.dtb (daily), e6-vc-565-gpu.dtb (yamashell), e6-vc.dtb, e6-vc-khrn.dtb, e6-vc-gl.dtb"
+echo "DTB:    $KOUT/e6-vc-565.dtb (daily), e6-vc-565-gpu.dtb (yamashell), e6-vc-565-gpu-dma.dtb (yamashell + dma), e6-vc.dtb, e6-vc-khrn.dtb, e6-vc-gl.dtb"
 ls -lh "$KOUT/arch/arm/boot/zImage"
