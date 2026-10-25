@@ -150,8 +150,26 @@ GL_APICALL GLuint GL_APIENTRY glCreateShader(GLenum type){
 GL_APICALL void GL_APIENTRY glCullFace(GLenum mode){call1(0x2007, mode);}
 GL_APICALL void GL_APIENTRY glDeleteProgram(GLuint program){call1(0x201e, program);}
 GL_APICALL void GL_APIENTRY glDeleteShader(GLuint shader){call1(0x201f, shader);}
-/* shortcut: names are never freed (the VC III delete is a bulk rpc i did not check), fine for now */
-GL_APICALL void GL_APIENTRY glDeleteBuffers(GLsizei n, const GLuint *buffers){(void)n; (void)buffers;}
+/* khclient 0x151xx / 0x1523c, vc-main 0x66e54 / 0x66ef0: count, bytes, bulk */
+static void delete_names(uint32_t id, GLsizei n, const GLuint *names){
+	if(n<0){gl.error=GL_INVALID_VALUE; return;}
+	while(n>0){
+		uint32_t count=n>0x8000 ? 0x8000 : (uint32_t)n, bytes=count*4;
+		uint32_t w[3]={id, count, bytes};
+		if(khrn_call(w, 3, names, &bytes, 1, NULL, 0)<0){gl.error=GL_OUT_OF_MEMORY; return;}
+		n-=count; names+=count;
+	}
+}
+GL_APICALL void GL_APIENTRY glDeleteTextures(GLsizei n, const GLuint *textures){delete_names(0x203e, n, textures);}
+GL_APICALL void GL_APIENTRY glDeleteBuffers(GLsizei n, const GLuint *buffers){
+	if(n<0){gl.error=GL_INVALID_VALUE; return;}
+	for(GLsizei j=0; j<n; j++){
+		if(gl.array==buffers[j]){gl.array=0;}
+		if(gl.element==buffers[j]){gl.element=0;}
+		for(int i=0; i<MAX_ATTRIBS; i++){if(gl.a[i].buffer==buffers[j]){gl.a[i].buffer=0;}}
+	}
+	delete_names(0x203d, n, buffers);
+}
 GL_APICALL void GL_APIENTRY glDepthFunc(GLenum func){call1(0x2008, func);}
 GL_APICALL void GL_APIENTRY glDepthMask(GLboolean flag){call1(0x2009, flag);}
 GL_APICALL void GL_APIENTRY glDepthRangef(GLfloat n, GLfloat f){call2(0x200a, fbits(n), fbits(f));}
@@ -492,7 +510,7 @@ GL_APICALL void GL_APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint x,
 		uint32_t n=height-row<step ? height-row : step, bytes=n*p;
 		uint32_t w[11]={0x2073, target, level, x, y+row, width, n, format, type, gl.unpack, bytes};
 
-		khrn_call(w, 11, (const char *)pixels+row*p, &bytes, 1, 0, 0);
+		if(khrn_call(w, 11, (const char *)pixels+row*p, &bytes, 1, 0, 0)<0){gl.error=GL_OUT_OF_MEMORY; return;}
 	}
 }
 

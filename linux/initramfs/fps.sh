@@ -14,9 +14,15 @@ clock_read() {
 	clock_seconds=${clock_uptime%%.*}
 }
 
-echo "fps: $MODE test for $T s, then the driver stats"
+echo "fps: $MODE test for $T s"
 sleep 1
 clock_read || exit 1
+gpu_stats=/run/user/0/yamashell.stats
+gpu=0
+if [ "${WAYLAND_DISPLAY:-}" = wayland-vc ] && [ -r "$gpu_stats" ]; then
+	read -r gpu_pid gpu_start gpu_frames gpu_bytes gpu_calls gpu_upload gpu_present < "$gpu_stats"
+	kill -0 "$gpu_pid" 2>/dev/null && gpu=1
+fi
 end=$((clock_seconds + T))
 i=0
 if [ "$MODE" = line ]; then
@@ -30,6 +36,29 @@ else
 		i=$((i + 1))
 		echo "$i the quick brown fox jumps over the lazy dog 0123456789 $i"
 	done
+fi
+if [ "$gpu" = 1 ]; then
+	# counters and time both come from snapshots inside the workload
+	read -r end_pid end_time end_frames end_bytes end_calls end_upload end_present < "$gpu_stats"
+	if [ "$end_pid" != "$gpu_pid" ] || [ "$end_time" -le "$gpu_start" ]; then
+		echo "fps: compositor restarted or stats unavailable"; exit 1
+	fi
+	elapsed=$((end_time - gpu_start))
+	frames=$((end_frames - gpu_frames))
+	rate=$((frames * 10000 / elapsed))
+	{
+	echo "fps: yamashell submitted $frames frames in $elapsed ms = $((rate / 10)).$((rate % 10)) fps"
+	echo "  uploaded $((end_bytes - gpu_bytes)) bytes in $((end_calls - gpu_calls)) rectangles; upload $((end_upload - gpu_upload)) ms; draw/present $((end_present - gpu_present)) ms"
+	echo "  GPU submission rate; framebuffer driver counters do not measure this path"
+	} | tee /run/user/0/fps-last.txt
+	while IFS= read -r result; do
+		printf '<6>e6-fps: %s\n' "$result" > /dev/kmsg
+	done < /run/user/0/fps-last.txt
+	exit 0
+fi
+if [ "${WAYLAND_DISPLAY:-}" = wayland-vc ]; then
+	echo "fps: this yamashell build has no GPU counters; framebuffer FPS is not compositor FPS"
+	exit 1
 fi
 # the stats line comes every 10 s, wait for the one covering the test
 sleep 10

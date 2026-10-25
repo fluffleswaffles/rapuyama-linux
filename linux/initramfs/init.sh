@@ -184,6 +184,14 @@ gui() {
 		log "no /dev/dri/card* after 20 s, no weston"
 		return 1
 	fi
+	if grep -q 'e6.gui=yamashell' /proc/cmdline && [ -x /usr/bin/yamashell-session ]; then
+		log "starting yamashell (VC composition)"
+		t=$(cut -d. -f1 /proc/uptime)
+		/usr/bin/yamashell-session 2>&1 | to_kmsg yamashell
+		t=$(($(cut -d. -f1 /proc/uptime) - t))
+		log "yamashell exited after $t s"
+		log "yamashell stopped, starting weston"
+	fi
 	export XDG_RUNTIME_DIR=/run/user/0 SHELL=/bin/sh
 	mkdir -p /run/user/0 /var/cache/fontconfig
 	chmod 700 /run/user/0

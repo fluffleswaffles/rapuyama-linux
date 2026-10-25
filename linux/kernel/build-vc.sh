@@ -25,6 +25,7 @@ arm-linux-gnu-gcc -march=armv6k -marm -static -nostdlib -fno-pie -no-pie \
 	-Wl,-e,_start -o "$KOUT/vcprobe" "$HERE/../initramfs/vcprobe.c" -lgcc
 # userspace for /dev/vc-khrn (musl, clang + alpine sysroot)
 "$HERE/../vc-khrn/build.sh" "$KOUT/vc-khrn"
+"$HERE/../yamashell/build.sh" "$KOUT/yamashell"
 python3 "$HERE/../../tools/vc_extract.py" "$KERN_BIN" "$KOUT/vcfw"
 # alpine armhf userspace with weston (cached, see alpine.sh)
 ROOTFS="$HERE/../../work/rootfs-alpine"
@@ -38,6 +39,14 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/vcprobe %s 755 0 0\n' "$KOUT/vcprobe"
 	printf 'file /usr/bin/khrntest %s 755 0 0\n' "$KOUT/vc-khrn/khrntest"
 	printf 'file /usr/bin/vctri %s 755 0 0\n' "$KOUT/vc-khrn/vctri"
+	printf 'file /usr/bin/yamashell %s 755 0 0\n' "$KOUT/yamashell/yamashell"
+	printf 'file /usr/bin/yamashell-session %s 755 0 0\n' "$HERE/../yamashell/session.sh"
+	printf 'dir /usr/share/yamashell 755 0 0\n'
+	printf 'dir /usr/share/yamashell/applications 755 0 0\ndir /usr/share/yamashell/xdg 755 0 0\ndir /usr/share/yamashell/xdg/foot 755 0 0\n'
+	for f in wallpaper.jpg Ubuntu-Regular.ttf Ubuntu-Light.ttf MaterialIcons-Regular.ttf applications/foot.desktop \
+		applications/footclient.desktop applications/foot-server.desktop xdg/foot/foot.ini; do
+		printf 'file /usr/share/yamashell/%s %s 644 0 0\n' "$f" "$HERE/../yamashell/assets/$f"
+	done
 	printf 'file /usr/lib/libvcgl.so %s 755 0 0\n' "$KOUT/vc-khrn/libvcgl.so"
 	printf 'slink /usr/lib/libEGL.so.1 libvcgl.so 777 0 0\n'
 	printf 'slink /usr/lib/libGLESv2.so.2 libvcgl.so 777 0 0\n'
@@ -72,12 +81,12 @@ make -C "$KSRC" O="$KOUT" olddefconfig
 make -C "$KSRC" O="$KOUT" -j"$(nproc)" zImage
 make -C "$KSRC" O="$KOUT" scripts_dtc
 
-for v in vc vc-565 vc-565-charger vc-khrn vc-gl; do
+for v in vc vc-565 vc-565-gpu vc-565-charger vc-khrn vc-gl; do
 	"$KOUT/scripts/dtc/dtc" -I dts -O dtb -i "$HERE/../boot" \
 		-o "$KOUT/e6-$v.dtb" "$HERE/../boot/e6-$v.dts"
 done
 
 echo
 echo "zImage: $KOUT/arch/arm/boot/zImage"
-echo "DTB:    $KOUT/e6-vc-565.dtb (daily), e6-vc.dtb, e6-vc-khrn.dtb, e6-vc-gl.dtb"
+echo "DTB:    $KOUT/e6-vc-565.dtb (daily), e6-vc-565-gpu.dtb (yamashell), e6-vc.dtb, e6-vc-khrn.dtb, e6-vc-gl.dtb"
 ls -lh "$KOUT/arch/arm/boot/zImage"

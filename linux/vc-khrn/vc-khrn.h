@@ -11,6 +11,7 @@
 
 #define VC_FOURCC(a, b, c, d) ((__u32)(a) | (__u32)(b) << 8 | (__u32)(c) << 16 | (__u32)(d) << 24)
 #define VC_FCC_KHRN VC_FOURCC('K', 'H', 'R', 'N')
+#define VC_FCC_UPDH VC_FOURCC('U', 'P', 'D', 'H')
 #define VC_FCC_DISP VC_FOURCC('D', 'I', 'S', 'P')
 
 struct vc_khrn_msg{
@@ -28,5 +29,7 @@ struct vc_khrn_msg{
 
 #define VC_KHRN_IOC_MSG _IOWR('V', 1, struct vc_khrn_msg)
 #define VC_KHRN_IOC_DISPLAY _IOR('V', 2, __u32)
+#define VC_KHRN_IOC_FEATURES _IOR('V', 3, __u32)
+#define VC_KHRN_FEATURE_UPDH 1
 
 #endif

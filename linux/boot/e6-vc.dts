@@ -17,6 +17,7 @@
 		reg = <0x20025800 0x100>, <0x20024800 0x300>,
 		      <0x20032664 0x4>, <0x20033038 0x4>, <0x200318e0 0x24>;
 		clocks = <&cgc 0x18>;
+		interrupts = <146>; /* vcdriver binds gfx completion IRQ 0x92 */
 		run-gpios = <&gpio 92 0>;
 	};
 };

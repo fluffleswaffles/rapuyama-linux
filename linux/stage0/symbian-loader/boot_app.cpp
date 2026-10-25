@@ -62,6 +62,20 @@ static void Fail(const TDesC& aWhat, TInt aErr){
 	Ask(aWhat, e, _L("OK"), KNullDesC);
 }
 
+#ifdef RB_IMAGE_BOOT
+static TInt CheckBootFile(const TDesC& aName, TInt aMax){
+	RFile file;
+	TInt r=file.Open(gFs, aName, EFileRead);
+	if(r!=KErrNone){return r;}
+	TInt size=0;
+	r=file.Size(size);
+	file.Close();
+	if(r!=KErrNone){return r;}
+	if(size<=0){return KErrCorrupt;}
+	return size<=aMax ? KErrNone : KErrTooBig;
+}
+#endif
+
 // streams a file into the boot chunk at chunk offset aBase, returns size or <0
 static TInt Stream(RRunBlob& aDev, const TDesC& aName, TUint32 aBase, TUint8* aBuf){
 	RFile f;
@@ -178,6 +192,17 @@ GLDEF_C TInt E32Main(){
 	if(gFs.Connect()!=KErrNone){return KErrGeneral;}
 	if(gLog.Replace(gFs, KLog, EFileWrite)!=KErrNone){gFs.Close(); return KErrGeneral;}
 	L(_L8("boot: started\n"));
+
+#ifdef RB_IMAGE_BOOT
+	TInt check=CheckBootFile(KZImage, KDtbOff-KZOff);
+	if(check==KErrNone){check=CheckBootFile(KDtb, KChunkSz-KDtbOff);}
+	if(check!=KErrNone){
+		Lf(_L8("boot files invalid: %d\n"), check);
+		Fail(_L("check E:\\Image and E:\\e6.dtb"), check);
+		gLog.Close(); gFs.Close();
+		return check;
+	}
+#endif
 
 	User::FreeLogicalDevice(KRunBlobName);
 	TInt rLoad=User::LoadLogicalDevice(KRunBlobLdd);

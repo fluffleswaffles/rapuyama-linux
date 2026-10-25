@@ -17,6 +17,7 @@ Start here:
 - [`kernel/README.md`](kernel/README.md) - toolchain and kernel build, including the display build `build-vc.sh`.
 - [`boot/README.md`](boot/README.md) - DTBs, boot files, loaders, and USB shell.
 - `initramfs/` - BusyBox init, alpine userspace with weston (`alpine.sh`), xkb layout, sysroot for `vc-khrn/build.sh`.
+- `yamashell/` - Wayland compositor with VideoCore composition; see [GPU Wayland](../docs/wayland-gpu.md).
 - `vc-khrn/` - `libvcgl` (EGL + GLES 2) and the test programs `khrntest`, `vctri`.
 - [`../docs/driver-re.md`](../docs/driver-re.md) - hardware and driver findings.
 - [`../docs/videocore-display.md`](../docs/videocore-display.md) - the VideoCore display driver.

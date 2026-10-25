@@ -49,7 +49,7 @@ static const struct{uint32_t id, n;} khrn_args[]={
 	{0x2037, 2}, {0x2038, 3}, {0x2039, 2}, {0x203b, 4}, {0x203c, 4},
 	{0x203f, 2}, {0x2043, 1}, {0x2051, 1}, {0x2052, 1}, {0x2057, 1},
 	{0x2058, 2}, {0x202d, 3}, {0x202e, 3}, {0x203a, 2}, {0x2072, 10},
-	{0x2073, 10}, {0x2078, 1},
+	{0x2073, 10}, {0x2078, 1}, {0x203d, 2}, {0x203e, 2},
 };
 /* vc-main dispman table gp+0xe3e0: {min, max} args per op */
 static const uint8_t disp_args[0x28][2]={
@@ -95,7 +95,7 @@ static uint32_t cmd_len(const uint32_t *w, uint32_t left, uint32_t *bulks){
 	if(id==0x2074){return left<14 ? 0 : 6+attribs(w+6);}
 	for(k=0; k<sizeof(khrn_args)/sizeof(khrn_args[0]) && khrn_args[k].id!=id; k++){}
 	if(k==sizeof(khrn_args)/sizeof(khrn_args[0])){die("unknown id", id);}
-	if(id==0x2038 || id==0x203f || id==0x202a){*bulks=1;}
+	if(id==0x2038 || id==0x203f || id==0x202a || id==0x203d || id==0x203e){*bulks=1;}
 	if(id==0x203c && left>4 && w[4]!=0xffffffff){*bulks=1;}
 	if((id==0x2072 || id==0x2073) && left>10 && w[10]!=0xffffffff){*bulks=1;}
 	return 1+khrn_args[k].n;
@@ -149,8 +149,14 @@ int khrn_init(void){
 #else
 	fd=open("/dev/vc-khrn", O_RDWR);
 	if(fd<0){return -errno;}
-	if(ioctl(fd, VC_KHRN_IOC_DISPLAY, &display)){return -errno;}
-	return 0;
+	for(int i=0; i<100; i++){
+		if(!ioctl(fd, VC_KHRN_IOC_DISPLAY, &display)){return 0;}
+		if(errno!=EAGAIN){break;}
+		usleep(100000);
+	}
+	int error=errno;
+	close(fd); fd=-1;
+	return -error;
 #endif
 }
 

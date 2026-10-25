@@ -20,7 +20,7 @@
 #define LAYER 10		/* the console is -400 */
 
 struct surface{
-	int used;
+	int used, posted;
 	uint32_t serverbuffer, element;
 	int x, y, w, h, idx;
 };
@@ -35,6 +35,12 @@ static struct context contexts[MAX_SURFACES];
 static EGLint error=EGL_SUCCESS;
 static int initialized;
 static struct context *current;
+
+static int submit_update(uint32_t update){
+	uint32_t status=0;
+
+	return disp_call(DISP_SUBMIT_SYNC, &update, 1, 1, &status) || (int32_t)status<0 ? -1 : 0;
+}
 
 #define DPY ((EGLDisplay)1)
 #define CONFIG ((EGLConfig)1)
@@ -201,7 +207,8 @@ EGLAPI EGLSurface EGLAPIENTRY eglCreateWindowSurface(EGLDisplay dpy, EGLConfig c
 		if(disp_call(DISP_GCE_REGISTER, a, 5, 1, &reg) || (int32_t)reg<0){
 			uint32_t d[2]={KHRN_EGL_DESTROY_SURFACE, s->serverbuffer};
 
-			khrn_call(d, 2, 0, 0, 0, r, sizeof(r));
+			khrn_push(d, 2);
+			khrn_flush();
 			error=EGL_BAD_ALLOC;
 			return EGL_NO_SURFACE;
 		}
@@ -265,12 +272,17 @@ EGLAPI EGLBoolean EGLAPIENTRY eglMakeCurrent(EGLDisplay dpy, EGLSurface draw, EG
 EGLAPI EGLContext EGLAPIENTRY eglGetCurrentContext(void){return current ? current : EGL_NO_CONTEXT;}
 EGLAPI EGLDisplay EGLAPIENTRY eglGetCurrentDisplay(void){return current ? DPY : EGL_NO_DISPLAY;}
 
-/* the GCE element add (vc-main 0x43278): 17 args */
-static void element_add(struct surface *s){
+/* the GCE element add (vc-main 0x43278): 17 args, removes previous in the same update */
+static int element_add(struct surface *s, struct surface *previous){
 	uint32_t a[17], update;
 
 	a[0]=1;
-	if(disp_call(DISP_UPDATE_START, a, 1, 1, &update)){return;}
+	if(disp_call(DISP_UPDATE_START, a, 1, 1, &update)){return -1;}
+	if(previous && previous->element){
+		uint32_t remove[2]={update, previous->element};
+
+		if(disp_call(DISP_ELEMENT_REMOVE, remove, 2, 0, 0)){return -1;}
+	}
 	a[0]=update;
 	a[1]=GCE_BASE+s->idx;
 	a[2]=0;
@@ -290,20 +302,22 @@ static void element_add(struct surface *s){
 	a[16]=0;
 	if(disp_call(DISP_GCE_ELEMENT_ADD, a, 17, 1, &s->element) || s->element==0xffffffff){s->element=0;}
 	a[0]=update;
-	disp_call(DISP_SUBMIT_SYNC, a, 1, 1, 0);
+	if(submit_update(update) || !s->element){return -1;}
+	if(previous){previous->element=0;}
+	return 0;
 }
 
 /*
  * one buffer never gives its display slot back (40 swaps and the VC stops),
  * so swap once to post it, later frames only wait and recompose
  */
-EGLAPI EGLBoolean EGLAPIENTRY eglSwapBuffers(EGLDisplay dpy, EGLSurface surface){
+static EGLBoolean present(EGLDisplay dpy, EGLSurface surface, struct surface *previous){
 	struct surface *s=surface;
 	uint32_t w[6], fl[3]={KHRN_EGL_FLUSH_WAIT, 1, 0}, done, a[6], update;
 
 	(void)dpy;
 	if(!s || !s->used){return fail(EGL_BAD_SURFACE);}
-	if(!s->element){
+	if(!s->posted){
 		/* VC III swap {serverbuffer, w, h, window, preserve}, no reply */
 		w[0]=KHRN_EGL_SWAP;
 		w[1]=s->serverbuffer;
@@ -314,26 +328,33 @@ EGLAPI EGLBoolean EGLAPIENTRY eglSwapBuffers(EGLDisplay dpy, EGLSurface surface)
 		khrn_push(w, 6);
 	}
 	if(khrn_call_int(fl, 3, &done)){return fail(EGL_CONTEXT_LOST);}
-	if(!s->element){
+	if(!s->posted){
 		/* the khrn worker posts the buffer under the key, then the element takes it */
 		usleep(500000);
-		element_add(s);
-		return EGL_TRUE;
+		s->posted=1;
 	}
+	if(!s->element){return element_add(s, previous) ? fail(EGL_BAD_SURFACE) : EGL_TRUE;}
 	a[0]=1;
-	if(!disp_call(DISP_UPDATE_START, a, 1, 1, &update)){
-		a[0]=update;
-		a[1]=s->element;
-		a[2]=0;
-		a[3]=0;
-		a[4]=s->w;
-		a[5]=s->h;
-		disp_call(DISP_ELEMENT_MODIFIED, a, 6, 0, 0);
-		a[0]=update;
-		disp_call(DISP_SUBMIT_SYNC, a, 1, 1, 0);
-	}
+	if(disp_call(DISP_UPDATE_START, a, 1, 1, &update)){return fail(EGL_BAD_SURFACE);}
+	a[0]=update;
+	a[1]=s->element;
+	a[2]=0;
+	a[3]=0;
+	a[4]=s->w;
+	a[5]=s->h;
+	if(disp_call(DISP_ELEMENT_MODIFIED, a, 6, 0, 0) || submit_update(update)){return fail(EGL_BAD_SURFACE);}
 	return EGL_TRUE;
 }
+
+/* compositor double buffering: surface goes on screen, previous comes off in the same update */
+EGLBoolean vcglPresent(EGLDisplay dpy, EGLSurface surface, EGLSurface previous){
+	struct surface *old=previous;
+
+	if(!old || !old->used || old==surface){return fail(EGL_BAD_SURFACE);}
+	return present(dpy, surface, old);
+}
+
+EGLAPI EGLBoolean EGLAPIENTRY eglSwapBuffers(EGLDisplay dpy, EGLSurface surface){return present(dpy, surface, NULL);}
 
 EGLAPI EGLBoolean EGLAPIENTRY eglSwapInterval(EGLDisplay dpy, EGLint interval){
 	(void)dpy;
