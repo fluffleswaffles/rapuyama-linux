@@ -297,7 +297,7 @@ Symbian's kernel has no battery code (`power.dll` `DBatteryMonitor` is the base 
 - register limits and the watchdog behavior follow the [TI bq24150A datasheet](https://www.ti.com/lit/ds/symlink/bq24150a.pdf); port access width, pin setup and ADC conversion come from the E6 firmware. The HS transfer, DMA fallback, thermal/voltage/budget policy, partial-read handling and supply-phandle lookup have host regression checks; the port-3 clock/pad functions were also executed directly from the ROM in Unicorn
 
 ## Todo
-- power key + lock slider (not on the keypad matrix), lightpdd (backlight / keypad light, via the display stack).
+- lock slider: switch.dll has one switch, gpio 79 (spring back, low while slid), read from the pin irq raw state 0x20033488 bit 15, not from the gpio in register. power key: modem side (ISASW MTC KBD_PWR_KEY_INFO_IND). lightpdd (backlight / keypad light, via the display stack).
 - oneshot clockevent: built, opt-in `e6.oneshot=1` (next event in MST_COUNT, MST_RELOAD parked at 100 ms so the watchdog / flight recorder / stall check still run). qemu: ~100 timer irqs/s instead of 1000. untested on the phone.
 - input: keypad and touchscreen are polled (no reliable irq / CHG line yet: the gpio level regs never moved in the flight recorder, the keypad line shows in the irq bank raw state `0x33448` bit 10). they now poll fast only after activity (keypad 20 ms -> 40 ms idle, touch 10 ms -> 50 ms idle). i2c stays at 100 kHz: at 400 kHz both chips stop answering (NACK / XUDF timeouts, 22.10.2026), so reading Symbian's SCLL/SCLH as 400 kHz was wrong.
 - SD card rescan, then writable rootfs on the card.

@@ -1,0 +1,8 @@
+/* fallback: gpu-dma with the old polling idle, if e6.idle=1 ever hangs */
+/include/ "e6-vc-565.dts"
+
+/ {
+	chosen {
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh videocore.dma=1 videocore.rgb565=1 e6.swd=1 e6.lowmem=1 e6.gui=yamashell";
+	};
+};

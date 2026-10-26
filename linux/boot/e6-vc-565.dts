@@ -3,9 +3,24 @@
 
 &i2c3 {
 	status = "okay";
+	keyboard-backlight@33 {
+		compatible = "nokia,e6-keyboard-backlight";
+		reg = <0x33>;
+	};
 };
 
 / {
+	/* switch.dll: the only switch, gpio 79, spring back, low while slid */
+	lock-switch {
+		compatible = "gpio-keys-polled";
+		poll-interval = <50>;
+		lock {
+			label = "lock switch";
+			gpios = <&gpio 79 1>;
+			linux,code = <152>; /* KEY_SCREENLOCK */
+		};
+	};
+
 	chosen {
 		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh videocore.dma=1 videocore.rgb565=1 e6.swd=1 e6.root=/dev/mmcblk0p2 e6.lowmem=1";
 	};

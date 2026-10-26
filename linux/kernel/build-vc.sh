@@ -83,7 +83,7 @@ make -C "$KSRC" O="$KOUT" olddefconfig
 make -C "$KSRC" O="$KOUT" -j"$(nproc)" zImage
 make -C "$KSRC" O="$KOUT" scripts_dtc
 
-for v in vc vc-565 vc-565-gpu vc-565-gpu-dma vc-565-charger vc-khrn vc-gl; do
+for v in vc vc-565 vc-565-gpu vc-565-gpu-dma vc-565-gpu-dma-nohlt vc-565-charger vc-khrn vc-gl; do
 	"$KOUT/scripts/dtc/dtc" -I dts -O dtb -i "$HERE/../boot" \
 		-o "$KOUT/e6-$v.dtb" "$HERE/../boot/e6-$v.dts"
 done
