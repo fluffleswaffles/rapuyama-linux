@@ -129,6 +129,16 @@
 		#size-cells = <1>;
 		ranges;
 
+		/* ARM L220 outer cache (cache id 0x41000486), symbian's ekern keeps it on
+		 * and maintains it by pa (+0x7b0/0x770/0x7f0). without this node dma
+		 * reads stale ram */
+		l2c: cache-controller@20500000 {
+			compatible = "arm,l220-cache";
+			reg = <0x20500000 0x1000>;
+			cache-unified;
+			cache-level = <2>;
+		};
+
 		/* karap irq/fiq dispatchers + Interrupt:: code, 421 lines */
 		intc: interrupt-controller@20400000 {
 			compatible = "nokia,rapuyama-intc";

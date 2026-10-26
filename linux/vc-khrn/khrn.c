@@ -5,16 +5,17 @@
  */
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "khrn.h"
 #include "vc-khrn.h"
 
-#define PID 0x6e6f6b69	/* any client id */
 #define MAX_WORDS 0x1f0	/* VCHI_MAX_MSG 0x800 / 4, minus room */
 
 static uint32_t display, cur[6];
@@ -23,7 +24,103 @@ int khrn_flush(void);
 static int fd=-1;
 #endif
 
+static pthread_mutex_t gate_lock=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t gate_cond=PTHREAD_COND_INITIALIZER;
+static int gate_busy;
+static __thread int gate_owned;
+/* VCGL_PROFILE: time other threads waited at the gate */
+uint64_t khrn_gate_wait_us;
+
+static void gate_drain(void);
+
+void khrn_gate(void){
+	if(gate_owned){return;}
+	if(__atomic_load_n(&gate_busy, __ATOMIC_ACQUIRE)){
+		struct timespec a, b;
+
+		clock_gettime(CLOCK_MONOTONIC, &a);
+		pthread_mutex_lock(&gate_lock);
+		while(gate_busy){pthread_cond_wait(&gate_cond, &gate_lock);}
+		pthread_mutex_unlock(&gate_lock);
+		clock_gettime(CLOCK_MONOTONIC, &b);
+		khrn_gate_wait_us+=(b.tv_sec-a.tv_sec)*1000000LL+(b.tv_nsec-a.tv_nsec)/1000;
+	}
+	gate_drain();
+}
+
+void khrn_gate_close(void){
+	khrn_gate();
+	pthread_mutex_lock(&gate_lock);
+	__atomic_store_n(&gate_busy, 1, __ATOMIC_RELEASE);
+	pthread_mutex_unlock(&gate_lock);
+}
+
+void khrn_gate_open(void){
+	pthread_mutex_lock(&gate_lock);
+	__atomic_store_n(&gate_busy, 0, __ATOMIC_RELEASE);
+	pthread_cond_broadcast(&gate_cond);
+	pthread_mutex_unlock(&gate_lock);
+}
+
+void khrn_gate_owner(void){gate_owned=1;}
+
+/*
+ * the VC answers a flush only when the frame is drawn (vc-main 0x82118
+ * spins on the 3D job counter), so the end of a swap runs on a thread of its
+ * own and the application goes on meanwhile; its first khrn call that needs
+ * the VC waits at the gate
+ */
+static pthread_mutex_t job_lock=PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t job_cond=PTHREAD_COND_INITIALIZER;
+static int (*job)(void *);
+static void *job_arg;
+static int job_failed;
+
+static void *swapper(void *unused){
+	(void)unused;
+	khrn_gate_owner();
+	pthread_mutex_lock(&job_lock);
+	for(;;){
+		int (*fn)(void *);
+		void *arg;
+
+		while(!job){pthread_cond_wait(&job_cond, &job_lock);}
+		fn=job;
+		arg=job_arg;
+		pthread_mutex_unlock(&job_lock);
+		if(fn(arg)){job_failed=1;}
+		pthread_mutex_lock(&job_lock);
+		job=NULL;
+		khrn_gate_open();
+	}
+	return NULL;
+}
+
+int khrn_async(int (*fn)(void *), void *arg){
+	static int mode=-1;	/* 0 here, 1 on the thread */
+	pthread_t t;
+
+	khrn_gate();
+	if(job_failed){return -1;}
+	if(mode<0){
+		mode=!getenv("VCGL_SYNC") && !pthread_create(&t, NULL, swapper, NULL);
+		if(mode){pthread_detach(t);}
+	}
+	if(!mode){return fn(arg);}
+	khrn_gate_close();
+	pthread_mutex_lock(&job_lock);
+	job=fn;
+	job_arg=arg;
+	pthread_cond_signal(&job_cond);
+	pthread_mutex_unlock(&job_lock);
+	return 0;
+}
+
 void khrn_current(uint32_t type, uint32_t ctx, uint32_t draw, uint32_t read){
+	/* the same again changes nothing: no need to wait for a running swap
+	 * (the compositor makes its window current at the start of every frame) */
+	if(cur[0]==type && cur[1]==ctx && cur[2]==draw && cur[3]==read){return;}
+	khrn_gate();
 	if(cur[0]!=type || cur[1]!=ctx || cur[2]!=draw || cur[3]!=read){khrn_flush();}
 	cur[0]=type;
 	cur[1]=ctx;
@@ -38,7 +135,7 @@ void khrn_current(uint32_t type, uint32_t ctx, uint32_t draw, uint32_t read){
 static const struct{uint32_t id, n;} khrn_args[]={
 	{KHRN_EGL_CREATE_SURFACE, 12}, {KHRN_EGL_CREATE_GLES20, 2},
 	{KHRN_EGL_DESTROY_SURFACE, 1}, {KHRN_EGL_DESTROY_GL, 1},
-	{KHRN_EGL_MAKE_CURRENT, 8}, {KHRN_EGL_FLUSH_WAIT, 2}, {KHRN_EGL_SWAP, 5},
+	{KHRN_EGL_MAKE_CURRENT, 8}, {KHRN_EGL_FLUSH_WAIT, 2}, {KHRN_EGL_FLUSH, 2}, {KHRN_EGL_SWAP, 5},
 	{0x2000, 4}, {0x2001, 2}, {0x2002, 4}, {0x2003, 4}, {0x2004, 1},
 	{0x2005, 1}, {0x2006, 4}, {0x2007, 1}, {0x2008, 1}, {0x2009, 1},
 	{0x200a, 2}, {0x200b, 1}, {0x200c, 1}, {0x200d, 1}, {0x200e, 1},
@@ -50,6 +147,7 @@ static const struct{uint32_t id, n;} khrn_args[]={
 	{0x203f, 2}, {0x2043, 1}, {0x2051, 1}, {0x2052, 1}, {0x2057, 1},
 	{0x2058, 2}, {0x202d, 3}, {0x202e, 3}, {0x203a, 2}, {0x2072, 10},
 	{0x2073, 10}, {0x2078, 1}, {0x203d, 2}, {0x203e, 2},
+	{0x2082, 3}, {0x4012, 5}, {0x4019, 3}, {0x106d, 0},
 };
 /* vc-main dispman table gp+0xe3e0: {min, max} args per op */
 static const uint8_t disp_args[0x28][2]={
@@ -173,6 +271,10 @@ static int msg(uint32_t fourcc, const uint32_t *w, uint32_t n, const void *bulk,
 		if(max){memcpy(reply, &r, 4);}
 		return max ? 4 : 0;
 	}
+	if(fourcc==VC_FCC_UPDH){
+		if(max){memcpy(reply, w, 4);}
+		return max ? 4 : 0;
+	}
 	return mock_khrn(w, n, nbulk, reply, max);
 #else
 	struct vc_khrn_msg m;
@@ -200,16 +302,33 @@ static int msg(uint32_t fourcc, const uint32_t *w, uint32_t n, const void *bulk,
 
 /* calls without reply or bulk wait here and go out with the next message */
 static uint32_t q[MAX_WORDS], qn;
+/* and here while the gate is closed, behind q */
+static uint32_t gq[MAX_WORDS], gqn;
+
+static int send_q(void);
+
+static void gate_drain(void){
+	if(!gqn){return;}
+	if(9+qn+gqn>MAX_WORDS){send_q();}
+	memcpy(q+qn, gq, gqn*4);
+	qn+=gqn;
+	gqn=0;
+}
 
 static uint32_t prefix(uint32_t *m){
 	m[0]=KHRN_EGL_MAKE_CURRENT;
-	m[1]=PID;
+	m[1]=(uint32_t)getpid();	/* the VC keeps client state per pid */
 	m[2]=0;
 	memcpy(m+3, cur, sizeof(cur));
 	return 9;
 }
 
 int khrn_flush(void){
+	khrn_gate();
+	return send_q();
+}
+
+static int send_q(void){
 	uint32_t m[MAX_WORDS], n;
 
 	if(!qn){return 0;}
@@ -220,9 +339,27 @@ int khrn_flush(void){
 	return msg(VC_FCC_KHRN, m, n, 0, 0, 0, 0, 0);
 }
 
+int khrn_send_current(void){
+	uint32_t m[MAX_WORDS], n;
+
+	khrn_gate();
+	n=prefix(m);
+
+	memcpy(m+n, q, qn*4);
+	n+=qn;
+	qn=0;
+	return msg(VC_FCC_KHRN, m, n, 0, 0, 0, 0, 0);
+}
+
 int khrn_push(const uint32_t *w, uint32_t n){
 	int ret=0;
 
+	if(!gate_owned && __atomic_load_n(&gate_busy, __ATOMIC_ACQUIRE) && 9+gqn+n<=MAX_WORDS){
+		memcpy(gq+gqn, w, n*4);
+		gqn+=n;
+		return 0;
+	}
+	khrn_gate();
 	if(9+qn+n>MAX_WORDS){ret=khrn_flush();}
 	if(9+n>MAX_WORDS){return -E2BIG;}
 	memcpy(q+qn, w, n*4);
@@ -235,6 +372,7 @@ int khrn_call(const uint32_t *w, uint32_t n, const void *bulk,
 	uint32_t m[MAX_WORDS], k;
 	int ret;
 
+	khrn_gate();
 	if(9+qn+n>MAX_WORDS && (ret=khrn_flush())<0){return ret;}
 	if(9+n>MAX_WORDS){return -E2BIG;}
 	k=prefix(m);
@@ -243,6 +381,11 @@ int khrn_call(const uint32_t *w, uint32_t n, const void *bulk,
 	qn=0;
 	memcpy(m+k, w, n*4);
 	return msg(VC_FCC_KHRN, m, k+n, bulk, sizes, nbulk, reply, reply_max);
+}
+
+uint32_t khrn_res_word(const uint32_t *r, int len, int i){
+	if(len>=4 && r[0]==(uint32_t)len-4){i++;}
+	return len>=4*(i+1) ? r[i] : 0;
 }
 
 int khrn_call_int(const uint32_t *w, uint32_t n, uint32_t *out){
@@ -260,10 +403,22 @@ int disp_call(uint32_t cmd, const uint32_t *a, uint32_t n, int reply, uint32_t *
 	int ret;
 
 	if(n>17){return -E2BIG;}
+	khrn_gate();
 	w[0]=cmd|(reply ? DISP_REPLY : 0);
 	memcpy(w+1, a, n*4);
 	ret=msg(VC_FCC_DISP, w, n+1, 0, 0, 0, reply ? &r : 0, reply ? 4 : 0);
 	if(ret<0){return ret;}
 	if(out){*out=r;}
 	return 0;
+}
+
+int khrn_wait_update(uint32_t update){
+	uint32_t done=0;
+	int ret;
+
+	khrn_gate();
+	ret=msg(VC_FCC_UPDH, &update, 1, 0, 0, 0, &done, 4);
+
+	if(ret<0){return ret;}
+	return ret==4 && done==update ? 0 : -EPROTO;
 }

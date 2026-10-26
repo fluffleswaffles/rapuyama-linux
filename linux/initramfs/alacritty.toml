@@ -1,0 +1,7 @@
+# alacritty on the VC (libvcgl): the GLES 2 renderer, and a font that is
+# readable on the 640x480 panel
+[debug]
+renderer = "gles2"
+
+[font]
+size = 13.0

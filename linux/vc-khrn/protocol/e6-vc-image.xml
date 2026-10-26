@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="e6_vc_image">
+  <copyright>
+    SPDX-License-Identifier: GPL-2.0-only
+  </copyright>
+
+  <interface name="e6_vc_image" version="1">
+    <description summary="VideoCore III global images as wl_buffers">
+      A client draws into a VC global image (EGL_BRCM_global_image, created
+      with message 0x4019) and hands its two ids to the compositor, which
+      samples the image as a texture. The pixels stay on the VideoCore.
+      The compositor releases a buffer once a later one is on screen; until
+      then the client must not draw into it.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_size" value="0" summary="width or height out of range"/>
+    </enum>
+
+    <request name="create_buffer">
+      <description summary="wrap a global image in a wl_buffer">
+        format is the 0x4019 format word: low bits 0 ARGB premultiplied,
+        1 ARGB, 2 XRGB, 3 RGB565, usage bits 0x20 (GLES2 renders) and 0x200
+        (GLES2 textures) set.
+      </description>
+      <arg name="id" type="new_id" interface="wl_buffer"/>
+      <arg name="id0" type="uint"/>
+      <arg name="id1" type="uint"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="format" type="uint"/>
+    </request>
+
+    <request name="destroy" type="destructor">
+      <description summary="unbind, buffers stay valid"/>
+    </request>
+  </interface>
+</protocol>

@@ -16,3 +16,6 @@
 &i2c0 {
 	status = "disabled";
 };
+
+/* the l220 address is from the e6 rom, not checked on this phone */
+/delete-node/ &l2c;

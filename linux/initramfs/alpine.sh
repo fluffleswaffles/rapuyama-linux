@@ -18,13 +18,19 @@ APK="$DL/apkt/sbin/apk.static"
 MIRROR=https://dl-cdn.alpinelinux.org/alpine
 REL=v3.24
 PKGS="busybox musl alpine-keys weston weston-backend-drm weston-shell-desktop
-weston-terminal seatd libudev-zero font-hack foot dbus libnotify"
+weston-terminal seatd libudev-zero font-hack dbus libnotify alacritty
+wayland-libs-egl"
 # what has to keep working after the prune
-ROOTS="usr/bin/weston usr/bin/weston-terminal usr/bin/seatd usr/bin/foot
+ROOTS="usr/bin/weston usr/bin/weston-terminal usr/bin/seatd
 usr/libexec/weston-desktop-shell usr/libexec/weston-keyboard
 usr/lib/weston/desktop-shell.so usr/lib/libweston-14/drm-backend.so
 lib/ld-musl-armhf.so.1
-usr/bin/dbus-daemon usr/bin/dbus-uuidgen usr/bin/notify-send usr/lib/libelogind.so.0"
+usr/bin/dbus-daemon usr/bin/dbus-uuidgen usr/bin/notify-send usr/lib/libelogind.so.0
+usr/bin/alacritty usr/lib/libwayland-egl.so.1
+usr/lib/libwayland-client.so.0 usr/lib/libxkbcommon.so.0
+usr/lib/libwayland-server.so.0 usr/lib/libfreetype.so.6 usr/lib/libpng16.so.16 usr/lib/libjpeg.so.8"
+# alacritty dlopens libwayland-client/-egl and libxkbcommon, yamashell (built
+# against the sysroot, not in here) links the rest: listed so the prune keeps them
 
 # stamp next to the dir, not in it (all of it goes into the initramfs)
 [ -e "$OUT.done" ] && exit 0
@@ -70,8 +76,8 @@ done
 # readdir reports it as one, which qemu-user (tools/weston_qemu.sh) doesn't
 mv "$OUT"/usr/share/fonts/*/*.ttf "$OUT/usr/share/fonts/"
 find "$OUT/usr/share/fonts" -mindepth 1 -type d -empty -delete
-# foot pulls all of ncurses-terminfo (~7 mb), keep the few we use
-[ -n "$FULL" ] || find "$OUT/usr/share/terminfo" -type f ! -name foot ! -name foot-direct \
+# ncurses-terminfo is ~7 mb, keep the few we use
+[ -n "$FULL" ] || find "$OUT/usr/share/terminfo" -type f ! -name alacritty ! -name alacritty-direct \
 	! -name xterm-256color ! -name linux ! -name vt100 -delete 2>/dev/null || true
 [ -n "$FULL" ] || find "$OUT/usr/share/terminfo" -xtype l -delete 2>/dev/null || true
 [ -n "$FULL" ] || find "$OUT/usr/share/terminfo" -mindepth 1 -type d -empty -delete 2>/dev/null || true

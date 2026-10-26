@@ -39,12 +39,12 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/vcprobe %s 755 0 0\n' "$KOUT/vcprobe"
 	printf 'file /usr/bin/khrntest %s 755 0 0\n' "$KOUT/vc-khrn/khrntest"
 	printf 'file /usr/bin/vctri %s 755 0 0\n' "$KOUT/vc-khrn/vctri"
+	printf 'file /usr/bin/vcwl %s 755 0 0\n' "$KOUT/vc-khrn/vcwl"
 	printf 'file /usr/bin/yamashell %s 755 0 0\n' "$KOUT/yamashell/yamashell"
 	printf 'file /usr/bin/yamashell-session %s 755 0 0\n' "$HERE/../yamashell/session.sh"
 	printf 'dir /usr/share/yamashell 755 0 0\n'
-	printf 'dir /usr/share/yamashell/applications 755 0 0\ndir /usr/share/yamashell/xdg 755 0 0\ndir /usr/share/yamashell/xdg/foot 755 0 0\n'
-	for f in wallpaper.jpg Ubuntu-Regular.ttf Ubuntu-Light.ttf MaterialIcons-Regular.ttf applications/foot.desktop \
-		applications/footclient.desktop applications/foot-server.desktop xdg/foot/foot.ini; do
+	printf 'dir /usr/share/yamashell/applications 755 0 0\n'
+	for f in wallpaper.jpg Ubuntu-Regular.ttf Ubuntu-Light.ttf MaterialIcons-Regular.ttf applications/Alacritty.desktop; do
 		printf 'file /usr/share/yamashell/%s %s 644 0 0\n' "$f" "$HERE/../yamashell/assets/$f"
 	done
 	printf 'file /usr/lib/libvcgl.so %s 755 0 0\n' "$KOUT/vc-khrn/libvcgl.so"
@@ -59,6 +59,7 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /etc/e6-check.sh %s 755 0 0\n' "$HERE/../initramfs/e6-check.sh"
 	printf 'file /etc/passwd %s 644 0 0\nfile /etc/group %s 644 0 0\n' "$HERE/../initramfs/passwd" "$HERE/../initramfs/group"
 	printf 'file /etc/fonts/local.conf %s 644 0 0\n' "$HERE/../initramfs/fonts-local.conf"
+	printf 'dir /etc/alacritty 755 0 0\nfile /etc/alacritty/alacritty.toml %s 644 0 0\n' "$HERE/../initramfs/alacritty.toml"
 	for f in vc-loader-a vc-loader-b vc-main; do
 		printf 'file /lib/firmware/vc/%s.bin %s 644 0 0\n' "$f" "$KOUT/vcfw/$f.bin"
 		printf 'file /lib/firmware/vc/%s.trl %s 644 0 0\n' "$f" "$KOUT/vcfw/$f.trl"
