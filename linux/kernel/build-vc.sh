@@ -31,6 +31,9 @@ python3 "$HERE/../../tools/vc_extract.py" "$KERN_BIN" "$KOUT/vcfw"
 ROOTFS="$HERE/../../work/rootfs-alpine"
 "$HERE/../initramfs/alpine.sh" "$ROOTFS"
 
+REV=$(git -C "$HERE/../.." describe --always --dirty 2>/dev/null || echo unknown)
+printf 'rapuyama-linux %s (%s)\n' "$(date +%d.%m.%Y)" "$REV" > "$KOUT/rapuyama-release"
+
 cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 {
 	# the list has no trailing newline, start on a fresh line
@@ -41,10 +44,13 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/vctri %s 755 0 0\n' "$KOUT/vc-khrn/vctri"
 	printf 'file /usr/bin/vcwl %s 755 0 0\n' "$KOUT/vc-khrn/vcwl"
 	printf 'file /usr/bin/yamashell %s 755 0 0\n' "$KOUT/yamashell/yamashell"
+	printf 'file /usr/bin/yamashell-settings %s 755 0 0\n' "$KOUT/yamashell/yamashell-settings"
 	printf 'file /usr/bin/yamashell-session %s 755 0 0\n' "$HERE/../yamashell/session.sh"
 	printf 'dir /usr/share/yamashell 755 0 0\n'
 	printf 'dir /usr/share/yamashell/applications 755 0 0\n'
-	for f in wallpaper.jpg Ubuntu-Regular.ttf Ubuntu-Light.ttf MaterialIcons-Regular.ttf applications/Alacritty.desktop; do
+	printf 'dir /usr/share/yamashell/wallpapers 755 0 0\n'
+	printf 'dir /usr/share/yamashell/icons 755 0 0\ndir /usr/share/yamashell/icons/hicolor 755 0 0\ndir /usr/share/yamashell/icons/hicolor/scalable 755 0 0\ndir /usr/share/yamashell/icons/hicolor/scalable/apps 755 0 0\n'
+	for f in wallpaper.jpg Ubuntu-Regular.ttf Ubuntu-Light.ttf MaterialIcons-Regular.ttf applications/Alacritty.desktop applications/yamashell-settings.desktop icons/hicolor/scalable/apps/yamashell-settings.svg icons/hicolor/scalable/apps/yamashell-device-e6.svg icons/hicolor/scalable/apps/yamashell-device-n8.svg icons/hicolor/scalable/apps/yamashell-device-e7.svg; do
 		printf 'file /usr/share/yamashell/%s %s 644 0 0\n' "$f" "$HERE/../yamashell/assets/$f"
 	done
 	printf 'file /usr/lib/libvcgl.so %s 755 0 0\n' "$KOUT/vc-khrn/libvcgl.so"
@@ -58,6 +64,7 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/fps %s 755 0 0\n' "$HERE/../initramfs/fps.sh"
 	printf 'file /etc/e6-check.sh %s 755 0 0\n' "$HERE/../initramfs/e6-check.sh"
 	printf 'file /etc/passwd %s 644 0 0\nfile /etc/group %s 644 0 0\n' "$HERE/../initramfs/passwd" "$HERE/../initramfs/group"
+	printf 'file /etc/rapuyama-release %s 644 0 0\n' "$KOUT/rapuyama-release"
 	printf 'file /etc/fonts/local.conf %s 644 0 0\n' "$HERE/../initramfs/fonts-local.conf"
 	printf 'dir /etc/alacritty 755 0 0\nfile /etc/alacritty/alacritty.toml %s 644 0 0\n' "$HERE/../initramfs/alacritty.toml"
 	for f in vc-loader-a vc-loader-b vc-main; do

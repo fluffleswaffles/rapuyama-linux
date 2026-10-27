@@ -24,8 +24,6 @@ Notifications and application commits do not wake the display. Pending frame cal
 
 ## Verification
 
-`linux/yamashell/tests/power.py` runs the real compositor with a Wayland client and injected evdev events. It checks dimming, screen off, withheld and resumed frame callbacks, key and touch wake, consumption of wake input, later key delivery, manual sleep, exit cleanup and recovery when starting with a dark display. The test has passed with AddressSanitizer and UndefinedBehaviorSanitizer through software Mesa.
-
 The keyboard LED driver and a compositor sleep/wake cycle have also been exercised live on the E6 without a reboot. These checks establish backlight and compositor behavior; CPU sleep is covered below, panel sleep-in is not done yet.
 
 ## CPU idle
