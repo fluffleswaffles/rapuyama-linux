@@ -336,6 +336,21 @@ GLDEF_C TInt E32Main(){
 #endif
 	}
 #endif
+#ifdef RB_E5_ISAH
+	// E5 handoff block for the PA_SWD bridge (phase A: only saved, linux does
+	// not use it yet). failure is logged, the boot goes on
+	{
+		TBuf8<44> ib;
+		TInt ir=dev.SaveIsah(ib);
+		const TUint32* iw=(const TUint32*)ib.Ptr();
+		if(ir==KErrNone && ib.Length()==44){
+			Lf(_L8("isah=0 ttbr0=%08x ttbr1=%08x ttbcr=%08x\n"), iw[0], iw[1], iw[2]);
+			for(TInt i=0; i<8; ++i){Lf(_L8("isah l1[%d]=%08x\n"), i, iw[3+i]);}
+		}else{
+			Lf(_L8("isah=%d len=%d\n"), ir, ib.Length());
+		}
+	}
+#endif
 #ifdef RB_E5
 	// symbian uptime at the handoff: the linux log has its own uptime, the sum
 	// puts the reset on symbian's clock (needed to tell a fixed deadline from

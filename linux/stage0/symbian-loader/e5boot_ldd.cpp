@@ -55,11 +55,28 @@ static DPlatChunkHw* IdMapExec(TPhysAddr aP, TUint32& aIdx, TUint32& aOld){
 	return cl;
 }
 
+// E5 handoff block for the linux PA_SWD bridge (secure_wdt.c), version 2.
+// inside the ram log's MB (no-map in e5.dts, and e5logs brings it back in
+// klog.bin). layout (words): 0 magic, 1 version 2, 2 ttbr0, 3 ttbr1, 4 ttbcr,
+// 5 dacr, 6 contextidr, 7 sctlr, 8 prrr, 9 nmrr, 0x20+2i/0x21+2i {va, L1 desc}
+// of the 8 ISASW MBs, 0x400.. (byte 0x1000) the 16 kb kernel L1 (ttbr1),
+// byte 0x5000+i*0x400 the 1 kb L2 table of MB i (zero if not a coarse table)
+static const TUint32 KIsahPhys=0x1f0f1000u, KIsahSize=0x7000u, KIsahMagic=0x48415349u;
+// c6300000.. isasw code, c6800000.. data, c6b00000 secure pool (0x1ffe0000)
+static const TUint32 KIsahMb[8]={0xc63u, 0xc64u, 0xc65u, 0xc66u, 0xc68u, 0xc69u, 0xc6au, 0xc6bu};
+static TUint32 Cp15Ttbr1(){TUint32 v; asm volatile("mrc p15,0,%0,c2,c0,1":"=r"(v)); return v;}
+
 class DE5BootChan : public DLogicalChannelBase{
 	public:
-		DE5BootChan() : iBootChunk(NULL), iBootPhys(0), iBootVirt(0), iBootSize(0), iBootAlloc(0){}
+		DE5BootChan() : iBootChunk(NULL), iBootPhys(0), iBootVirt(0), iBootSize(0), iBootAlloc(0), iIsahChunk(NULL), iIsahClaimed(EFalse){}
 		// a booter that quits after AllocBoot must give the block back
-		virtual ~DE5BootChan(){ReleaseBoot();}
+		virtual ~DE5BootChan(){ReleaseBoot(); ReleaseIsah();}
+		// the handoff block stays mapped + claimed until the boot (symbian must
+		// not hand the page out between SaveIsah and Boot)
+		void ReleaseIsah(){
+			if(iIsahChunk){iIsahChunk->Close(NULL); iIsahChunk=NULL;}
+			if(iIsahClaimed){Epoc::FreePhysicalRam(KIsahPhys, KIsahSize); iIsahClaimed=EFalse;}
+		}
 		void ReleaseBoot(){
 			if(iBootChunk){iBootChunk->Close(NULL); iBootChunk=NULL;}
 			if(iBootAlloc){Epoc::FreePhysicalRam(iBootPhys, iBootAlloc); iBootAlloc=0;}
@@ -70,11 +87,14 @@ class DE5BootChan : public DLogicalChannelBase{
 		TLinAddr iBootVirt;
 		TUint32 iBootSize; // mapped
 		TInt iBootAlloc;   // allocated/claimed, >= iBootSize
+		DPlatChunkHw* iIsahChunk;
+		TBool iIsahClaimed;
 	protected:
 		virtual TInt DoCreate(TInt, const TDesC8*, const TVersion&){return KErrNone;}
 		virtual TInt Request(TInt aFunction, TAny* a1, TAny* a2);
 		TInt AllocBoot(TAny* a1, TAny* a2);
 		TInt ReadPhys(TUint32 aPhys, TAny* aDes);
+		TInt SaveIsah(TAny* aDes);
 };
 
 // same ladder and window as e6bfix (the E5 kernel gets the same in-place Image
@@ -181,10 +201,71 @@ TInt DE5BootChan::ReadPhys(TUint32 aPhys, TAny* aDes){
 	return r;
 }
 
+// read-only on symbian's side: copies the kernel L1 and the L2 tables of the
+// ISASW windows into the handoff block. the block itself is free ram (ram log
+// MB), claimed if the mapper refuses it. uncached so nothing is left in the
+// caches when linux takes over
+TInt DE5BootChan::SaveIsah(TAny* aDes){
+	if(Kern::ThreadGetDesMaxLength(&Kern::CurrentThread(), aDes)<44){return KErrArgument;}
+	if(!iIsahChunk){
+		TInt r=DPlatChunkHw::New(iIsahChunk, KIsahPhys, (TInt)KIsahSize, EMapAttrSupRw|EMapAttrFullyBlocking);
+		if(r!=KErrNone){
+			if(Epoc::ClaimPhysicalRam(KIsahPhys, (TInt)KIsahSize)!=KErrNone){iIsahChunk=NULL; return r;}
+			iIsahClaimed=ETrue;
+			r=DPlatChunkHw::New(iIsahChunk, KIsahPhys, (TInt)KIsahSize, EMapAttrSupRw|EMapAttrFullyBlocking);
+			if(r!=KErrNone){iIsahChunk=NULL; ReleaseIsah(); return r;}
+		}
+	}
+	volatile TUint32* h=(volatile TUint32*)iIsahChunk->LinearAddress();
+	h[0]=0; // not valid until the end
+	for(TUint32 i=1; i<KIsahSize/4; ++i){h[i]=0;}
+	TUint32 v;
+	asm volatile("mrc p15,0,%0,c2,c0,0":"=r"(v)); h[2]=v;
+	h[3]=Cp15Ttbr1();
+	asm volatile("mrc p15,0,%0,c2,c0,2":"=r"(v)); h[4]=v;
+	asm volatile("mrc p15,0,%0,c3,c0,0":"=r"(v)); h[5]=v;
+	asm volatile("mrc p15,0,%0,c13,c0,1":"=r"(v)); h[6]=v;
+	asm volatile("mrc p15,0,%0,c1,c0,0":"=r"(v)); h[7]=v;
+	asm volatile("mrc p15,0,%0,c10,c2,0":"=r"(v)); h[8]=v;
+	asm volatile("mrc p15,0,%0,c10,c2,1":"=r"(v)); h[9]=v;
+	TUint32 out[11];
+	out[0]=h[2]; out[1]=h[3]; out[2]=h[4];
+
+	// the live kernel L1 (16 kb, ttbr1): map only, never claim symbian's own
+	DPlatChunkHw* lc=NULL;
+	TInt r=DPlatChunkHw::New(lc, h[3]&~0x3fffu, 0x4000, EMapAttrSupRw|EMapAttrCachedMax);
+	if(r!=KErrNone){return r;}
+	const volatile TUint32* l1=(const volatile TUint32*)lc->LinearAddress();
+	for(TUint32 i=0; i<0x1000; ++i){h[0x400+i]=l1[i];}
+	lc->Close(NULL);
+	for(TInt i=0; i<8; ++i){
+		TUint32 d=h[0x400+KIsahMb[i]];
+		h[0x20+2*i]=KIsahMb[i]<<20;
+		h[0x21+2*i]=d;
+		out[3+i]=d;
+		if((d&3)!=1){continue;} // section or fault: no L2 table
+		DPlatChunkHw* tc=NULL;
+		TUint32 pa=d&~0x3ffu;
+		r=DPlatChunkHw::New(tc, pa&~0xfffu, 0x1000, EMapAttrSupRw|EMapAttrCachedMax);
+		if(r!=KErrNone){return r;}
+		const volatile TUint32* l2=(const volatile TUint32*)(tc->LinearAddress()+(pa&0xfffu));
+		for(TUint32 j=0; j<0x100; ++j){h[0x1400+i*0x100+j]=l2[j];}
+		tc->Close(NULL);
+	}
+	h[1]=2;
+	Dsb();
+	h[0]=KIsahMagic; // last, so a half-written block never looks valid
+	Dsb();
+	TPtrC8 p8((const TUint8*)out, sizeof(out));
+	return Kern::ThreadDesWrite(&Kern::CurrentThread(), aDes, p8, 0);
+}
+
 TInt DE5BootChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 	if(aFunction==RRunBlob::EControlAllocBoot){return AllocBoot(a1, a2);}
 
 	if(aFunction==RRunBlob::EControlReadPhys){return ReadPhys((TUint32)a1, a2);}
+
+	if(aFunction==RRunBlob::EControlSaveIsah){return SaveIsah(a1);}
 
 	if(aFunction==RRunBlob::EControlLoadChunk){
 		if(!iBootChunk){return KErrNotReady;}
