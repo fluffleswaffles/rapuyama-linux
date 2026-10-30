@@ -9,7 +9,10 @@
 
 _LIT(KLog, "E:\\ramread.log");
 _LIT(KBin, "E:\\klog.bin");
-const TUint32 KPhys=0x1f000000u;
+#ifndef RB_LOGPHYS
+#define RB_LOGPHYS 0x1f000000u
+#endif
+const TUint32 KPhys=RB_LOGPHYS;
 const TUint32 KLen=0x100000u; // 1 mb
 const TUint32 KStep=0x8000u;  // 32 kb per call
 
@@ -52,6 +55,10 @@ GLDEF_C TInt E32Main(){
 			dev.Close();
 		}
 	}
+#ifdef RB_E5
+	fs.RSessionBase::Close(); // RFs::Close is not exported by the 9.3 efsrv
+#else
 	fs.Close();
+#endif
 	return KErrNone;
 }

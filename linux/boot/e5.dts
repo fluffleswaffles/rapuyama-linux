@@ -1,0 +1,169 @@
+/dts-v1/;
+
+/* device tree for the nokia e5-00 (RM-632, fw 101.003): first boot to a usb
+ * shell + ram log. FIRST DRAFT, UNTESTED ON THE PHONE: the E5 system tick is a different
+ * block from the E6 (see the timer node), it has its own clockevent driver
+ * (timer-rapuyama-e5.c, compiles, never run). everything below was
+ * checked against the E5 ROM dump and the live phone (docs/devices/e5-00/
+ * hw-map.md, ~/e5/HANDOFF.md, plan section 7.5); the E6 values that were NOT
+ * confirmed on the E5 are left out instead of copied:
+ *   - no clock gate controller (cgc): its gate table is from the E6
+ *     power_resources.dll, blind writes to it are what killed E6 phones
+ *   - no i2c0 / keypad / touch / charger / battery / modem link: E6 chips
+ *   - no mmc, no bt uart: the card slot is mmc@20032800 (phase 7), both need
+ *     clock gates; the E5 keyboard is a gpio matrix (phase 5)
+ *   - no display: native Rapu_Display / VRFB (phase 6)
+ * standalone on purpose (does not include e6.dts) so the E6 trees stay
+ * untouched. boot with the usb cable plugged in so symbian leaves the usb
+ * block powered
+ */
+
+/ {
+	compatible = "nokia,e5", "nokia,rapuyama";
+	model = "Nokia E5-00 (RapuYama)";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&intc>;
+
+	chosen {
+		/* clk_ignore_unused/pd_ignore_unused: nothing here owns the gates,
+		 * symbian's state must stay. no e6.lowmem (E6 loader layout), no
+		 * e6.swd (E6 secure watchdog, the E5 one is unmeasured, plan phase 4) */
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=ttyNULL panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			device_type = "cpu";
+			/* MIDR 0x410fb764 read live: ARM1176 r0p4, same as the E6 */
+			compatible = "arm,arm1176jzf-s";
+			reg = <0>;
+		};
+	};
+
+	/* one 256 MB bank at 0x10000000 (bootstrap list {0x10000001, 0x10000000},
+	 * superpage iTotalRamSize 0x0f820000 + iTotalRomSize 0x7e0000 = 256 MB).
+	 * Linux starts at 0x11600000 like the E6 loader layout (2 MB aligned):
+	 * below that live, measured on the E5 (e5rom): the kernel L1 at
+	 * 0x10000000, the modem-side window symbian maps at 0x10480000 (3.7 MB,
+	 * role on the E5 unverified, on the E6 it was modem firmware), the
+	 * unpaged ROM copy 0x10900000..0x110da000 and paged ROM pages up to
+	 * ~0x11600000. costs 22 MB */
+	memory@11600000 {
+		device_type = "memory";
+		reg = <0x11600000 0x0ea00000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* ram log (earlycon=ramcon,0x1f000000): free in symbian's allocator
+		 * at e5rom time (Claim ok over 0x1e000000..0x1fb5ffff) */
+		ramcon@1f000000 {
+			reg = <0x1f000000 0x100000>;
+			no-map;
+		};
+
+		/* top of ram, symbian's own: 0x1fb60000..0x1fcdffff was in use at
+		 * e5rom time (unidentified), 0x1fd00000 is the kernel superpage,
+		 * 0x1fd50000 +2.5 MB and 0x1ffe0000 +64 KB are mapped by symbian
+		 * next to the mmio (c6800000, c6b00000, shared with something that is
+		 * not the arm on the E6). one reservation over all of it, 4.6 MB.
+		 * NOT no-map for the same reason as in e6.dts (a no-map hole at the
+		 * top of ram makes arm drop ram above it) */
+		symbian-top@1fb60000 {
+			reg = <0x1fb60000 0x004a0000>;
+		};
+	};
+
+	/* ULPI phy, symbian leaves it set up (cable plugged in) */
+	usb_phy: usb-phy {
+		compatible = "usb-nop-xceiv";
+		#phy-cells = <0>;
+	};
+
+	clocks {
+		/* NKern::FastCounterFrequency() = 32768 on the E5 too (live HAL
+		 * EFastCounterFrequency, ROM check 7.1) */
+		fc_clk: fc-clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <32768>;
+		};
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* the 1 MB aperture symbian maps at c6e00000 -> 0x20500000 is the L220
+		 * outer cache: the E5 ekern does the same maintenance as the E6 at
+		 * c6e00770 / c6e007b0 / c6e007f0 (ROM 0x800a06d8..f0). the id register
+		 * (0x41000486 on the E6) has NOT been read on the E5 */
+		l2c: cache-controller@20500000 {
+			compatible = "arm,l220-cache";
+			reg = <0x20500000 0x1000>;
+			cache-unified;
+			cache-level = <2>;
+		};
+
+		/* mapped live (c6060000 -> 0x20400000 x4); the E5 karap dispatchers use
+		 * the same offsets (hw-map). the 5 secondary banks sit in
+		 * c6020000 -> 0x20020000 x48, so 0x20033400 is mapped too */
+		intc: interrupt-controller@20400000 {
+			compatible = "nokia,rapuyama-intc";
+			reg = <0x20400000 0x4000>, <0x20033400 0x140>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+
+		/* E5 system tick: IRQ 35, ROM ISR 0x8009d778. live reads (e5timr/e5tick):
+		 * 0x200401a4 is a DOWN counter at ~7.68 MHz (38.4 MHz / 5, measured
+		 * 7.66 MHz +-5 %) that reloads from 0x1e00 = 7680, i.e. a hardware
+		 * periodic 1 ms tick (every value ever read is <= 0x1e00). symbian arms it
+		 * by writing 0x1e00 to 0x200401a4 (EnbMsTick, ROM 0x8009e2a4) and the ISR
+		 * re-arms by polling 0x200401c4 until it reads 0, then writing 0x1e00 to
+		 * it. init ROM 0x8009d7cc left 0x20033600 +4=1 +8=3 and 0x20040180 +4=1
+		 * +8=4. NOT verified: the reload/ack semantics of 0x200401c4 (write
+		 * visibly acks the irq?), that the 7.68 MHz rate is exact (the 38.4/5
+		 * guess fits 7680 = 1 ms), irq 35 trigger type. there is no driver for
+		 * this binding is drivers/clocksource/timer-rapuyama-e5.c (the E6
+		 * timer-rapuyama.c, irq 242 / 0x200337a0, must NOT be pointed here).
+		 * second reg = the fast counter (clocksource), same as the E6 */
+		timer@20040180 {
+			compatible = "nokia,rapuyama-e5-timer";
+			reg = <0x20040180 0x80>, <0x20033350 0x8>;
+			interrupts = <35>;
+			clocks = <&fc_clk>;
+			clock-names = "fc";
+		};
+
+		/* musb core, same base as the E6 (hw-map: usb.dll 0x20038800 core,
+		 * 0x20038c00 wrapper; irq binds 183/215 at ROM 0x80126fd8/ff0).
+		 * no clocks property: symbian already runs the block with the cable in */
+		usb_otg: usb@20038800 {
+			compatible = "nokia,rapuyama-musb";
+			reg = <0x20038800 0x500>;
+			interrupts = <183>, <215>;
+			interrupt-names = "mc", "dma";
+			phys = <&usb_phy>;
+			dr_mode = "peripheral";
+		};
+
+		/* pmic watchdog (cbus 0x20030700, dev 1 reg 0x17 = 0x30), soc counter
+		 * 0x200336c4 and the reset reg 0x20033114: all three confirmed in the
+		 * E5 ROM (power.dll 0x80116790, REBOOTDRIVER.LDD) and all mapped live
+		 * (c6020000 -> 0x20020000 x48). reg semantics are the E6's, the
+		 * first run on the phone is their test */
+		watchdog@20030700 {
+			compatible = "nokia,rapuyama-wdt";
+			reg = <0x20030700 0x40>, <0x200336c4 0x4>, <0x20033114 0x4>;
+		};
+	};
+};

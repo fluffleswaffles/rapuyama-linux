@@ -34,13 +34,15 @@ EKA="$KH/kernel/eka"
 E2E="$ROOT/tools/bin/elf2e32_next"
 GCCE="$ROOT/tools/gcce/arm-2012.03/bin/arm-none-symbianelf"
 DRV="$ROOT/driver"
-STAGE="$DRV/stage"
+STAGE="${STAGE:-$DRV/stage}" # E5: STAGE=$DRV/stage-e5
+LDD_SRC="${LDD_SRC:-runblob_ldd.cpp}"
+ISC_LIB=("$DRV/import/iscapi.dso"); [ -z "$NO_ISC" ] || ISC_LIB=() # E5 has no iscapi
 [ -d "$STAGE" ] || "$DRV/mkstage.sh"
 OUT="$HERE/build/$NAME"
 mkdir -p "$OUT" "$ROOT/out"
 
 # rebuild the embedded blobs
-make -C "$HERE/.." all >/dev/null
+[ -n "$NO_BLOBS" ] || make -C "$HERE/.." all >/dev/null
 
 CXX="$GCCE-g++"; LD="$GCCE-ld"
 INC=(
@@ -67,7 +69,7 @@ LIBGCC="$("$CXX" -march=armv5t -print-libgcc-file-name)"
 LDFLAGS=(--target1-abs --no-undefined -nostdlib -shared -Ttext 0x8000 -Tdata 0x400000 --default-symver)
 
 echo ">> $NAME: compile"
-$CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -o "$OUT/ldd.o" "$HERE/runblob_ldd.cpp"
+$CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -o "$OUT/ldd.o" "$HERE/$LDD_SRC"
 $CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -x c++ -o "$OUT/d_entry_cia.o" "$EKA/kernel/arm/d_entry.cia"
 $CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -o "$OUT/d_entry.o" "$EKA/kernel/arm/d_entry.cpp"
 $CXX "${COMMON[@]}" -D_UNICODE -o "$OUT/app.o" "$HERE/$SRC"
@@ -84,7 +86,7 @@ $LD "${LDFLAGS[@]}" --entry _E32Dll -u _E32Dll \
     --definput="$DRV/ptdump.def" --dlldata --compressionmethod=none --capability=all
 $LD "${LDFLAGS[@]}" --entry _E32Startup -u _E32Startup \
     "$OUT/app.o" "$OUT/uc_exe.o" "$OUT/uc_exe_cia.o" \
-    "$DRV/import/EUSER.dso" "$DRV/import/EFSRV.dso" "$DRV/import/iscapi.dso" "$LIBGCC" -o "$OUT/app.elf"
+    "$DRV/import/EUSER.dso" "$DRV/import/EFSRV.dso" "${ISC_LIB[@]}" "$LIBGCC" -o "$OUT/app.elf"
 "$E2E" --elfinput="$OUT/app.elf" --output="$OUT/${NAME}_0x$UHEX.exe" \
     --targettype=EXE --uid1=0x1000007a --uid2=0x100039ce --uid3="$UID3" \
     --linkas="${NAME}_0x$UHEX{000a0000}[$UHEX].exe" --libpath="$DRV/import" \
@@ -135,7 +137,7 @@ patch(src + "/private/10003a3f/import/apps/%s_reg.rsc" % old_exe,
 patch(src + "/resource/apps/%s_loc.r01" % old_exe,
       dst + "/resource/apps/%s_loc.r01" % new_exe, pairs)
 EOF
-cp "$DRV/sis/cert.pem" "$DRV/sis/key_trad.pem" "$W/"
+cp "${CERT:-$DRV/sis/cert.pem}" "$W/cert.pem"; cp "$DRV/sis/key_trad.pem" "$W/"
 podman run --rm -v "$ROOT/tools/src/ensymble:/ens:ro,Z" -v "$W:/w:Z" -w /w \
 	docker.io/library/python:2.7 python /ens/ensymble.py simplesis \
 	-u "$UID3" -c "$NAME" -a cert.pem -k key_trad.pem -p "" approot out.sis

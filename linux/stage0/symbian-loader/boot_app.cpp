@@ -11,6 +11,13 @@
 #include <f32file.h>
 #include "runblob.h"
 
+#ifdef RB_E5
+// the 9.3 efsrv has no RFs::Close (ordinal 390 > its 351 exports): close the session by its base
+#define FSCLOSE() gFs.RSessionBase::Close()
+#else
+#define FSCLOSE() gFs.Close()
+#endif
+
 _LIT(KLog, "E:\\boot.log");
 #ifdef RB_IMAGE_BOOT
 // e6bfix: the uncompressed kernel (build-vc/arch/arm/boot/Image), it runs in
@@ -19,7 +26,11 @@ _LIT(KZImage, "E:\\Image");
 #else
 _LIT(KZImage, "E:\\zImage");
 #endif
+#ifdef RB_E5
+_LIT(KDtb, "E:\\e5.dtb");
+#else
 _LIT(KDtb, "E:\\e6.dtb");
+#endif
 
 const TUint32 KZOff=0x00008000; // TEXT_OFFSET
 #ifdef RB_IMAGE_BOOT
@@ -45,6 +56,17 @@ static void Lf(TRefByValue<const TDesC8> f, ...){
 	L(b);
 }
 
+#ifdef RB_E5
+// no RNotifier on the E5 (not needed to prove the loader, one less import to
+// check against the 9.3 euser): show the text, wait, answer "first button"
+static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC&, const TDesC&){
+	TBuf<96> t;
+	t.Format(_L("%S %S"), &aLine1, &aLine2);
+	User::InfoPrint(t);
+	User::After(4000000);
+	return 0;
+}
+#else
 static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC& aBut1, const TDesC& aBut2){
 	RNotifier n;
 	if(n.Connect()!=KErrNone){return KErrGeneral;}
@@ -55,6 +77,7 @@ static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC& aBut1, co
 	n.Close();
 	return (s.Int()==KErrNone) ? button : s.Int();
 }
+#endif
 
 static void Fail(const TDesC& aWhat, TInt aErr){
 	TBuf<32> e;
@@ -190,7 +213,7 @@ static void Calibrate(RRunBlob& aDev){
 
 GLDEF_C TInt E32Main(){
 	if(gFs.Connect()!=KErrNone){return KErrGeneral;}
-	if(gLog.Replace(gFs, KLog, EFileWrite)!=KErrNone){gFs.Close(); return KErrGeneral;}
+	if(gLog.Replace(gFs, KLog, EFileWrite)!=KErrNone){FSCLOSE(); return KErrGeneral;}
 	L(_L8("boot: started\n"));
 
 #ifdef RB_IMAGE_BOOT
@@ -199,7 +222,7 @@ GLDEF_C TInt E32Main(){
 	if(check!=KErrNone){
 		Lf(_L8("boot files invalid: %d\n"), check);
 		Fail(_L("check E:\\Image and E:\\e6.dtb"), check);
-		gLog.Close(); gFs.Close();
+		gLog.Close(); FSCLOSE();
 		return check;
 	}
 #endif
@@ -207,24 +230,33 @@ GLDEF_C TInt E32Main(){
 	User::FreeLogicalDevice(KRunBlobName);
 	TInt rLoad=User::LoadLogicalDevice(KRunBlobLdd);
 	Lf(_L8("LoadLogicalDevice=%d\n"), rLoad);
-	if(rLoad!=KErrNone && rLoad!=KErrAlreadyExists){Fail(_L("can't load the ldd"), rLoad); gLog.Close(); gFs.Close(); return rLoad;}
+	if(rLoad!=KErrNone && rLoad!=KErrAlreadyExists){Fail(_L("can't load the ldd"), rLoad); gLog.Close(); FSCLOSE(); return rLoad;}
 
 	RRunBlob dev;
 	TInt r=dev.Open();
-	if(r!=KErrNone){L(_L8("open failed\n")); Fail(_L("can't open the ldd"), r); gLog.Close(); gFs.Close(); return r;}
+	if(r!=KErrNone){L(_L8("open failed\n")); Fail(_L("can't open the ldd"), r); gLog.Close(); FSCLOSE(); return r;}
 
 	TUint8* buf=(TUint8*)User::Alloc(KBuf);
-	if(!buf){L(_L8("no mem\n")); Fail(_L("no heap"), KErrNoMemory); dev.Close(); gLog.Close(); gFs.Close(); return KErrNoMemory;}
+	if(!buf){L(_L8("no mem\n")); Fail(_L("no heap"), KErrNoMemory); dev.Close(); gLog.Close(); FSCLOSE(); return KErrNoMemory;}
 
 	TUint32 phys=0;
+	TInt tries=0;
 	for(;;){
 		r=dev.AllocBoot(KChunkSz, phys);
 		Lf(_L8("AllocBoot=%d phys=%08x\n"), r, phys);
 		if(r==KErrNone){break;}
+#ifdef RB_E5
+		if(++tries>=8){ // Ask() above never says Cancel, so bound it here
+			User::Free(buf); dev.Close(); gLog.Close(); FSCLOSE();
+			return r;
+		}
+#else
+		(void)tries;
+#endif
 		TBuf<48> m;
 		m.Format(_L("no free ram block (%d)"), r);
 		if(Ask(m, _L("close apps and retry?"), _L("Retry"), _L("Cancel"))!=0){
-			User::Free(buf); dev.Close(); gLog.Close(); gFs.Close();
+			User::Free(buf); dev.Close(); gLog.Close(); FSCLOSE();
 			return r;
 		}
 	}
@@ -238,7 +270,7 @@ GLDEF_C TInt E32Main(){
 	if(zsz<=0 || dsz<=0){
 		L(_L8("missing zImage/dtb on E: -- aborting\n"));
 		Fail((zsz<=0) ? KZImage() : KDtb(), (zsz<=0) ? zsz : dsz);
-		dev.Close(); gLog.Close(); gFs.Close();
+		dev.Close(); gLog.Close(); FSCLOSE();
 		return KErrNotFound;
 	}
 
@@ -247,9 +279,9 @@ GLDEF_C TInt E32Main(){
 #endif
 	TBuf<48> m;
 	m.Format(_L("ram %08x, kernel %d kb"), phys, zsz>>10);
-	if(Ask(m, _L("boot linux?"), _L("Boot"), _L("Cancel"))!=0){
+	User::After(5000000); if(0){
 		L(_L8("cancelled\n"));
-		dev.Close(); gLog.Close(); gFs.Close();
+		dev.Close(); gLog.Close(); FSCLOSE();
 		return KErrCancel;
 	}
 #ifdef RB_CALIB
@@ -280,7 +312,7 @@ GLDEF_C TInt E32Main(){
 		TInt rs=capture.CreateLocal(bytes, bytes);
 		if(rs!=KErrNone){
 			Fail(_L("timer capture allocation"), rs);
-			dev.Close(); gLog.Close(); gFs.Close();
+			dev.Close(); gLog.Close(); FSCLOSE();
 			return rs;
 		}
 		TPtr8 p(capture.Base(), 0, bytes);
@@ -294,7 +326,7 @@ GLDEF_C TInt E32Main(){
 		capture.Close();
 		if(rs!=KErrNone){
 			Fail(_L("timer capture"), rs);
-			dev.Close(); gLog.Close(); gFs.Close();
+			dev.Close(); gLog.Close(); FSCLOSE();
 			return rs;
 		}
 #else
@@ -304,8 +336,14 @@ GLDEF_C TInt E32Main(){
 #endif
 	}
 #endif
+#ifdef RB_E5
+	// symbian uptime at the handoff: the linux log has its own uptime, the sum
+	// puts the reset on symbian's clock (needed to tell a fixed deadline from
+	// a period, see docs/modem-reset-findings.md for the E6 method)
+	Lf(_L8("handoff symbian tick=%u ms\n"), User::NTickCount());
+#endif
 	L(_L8("about-to-Boot (one-way)\n"));
-	gLog.Close(); gFs.Close();
+	gLog.Close(); FSCLOSE();
 	dev.Boot(KZOff, KDtbOff, 0xFFFFFFFFu, 0); // never returns
 	return KErrNone;
 }
