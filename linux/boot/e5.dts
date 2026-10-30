@@ -27,9 +27,10 @@
 
 	chosen {
 		/* clk_ignore_unused/pd_ignore_unused: nothing here owns the gates,
-		 * symbian's state must stay. no e6.lowmem (E6 loader layout), no
-		 * e6.swd (E6 secure watchdog, the E5 one is unmeasured, plan phase 4) */
-		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=ttyNULL panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui";
+		 * symbian's state must stay. no e6.lowmem (E6 loader layout).
+		 * e6.swd: PA_SWD 0x1f bridge, E5 entry in secure_wdt.c (needs the
+		 * v2 isah block of e5bot3) */
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=ttyNULL panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1";
 	};
 
 	cpus {
