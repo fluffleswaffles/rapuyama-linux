@@ -12,7 +12,8 @@
  *   - no i2c0 / keypad / touch / charger / battery / modem link: E6 chips
  *   - no mmc, no bt uart: the card slot is mmc@20032800 (phase 7), both need
  *     clock gates; the E5 keyboard is a gpio matrix (phase 5)
- *   - no display: native Rapu_Display / VRFB (phase 6)
+ *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push, D3); dispc and
+ *     vrfb are not touched
  * standalone on purpose (does not include e6.dts) so the E6 trees stay
  * untouched. boot with the usb cable plugged in so symbian leaves the usb
  * block powered
@@ -30,7 +31,7 @@
 		 * symbian's state must stay. no e6.lowmem (E6 loader layout).
 		 * e6.swd: PA_SWD 0x1f bridge, E5 entry in secure_wdt.c (needs the
 		 * v2 isah block of e5bot3) */
-		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=ttyNULL panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1";
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1";
 	};
 
 	cpus {
@@ -155,6 +156,15 @@
 			interrupt-names = "mc", "dma";
 			phys = <&usb_phy>;
 			dr_mode = "peripheral";
+		};
+
+		/* panel interface: OMAP2-style RFBI, MIPI DCS panel on an 8-bit bus,
+		 * RGB888 (D0..D2, plan 7.13-7.15). symbian's rfbi/dispc setup is kept
+		 * as is; the driver only writes CMD (+0x4c) / PARAM (+0x50) and polls
+		 * SYSSTATUS (+0x14). no irq, no clocks (left running by symbian) */
+		display@20025800 {
+			compatible = "nokia,rapuyama-e5-rfbi";
+			reg = <0x20025800 0x100>;
 		};
 
 		/* pmic watchdog (cbus 0x20030700, dev 1 reg 0x17 = 0x30), soc counter

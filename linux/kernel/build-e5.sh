@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# E5-00 kernel + dtb: e6.config minus display/sound/wlan/the E6 modem keepalive (blind E6 pmic writes), E5 initramfs list,
+# E5-00 kernel + dtb: e6.config minus drm/sound/wlan, plus the E5 rfbi fbdev + fbcon/the E6 modem keepalive (blind E6 pmic writes), E5 initramfs list,
 # own output dir so the E6 trees stay untouched. usage: ./build-e5.sh [config|build]
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -12,7 +12,9 @@ config() {
 	cp "$HERE/e6.config" "$KOUT/.config"
 	local S="$KSRC/scripts/config --file $KOUT/.config"
 	$S --set-str INITRAMFS_SOURCE "$HERE/../initramfs/e5.list"
-	for o in DRM FB SOUND WLAN RAPUYAMA_MODEM; do $S -d "$o"; done
+	for o in DRM SOUND WLAN RAPUYAMA_MODEM FB_RAPUYAMA FB_SIMPLE; do $S -d "$o"; done
+	# D3 display: rfbi fbdev + fbcon (8x8 font = 40x30 text on 320x240)
+	for o in FB FB_DEVICE FB_RAPUYAMA_E5 FRAMEBUFFER_CONSOLE FONTS FONT_8x8 FONT_8x16; do $S -e "$o"; done
 	"${MAKE[@]}" olddefconfig
 }
 case "${1:-build}" in
