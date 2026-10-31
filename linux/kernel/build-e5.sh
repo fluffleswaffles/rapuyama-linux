@@ -15,6 +15,8 @@ config() {
 	for o in DRM SOUND WLAN RAPUYAMA_MODEM FB_RAPUYAMA FB_SIMPLE; do $S -d "$o"; done
 	# D3 display: rfbi fbdev + fbcon (8x8 font = 40x30 text on 320x240)
 	for o in FB FB_DEVICE FB_RAPUYAMA_E5 FRAMEBUFFER_CONSOLE FONTS FONT_8x8 FONT_8x16; do $S -e "$o"; done
+	# phase 5 keyboard: polled matrix
+	for o in INPUT_KEYBOARD KEYBOARD_RAPUYAMA_E5; do $S -e "$o"; done
 	"${MAKE[@]}" olddefconfig
 }
 case "${1:-build}" in

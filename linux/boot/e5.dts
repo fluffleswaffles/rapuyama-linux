@@ -14,6 +14,7 @@
  *     clock gates; the E5 keyboard is a gpio matrix (phase 5)
  *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push, D3); dispc and
  *     vrfb are not touched
+ *   - keyboard: keypad node, polled (rapuyama-e5-keypad.c), no gpio node
  * standalone on purpose (does not include e6.dts) so the E6 trees stay
  * untouched. boot with the usb cable plugged in so symbian leaves the usb
  * block powered
@@ -165,6 +166,21 @@
 		display@20025800 {
 			compatible = "nokia,rapuyama-e5-rfbi";
 			reg = <0x20025800 0x100>;
+		};
+
+		/* qwerty 8x8 matrix, polled (rapuyama-e5-keypad.c, ekeyb.dll scan):
+		 * gpio block (only the 8 column pins' out set/clr are written) and the
+		 * gpio irq block (raw row state, read only; same range as the intc's
+		 * second reg, the driver maps it without requesting it). no
+		 * learn mode: echo 1 > /sys/module/rapuyama_e5_keypad/parameters/learn */
+		keypad@20031900 {
+			compatible = "nokia,rapuyama-e5-keypad";
+			reg = <0x20031900 0x200>, <0x20033400 0x140>;
+			/* MATRIX_KEY(row,col,code) = row<<24 | col<<16 | code. qwerty rows,
+			 * bksp r6c1, ", . enter" r1c7 r5c0 r5c1, bottom: shift(arrow) r0c0,
+			 * space r0c1, @ r0c2 (-> KEY_APOSTROPHE for now), ? r0c3 (KEY_SLASH),
+			 * ctrl r0c7. r4c0 and the nav/special keys (r4c2..c6, r5c2..c6) TODO */
+			linux,keymap = <0x03000010 0x03010011 0x03020012 0x03030013 0x03040014 0x03050015 0x03060016 0x03070017 0x07000018 0x07010019 0x0200001e 0x0201001f 0x02020020 0x02030021 0x02040022 0x02050023 0x02060024 0x02070025 0x06000026 0x0601000e 0x0100002c 0x0101002d 0x0102002e 0x0103002f 0x01040030 0x01050031 0x01060032 0x01070033 0x05000034 0x0501001c 0x0000002a 0x00010039 0x00020028 0x00030035 0x0007001d>;
 		};
 
 		/* pmic watchdog (cbus 0x20030700, dev 1 reg 0x17 = 0x30), soc counter
