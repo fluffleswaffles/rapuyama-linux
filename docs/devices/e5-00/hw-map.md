@@ -300,6 +300,15 @@ The first 64 ROM default scan codes, written as two-digit hex and arranged by th
 
 GPIO IRQs are not universally `316 + gpio`. `0x800a6118` checks GPIO ids below 137 and indexes `ROM:0x800a6830 + 12*gpio`; each record supplies the IRQ plus two routing fields. For example, GPIO 0/32/64 map to IRQ 316/348/380, but GPIO 100 has IRQ `0xffffffff` (no entry), while GPIO 114..119 map to IRQ 298..303, GPIO 121 to IRQ 305, and GPIO 136 to IRQ 287. The keyboard's first group therefore has IRQs **298, 299, 300, 301, 302, 303, 305, 318** in its stored GPIO order. The platform WLAN module's GPIO 73 maps to IRQ **389**, while GPIO 100 has no per-pin IRQ. These are values of this ROM's routing table; GPIO availability/muxing on the board still needs checking. The complete IRQ column can be expressed as: GPIO `0..87` -> `316 + gpio`; `88..105` -> no IRQ; `106..127` -> `184 + gpio`; `128..136` -> `151 + gpio`. These are inclusive ranges, verified against all 137 records.
 
+### Keyboard on the device (2026-11-01)
+
+| Item | Measured / found |
+|---|---|
+| Row read | irq-block raw state (`0x20033408` bank 0 bit 2 = row 7, `0x200334c8` bank 3 bits 0-5, 7 = rows 0-6), active low. The gpio IN regs do not see the rows. |
+| Column drive | OUT set/clr `0x20031994/98` (+0x10 bank 1); direction `0x200319f4` (in) / `0x200319f8` (out), write-1-to-set. Scan: idle columns as inputs, scanned column output low. Driving idle columns high breaks two keys on one row. |
+| Key positions | `ekeyb.dll` scan table (RAM `c8009a68`, idx row*8+col, Symbian scan codes) and physical layout table (`c8009aa8`, 5 x 20). Q..I r3c0-7, O P r7c0-1, A..K r2c0-7, L r6c0, Bksp r6c1, Z..M r1c0-6, `,` r1c7, `.` r5c0, Enter r5c1; fn-arrow r0c0, Shift r0c1, Sym r0c2, Space r0c3+r0c6, @ r0c7, ? r4c0, Ctrl r4c1; d-pad up r5c3, down r4c5, left r4c2, right r4c4, centre r4c3; softkeys r5c2/r5c4, menu r4c6, mail r5c5, call r5c6. |
+| Not in the matrix | End/power (PMIC). Ctrl is dead on the test phone. r0c4/r0c5 (scan codes 0xa2/0xa3) not identified. |
+
 ## USB, I2C, SPI, Bluetooth and storage
 
 USB uses the MUSB register layout at `P:0x20038800`: the firmware references byte registers `+0x00`, `+0x01`, `+0x02`, `+0x04`, `+0x06`, `+0x08`, `+0x0a`, `+0x0b`, `+0x0c`, `+0x0e`, `+0x0f`, endpoint index at `+0x0e`, FIFOs at `+0x20`, and `DEVCTL` at `+0x60`. Wrapper literals include `P:0x20038c04/08/0c/14`. The firmware has both `DUsbChargerDetectorIsp1702a` and `DUsbCableDetectorISAGazooHack` implementations; their presence does not prove which detector branch this board selects. Leave charging behavior separate from gadget-serial bring-up.
@@ -331,7 +340,6 @@ Remaining work is specific rather than a reason to rescan all words:
 - ~~reconcile the step 0 MIDR/RAM map with bootstrap bank records, reserve the actual modem/shared memory and choose an E5 ram console location~~ done, see "Measured on the device"
 - ~~follow initial arming and source/divider selection for the IRQ-35 tick~~ done (hardware periodic 1 kHz, measured)
 - resolve the selected display configuration, panel identity/geometry, pins, regulators, command sequence and framebuffer format
-- confirm the keyboard matrix direction/polarity, selected configuration and Linux keycode translation
 - follow MMC configuration for card-detect GPIO, IRQ, voltage resources and clock parent
 - verify the WLAN 1251 revision and module selection, SPI-2 setup and GPIO power/IRQ sequence
 - analyze the E5 EM/ISASW charging, temperature and audio paths independently (the secure watchdog is done, see "Measured on the device")
@@ -340,7 +348,7 @@ Remaining work is specific rather than a reason to rescan all words:
 
 After the step 0, start from the E5 RAM/IRQ/timer/watchdog findings above, then bring up a RAM log and USB gadget serial with display, charger, camera, WLAN and experimental secure calls disabled. SoC address matches are useful for reusing code, but the timer, keyboard and native display require E5-specific configuration or drivers. Keep internal flash read-only. Do not enable an unknown MMIO block in a daily device tree: an unpowered access can abort the CPU before a log is available.
 
-Status (2026-10-31): RAM log, USB gadget shell, timer, SoC/PMIC watchdogs and the PA_SWD bridge work on the device (`linux/boot/e5.dts`, `linux/kernel/build-e5.sh`, loader `e5bot3`). Linux can draw on the panel through RFBI (manual test). Next: an fbdev driver for the RFBI CPU path, then the keyboard.
+Status (2026-11-01): RAM log, USB gadget shell, timer, SoC/PMIC watchdogs and the PA_SWD bridge work on the device (`linux/boot/e5.dts`, `linux/kernel/build-e5.sh`, loader `e5bot3`). The display runs as fbdev + fbcon over the RFBI CPU path (`rapuyama-e5-fb.c`) and the keyboard as a polled matrix (`rapuyama-e5-keypad.c`) with console layers (`tools/e5-kmap.py`). Next: microSD (phase 7).
 
 ## Module address index
 
