@@ -162,6 +162,10 @@ screen_shell() {
 		n=$((n + 1))
 		sleep 1
 	done
+	# e5 keypad layers (sym, fn-arrow, sticky ctrl/alt): tools/e5-kmap.py
+	if [ -r /etc/$dev.kmap ]; then
+		loadkmap < /etc/$dev.kmap && log "keymap /etc/$dev.kmap loaded"
+	fi
 	log "shell on tty1 (screen + keypad)"
 	while true; do
 		clear > /dev/tty1

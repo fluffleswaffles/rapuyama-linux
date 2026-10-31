@@ -10,4 +10,6 @@ slink /bin/sh busybox 777 0 0
 file /init /home/dc/rapuyama-linux/linux/initramfs/init.sh 755 0 0
 file /sbin/init /home/dc/rapuyama-linux/linux/initramfs/init 755 0 0
 file /bin/e6sh /home/dc/rapuyama-linux/linux/initramfs/e6sh.sh 755 0 0
+dir /etc 755 0 0
+file /etc/e5.kmap /home/dc/rapuyama-linux/linux/initramfs/e5.kmap 644 0 0
 file /bin/keyscan /home/dc/rapuyama-linux/linux/initramfs/keyscan.sh 755 0 0

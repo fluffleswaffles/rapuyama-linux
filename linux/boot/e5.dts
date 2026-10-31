@@ -178,14 +178,17 @@
 			reg = <0x20031900 0x200>, <0x20033400 0x140>;
 			/* MATRIX_KEY(row,col,code) = row<<24 | col<<16 | code. positions from
 			 * ekeyb.dll: 64-byte scan table (c8009a68, idx row*8+col) checked
-			 * against its 5x20 physical-layout table (c8009aa8). bottom row
-			 * L->R: fn-arrow r0c0 (KEY_RIGHTALT), shift r0c1, sym r0c2 (KEY_TAB),
-			 * space r0c3+r0c6 (two contacts), @/ r0c7 (KEY_SLASH), ?! r4c0
-			 * (KEY_MINUS), ctrl r4c1. nav: lsk r5c2 (F1), rsk r5c4 (F2), menu
-			 * r4c6, mail r5c5, call r5c6 (KEY_PHONE), d-pad u r5c3 d r4c5
-			 * l r4c2 r r4c4, centre r4c3 (KEY_ENTER). end/power is not in the
-			 * matrix. r0c4/r0c5 (symbian 0xa2/0xa3) unmapped, key unknown */
-			linux,keymap = <0x03000010 0x03010011 0x03020012 0x03030013 0x03040014 0x03050015 0x03060016 0x03070017 0x07000018 0x07010019 0x0200001e 0x0201001f 0x02020020 0x02030021 0x02040022 0x02050023 0x02060024 0x02070025 0x06000026 0x0601000e 0x0100002c 0x0101002d 0x0102002e 0x0103002f 0x01040030 0x01050031 0x01060032 0x01070033 0x05000034 0x0501001c 0x00000064 0x0001002a 0x0002000f 0x00030039 0x00060039 0x00070035 0x0400000c 0x0401001d 0x0502003b 0x0504003c 0x0406008b 0x0505009b 0x050600a9 0x05030067 0x0405006c 0x04020069 0x0404006a 0x0403001c>;
+			 * against its 5x20 physical-layout table (c8009aa8). codes are < 128
+			 * (busybox loadkmap) and only name the keys: the layers (sym, fn-arrow,
+			 * sticky ctrl/alt) are in the console keymap /etc/e5.kmap from
+			 * tools/e5-kmap.py. bottom row L->R: fn-arrow r0c0 (RIGHTCTRL), shift
+			 * r0c1, sym r0c2 (RIGHTALT), space r0c3+r0c6, @/ r0c7 (GRAVE), ?! r4c0
+			 * (SLASH), ctrl r4c1 (dead on the test phone). nav: lsk r5c2 (ESC),
+			 * rsk r5c4 (LEFTMETA), menu r4c6 (LEFTALT), mail r5c5 (CAPSLOCK), call
+			 * r5c6 (TAB), d-pad u r5c3 d r4c5 l r4c2 r r4c4, centre r4c3 (ENTER).
+			 * end/power is not in the matrix. r0c4/r0c5 (symbian 0xa2/0xa3)
+			 * unmapped, key unknown */
+			linux,keymap = <0x03000010 0x03010011 0x03020012 0x03030013 0x03040014 0x03050015 0x03060016 0x03070017 0x07000018 0x07010019 0x0200001e 0x0201001f 0x02020020 0x02030021 0x02040022 0x02050023 0x02060024 0x02070025 0x06000026 0x0601000e 0x0100002c 0x0101002d 0x0102002e 0x0103002f 0x01040030 0x01050031 0x01060032 0x01070033 0x05000034 0x0501001c 0x00000061 0x0001002a 0x00020064 0x00030039 0x00060039 0x00070029 0x04000035 0x0401001d 0x05020001 0x0504007d 0x04060038 0x0505003a 0x0506000f 0x05030067 0x0405006c 0x04020069 0x0404006a 0x0403001c>;
 		};
 
 		/* pmic watchdog (cbus 0x20030700, dev 1 reg 0x17 = 0x30), soc counter
