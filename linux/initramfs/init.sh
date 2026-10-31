@@ -23,12 +23,16 @@ fi
 # /run lives on the card there, a stale seatd.sock would keep seatd from starting
 mount -t tmpfs run /run
 
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin HOME=/root TERM=vt100 PS1='e6:\w# '
+# device name from the dtb (e5.dts: "nokia,e5"); prompt, hostname and log
+# prefix follow it. the e6.* cmdline options keep their names on both phones
+dev=e6
+grep -q 'nokia,e5' /proc/device-tree/compatible 2>/dev/null && dev=e5
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin HOME=/root TERM=vt100 PS1="$dev:\\w# "
 # busybox line editing only does utf-8 (cyrillic in weston-terminal) with this
 export LANG=C.UTF-8
-hostname e6
+hostname $dev
 
-log() { echo "e6: $*" > /dev/kmsg; }
+log() { echo "$dev: $*" > /dev/kmsg; }
 
 # the "alive" heartbeat is written by the kernel straight into ramcon now
 # (mach-rapuyama, every 10 s), so it no longer floods the console

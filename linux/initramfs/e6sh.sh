@@ -9,5 +9,5 @@ while IFS= read -r l; do
 	[ -z "$l" ] && break
 done
 stty echo
-echo "e6: shell. kernel log: dmesg (-w to follow)"
+echo "$(hostname): shell. kernel log: dmesg (-w to follow)"
 exec sh
