@@ -41,6 +41,14 @@ Symbian-mapped RAM windows (all below Linux RAM or inside the reserved top): `V:
 
 **Framebuffer (alias only).** HAL `EDisplayMemoryAddress` = `V:0xce700000`, stride 4096 bytes, 32 bpp. The page tables map it to `P:0x9c000000`, 640 pages (2.5 MB) = VRFB context 3, view 0. This is a rotation alias, not the framebuffer RAM. The backing RAM and the VRFB/SMS configuration registers that point at it have not been found. Do not write to `0x9c000000` from Linux before then: access to an unconfigured context may fault.
 
+**Display hardware (static `d_display.ldd` + registers read from Linux after the handoff + a write test).** The display subsystem has the TI OMAP2 DSS register layout: DISPC at `P:0x20024800`, RFBI at `P:0x20025800`. The panel is command-mode, has its own frame memory and takes MIPI DCS commands over an 8-bit RFBI bus. After the handoff it keeps Symbian's last image, with the backlight on, for as long as Linux runs.
+
+- RFBI: SYSSTATUS `+0x14` bit 8 = busy (polled before every access, `0x80181d5c`), CONTROL `+0x40`, PIXEL_CNT `+0x44`, **CMD `+0x4c`**, **PARAM `+0x50`** (one byte per write), READ `+0x58`, CONFIG0/1 `+0x60`/`+0x78` with timing at `+0x64..+0x74` / `+0x7c..+0x8c`. Live: CONTROL `0x4`, CONFIG0 `0x00100460`, DATA_CYCLE1..3 = 8/8/8 (RGB888 in three bus cycles), SYSSTATUS 0.
+- DCS commands used by the firmware: `0x11`, `0x29`, `0x2a` CASET, `0x2b` PASET, `0x2c` RAMWR, `0x2e`, `0x36`, `0x3a` (parameter 5 or 7), `0x34`/`0x35`, `0x26`, `0x51`, `0x55`, vendor `0xb0`/`0xb1`/`0xba`/`0xde`. The panel model is not identified.
+- CPU pixel path (`0x801820a8`): set the window (PASET y..y+h-1, then CASET x..x+w-1, 16-bit parameters high byte first; `0x8017e59c`), RAMWR, then R, G, B bytes per pixel to PARAM. DMA path (`0x80180498`): DISPC GFX_BA0 for the rectangle, window, RAMWR, RFBI CONTROL `|= 0x11`.
+- DISPC live: CONTROL `0x8b08` (TFT, 24 data lines, stall mode for RFBI), GFX_BA0 `0x18006e04` = Symbian framebuffer `P:0x18000000` (320x240, 32 bpp format 8, stride 1280) + the offset of the last partial update (318x196 at 1,22). That RAM is inside Linux RAM after the handoff; the panel does not need it.
+- Write test from the Linux shell (busybox `devmem`, 2026-10-31): PASET 0..19, CASET 0..19, RAMWR, 400 x {`0xff`,0,0} drew a red 20x20 square at the top left. So the byte order is R,G,B, x = CASET, y = PASET, origin top left in the orientation Symbian left, offsets apparently 0.
+
 **System tick (IRQ 35)**
 
 `P:0x200401a4` is a down counter at about 7.68 MHz (measured 7.66 MHz +-5 %, best fit 38.4 MHz / 5) that reloads from `0x1e00` = 7680, which gives exactly 1 kHz. No code in the ROM writes a period: the tick is hardware periodic. `P:0x200401a8` is the same counter as a 32-bit value. `P:0x20033620` is a separate free-running down counter at about 8.1 kHz (probably 32768 / 4), not used.
@@ -332,7 +340,7 @@ Remaining work is specific rather than a reason to rescan all words:
 
 After the step 0, start from the E5 RAM/IRQ/timer/watchdog findings above, then bring up a RAM log and USB gadget serial with display, charger, camera, WLAN and experimental secure calls disabled. SoC address matches are useful for reusing code, but the timer, keyboard and native display require E5-specific configuration or drivers. Keep internal flash read-only. Do not enable an unknown MMIO block in a daily device tree: an unpowered access can abort the CPU before a log is available.
 
-Status (2026-10-31): RAM log, USB gadget shell, timer, SoC/PMIC watchdogs and the PA_SWD bridge work on the device (`linux/boot/e5.dts`, `linux/kernel/build-e5.sh`, loader `e5bot3`). Next: keyboard and native display.
+Status (2026-10-31): RAM log, USB gadget shell, timer, SoC/PMIC watchdogs and the PA_SWD bridge work on the device (`linux/boot/e5.dts`, `linux/kernel/build-e5.sh`, loader `e5bot3`). Linux can draw on the panel through RFBI (manual test). Next: an fbdev driver for the RFBI CPU path, then the keyboard.
 
 ## Module address index
 
