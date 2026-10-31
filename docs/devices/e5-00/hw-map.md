@@ -9,15 +9,62 @@ This is a map of the hardware described and used by this firmware, with ROM addr
 | Part | E5-00 finding | Porting consequence |
 | --- | --- | --- |
 | SoC family | RAPU baseport: `karap.dll`, `egpio.dll`, `base_rapu` paths and apertures matching the E6 rapuyama port | Candidate for reusing SoC support; exact ASIC/revision still comes from step 0 |
-| System tick | IRQ 35, handler `0x8009d778`, register `0x200401c4` | **DO NOT** copy the E6 IRQ 242 / `0x200337a0` clockevent configuration |
+| System tick | IRQ 35, handler `0x8009d778`, register `0x200401c4`; measured: hardware periodic 1 ms, reload `0x1e00` (see "Measured on the device") | **DO NOT** copy the E6 IRQ 242 / `0x200337a0` clockevent configuration; use `timer-rapuyama-e5.c` |
 | Display | `d_display.ldd` directly drives on-chip graphics | The E6 VideoCore boot/VCHI/DISP path does not describe this firmware's display path |
 | Keyboard | ROM default is an **8 x 8 GPIO matrix** in `ekeyb.dll` | The E6 TC3589x expander driver and its I2C address do not apply |
 | Mass storage | `mednand.pdd` and one MMC controller in `EPBUSMV.DLL` | Do not assume the E6 internal eMMC / second MMC controller arrangement |
-| Secure watchdog | Very much different to E6's. Do not assume it works the same, better double check yourself. | Do not enable the E6 PA_SWD bridge with E6 addresses |
+| Secure watchdog | Same PA_SWD service as the E6 (command `0x1f`, timeout 240 s, re-armed at 210 s), but at different ISASW addresses and with a different task-table layout (see "Measured on the device") | Do not enable the E6 PA_SWD bridge with E6 addresses; the bridge's `nokia,e5` entry has the E5 values and works on hardware |
 
 The firmware itself names `Rapu_Display` (`0x8018379c`), `Rapu_GDMASS` (`0x800b3ac8`), `DUsbRapuIf` and `base_rapu\assp\rapu` paths. 
 
 The ROM contains no `unsigned_2727b1.dll`, `vcdriver.dll`, `vchi.dll` or `vcdispman*.dll` directory entries. Together with the native display driver's actual register accesses, this establishes a different software display architecture. Probably a new GPU driver needed for the lack of Broadcom
+
+## Measured on the device (2026-10-30/31)
+
+Everything else in this file is static ROM analysis. The facts below were read on a live RM-632 (101.003) with read-only Symbian probes, or observed from Linux booted on it. Raw logs are kept outside the repo.
+
+**CPU and memory**
+
+| Item | Result |
+| --- | --- |
+| CPU | MIDR `0x410fb764` = ARM1176 r0p4; CTR `0x1d992992` (32 KB I/D, 4-way, 32 B lines) |
+| Outer cache | L2C-220 at `P:0x20500000` (Symbian `V:0xc6e00000`), CACHE_ID `0x41000486`, aux `0x02050249`, 8 ways, 256 KB (read by Linux) |
+| MMU under Symbian | TTBCR 1, TTBR1 `0x10000018` (kernel L1 at `P:0x10000000`) |
+| RAM | one bank, `P:0x10000000`, 256 MB (bootstrap bank list at `P:0x30003820`) |
+| ROM copy in RAM | unpaged ROM `ROM:0x80000000..0x807da000` -> `P:0x10900000..0x110da000` |
+| Symbian top structures | superpage `P:0x1fd00000` (`V:0xc0000000`); `P:0x1fb60000..0x1fcdffff` in use, unidentified; keep `P:0x1fb60000..0x20000000` away from Linux |
+| Free for Linux | from the loader's block (it started at `0x15200000`..`0x15600000` in the runs so far) up to `0x1fb5ffff`; RAM console at `P:0x1f000000` (1 MB) survives a warm reset |
+
+Symbian-mapped RAM windows (all below Linux RAM or inside the reserved top): `V:0xc6300000` -> `P:0x10480000` (3.7 MB, ISASW modem code, 64 KB large pages), `V:0xc6800000` -> `P:0x1fd50000` (2.5 MB, ISASW data), `V:0xc6b00000` -> `P:0x1ffe0000` (64 KB, secure message pool), `V:0xc60f0000` -> `P:0x100ec000` (8 KB). The ISASW L2 tables are at `P:0x100eb000..0x100eefff`. The peripheral window `V:0xc6000000..0xc7000000` matches the "Bootstrap physical mappings" and "Module address index" tables.
+
+`P:0x90000000..0xb0000000` is not RAM: it is the VRFB window range used by `d_display.ldd` (see "Display").
+
+**Framebuffer (alias only).** HAL `EDisplayMemoryAddress` = `V:0xce700000`, stride 4096 bytes, 32 bpp. The page tables map it to `P:0x9c000000`, 640 pages (2.5 MB) = VRFB context 3, view 0. This is a rotation alias, not the framebuffer RAM. The backing RAM and the VRFB/SMS configuration registers that point at it have not been found. Do not write to `0x9c000000` from Linux before then: access to an unconfigured context may fault.
+
+**System tick (IRQ 35)**
+
+`P:0x200401a4` is a down counter at about 7.68 MHz (measured 7.66 MHz +-5 %, best fit 38.4 MHz / 5) that reloads from `0x1e00` = 7680, which gives exactly 1 kHz. No code in the ROM writes a period: the tick is hardware periodic. `P:0x200401a8` is the same counter as a 32-bit value. `P:0x20033620` is a separate free-running down counter at about 8.1 kHz (probably 32768 / 4), not used.
+
+Confirmed from Linux (`timer-rapuyama-e5.c`): writing `0x1e00` to `P:0x200401c4` after it reads zero acks IRQ 35, the level-only intc handling is correct, and the measured rate is 10000 interrupts per 10 s. Symbian's block init (`0x20033600`/`0x20040180` +4/+8) is still in place at the handoff, so Linux does not repeat it.
+
+**Watchdogs**
+
+- SoC + PMIC (`rapuyama-wdt`, CBUS reg `0x17`, `P:0x200336c4`): work unchanged from the E6 driver (48 s PMIC countdown, no failed kicks).
+- **PA_SWD secure watchdog**: the ISASW service resets the phone 240 s after the last service call unless it is renewed. Symbian renews it every 210 s on its own clock, so Linux died 64..150 s after the handoff depending on when it was started. Four timed runs fit "last Symbian service + 240 s". With the bridge below, Linux stays up (run 5: calls at 6, 218, 431, 644 s, each `transport 1 result 1 timeout 240`).
+
+PA_SWD on this firmware (ISASW VA = `0xc6300000` + offset in the `P:0x10480000` code, `0xc6800000` + offset in the `P:0x1fd50000` data):
+
+| Item | E5 value | E6 (111.140.0058) for comparison |
+| --- | --- | --- |
+| Re-arming wrapper | `0xc6361988`, entered through `0xc6361a32` from the ISASW timer/event machinery (no static pointer) | entered through timer event 9 |
+| Transport ("pet") call, command `0x1f` | `0xc636a2ee` (Thumb, prologue `0x4605b5fe`) | `0xc6262b38` |
+| Message alloc / free | `0xc6369442` / `0xc636933c` (prologues `0x4605b570` / `0x4606b5f8`) | same prologue words |
+| Token / timer handle | `0xc6830fc2`: handle `0x33`, token 240 at `0xc6830fc4` | handle `0x31`, 240 |
+| Response | `{status u32, timeout u16, next token u16}`; re-arm after `(timeout - 30)` s | same |
+| Borrowed stack | ISASW task `0x1d` (20-byte task records from `0xc6835d44`, sp word `0xc6835f74`) | task `0x1e` (24-byte records) |
+| Secure message pool | `0xc6b00020..0xc6b07ff4` = `P:0x1ffe0020..` | |
+
+Unlike what the E6 notes recorded, the call path leaves ISASW memory: it uses Symbian's software page-table walk (host table `V:0xc80088f4`, ROM `0x800a03f0`), the protected-application table at `*(0xc6831104)` (PA_SWD is record 4, image offset `0x32b0`, length `0x23d0`), and the INTC (`P:0x20400000` +`0x54`/`0x58`/`0x88`/`0x8c`) and `P:0x20030300` around the `smc #0`. All of these pages were below Linux RAM in run 5. The kernel's `rapuyama_swd_reserve()` reserves any of them that land inside Linux RAM, and refuses to arm the bridge if one is unmapped or under the kernel image. It needs the v2 handoff block saved by the `e5bot3` loader (CP15 state, the TTBR1 L1 and the ISASW L2 tables, at `P:0x1f0f1000`).
 
 ## Address conventions
 
@@ -173,7 +220,7 @@ MMC interrupt binding at `0x8013e990` takes a configuration-supplied number.  An
 
 `NKern::FastCounterFrequency` at `ROM:0x8006b1dc` returns the immediate 32768. `NKern::FastCounter` at `0x80065874` uses the latch/read pair `V:0xc6033354` / `V:0xc6033350`, giving physical `0x20033354` / `0x20033350`. 
 
-**The E5 millisecond tick is a different path from E6.** `0x8009d914..0x8009d91c` binds IRQ 35 to `0x8009d778` with the timer queue pointer. That handler reads `V:0xc60401c4` until zero, writes **`0x1e00`**, then tail-calls `NTimerQ::Tick` through thunk `0x800a08c0` -> kernel `0x8006525c`. Do not infer a 38.4 MHz timer clock from the reload value: the source clock/divider and initial arming path need to be followed before implementing an E5 clockevent. The helper at `0x8009d198` returning `0x9600` is not sufficient evidence to use the E6 timer.
+**The E5 millisecond tick is a different path from E6.** `0x8009d914..0x8009d91c` binds IRQ 35 to `0x8009d778` with the timer queue pointer. That handler reads `V:0xc60401c4` until zero, writes **`0x1e00`**, then tail-calls `NTimerQ::Tick` through thunk `0x800a08c0` -> kernel `0x8006525c`. The rate cannot be inferred from the reload value alone; it was measured on the device (about 7.68 MHz, 1 kHz period, see "Measured on the device"). The helper at `0x8009d198` returning `0x9600` has no callers and is not evidence for the E6 timer.
 
 PLL bases are a four-word table at `0x800a3bb4`: `V:0xc6032604`, `0xc6032624`, `0xc6032664`, `0xc6032644` in that order. Clock-source decoding is in `karap:0x8009cf8c`; board PLL programming is in `ecust`, with gates/selectors in `power_resources.dll`. A matching register address does not establish a matching clock rate or a valid enable sequence. Preserve the handed-off clock state until the relevant E5 sequence is understood.
 
@@ -209,7 +256,7 @@ The native stack is `EDISP.DLL` / `r_display_kernel.dll` / **`d_display.ldd`**. 
 | `0x20025890` | Literal `0x80180aec` | Bus timing/configuration path |
 | `0x08000180..0x080001f8` | Tables at `0x8017c800`, `0x80182614`, `0x80182cd8` | External-bank configuration used by display |
 
-`0x80179054` binds graphics IRQ 146. A framebuffer is allocated dynamically: the diagnostic at `0x80166050` is "Cannot allocate physical RAM for DMA and front buffer". There is no statically established physical framebuffer address to put into `simplefb`. Copying E6 framebuffer guesses, its 640x480 geometry, or its VideoCore firmware blobs would be wrong.
+`0x80179054` binds graphics IRQ 146. A framebuffer is allocated dynamically: the diagnostic at `0x80166050` is "Cannot allocate physical RAM for DMA and front buffer". (The live phone shows Symbian's front buffer through a VRFB alias at `P:0x9c000000`, see "Measured on the device"; the RAM behind it is still unknown.) There is no statically established physical framebuffer address to put into `simplefb`. Copying E6 framebuffer guesses, its 640x480 geometry, or its VideoCore firmware blobs would be wrong.
 
 The display ROM defaults include **320 x 240** at `ROM:0x80182d54` / `0x80182d58` code at `0x8016a13c..0x8016a15c` copies those values into `V:0xc8009ee8` / `+4`, with additional users throughout the driver. The panel-specific initialization, selected geometry/orientation, reset pin and power sequencing remain tied to display configuration records and driver branches. The register map alone is not a complete panel initialization sequence. Preserve the original display during early bring-up
 A a native graphics/RFBI driver needs the selected E5 configuration and complete command sequence.
@@ -273,17 +320,19 @@ The ROM contains `ISA_KERNEL_IF.dll`, `isaaccessldd.ldd`, `isaaccessextension.dl
 
 Remaining work is specific rather than a reason to rescan all words:
 
-- reconcile the step 0 MIDR/RAM map with bootstrap bank records, reserve the actual modem/shared memory and choose an E5 ram console location
-- follow initial arming and source/divider selection for the IRQ-35 tick
+- ~~reconcile the step 0 MIDR/RAM map with bootstrap bank records, reserve the actual modem/shared memory and choose an E5 ram console location~~ done, see "Measured on the device"
+- ~~follow initial arming and source/divider selection for the IRQ-35 tick~~ done (hardware periodic 1 kHz, measured)
 - resolve the selected display configuration, panel identity/geometry, pins, regulators, command sequence and framebuffer format
 - confirm the keyboard matrix direction/polarity, selected configuration and Linux keycode translation
 - follow MMC configuration for card-detect GPIO, IRQ, voltage resources and clock parent
 - verify the WLAN 1251 revision and module selection, SPI-2 setup and GPIO power/IRQ sequence
-- analyze the E5 EM/ISASW charging, temperature, audio and secure-watchdog paths independently
+- analyze the E5 EM/ISASW charging, temperature and audio paths independently (the secure watchdog is done, see "Measured on the device")
 
 ## Porting order
 
 After the step 0, start from the E5 RAM/IRQ/timer/watchdog findings above, then bring up a RAM log and USB gadget serial with display, charger, camera, WLAN and experimental secure calls disabled. SoC address matches are useful for reusing code, but the timer, keyboard and native display require E5-specific configuration or drivers. Keep internal flash read-only. Do not enable an unknown MMIO block in a daily device tree: an unpowered access can abort the CPU before a log is available.
+
+Status (2026-10-31): RAM log, USB gadget shell, timer, SoC/PMIC watchdogs and the PA_SWD bridge work on the device (`linux/boot/e5.dts`, `linux/kernel/build-e5.sh`, loader `e5bot3`). Next: keyboard and native display.
 
 ## Module address index
 
