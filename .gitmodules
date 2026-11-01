@@ -41,7 +41,7 @@
 [submodule "linux/kernel/linux"]
 	path = linux/kernel/linux
 	url = git@github.com:fluffleswaffles/linux.git
-	branch = e6
+	branch = e5
 	shallow = true
 [submodule "linux/yamashell"]
 	path = linux/yamashell
