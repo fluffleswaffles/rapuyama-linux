@@ -30,3 +30,5 @@ build/
 /driver/stage/
 *.pyc
 out/
+/driver/stage-e5/
+/driver/build-e5/
