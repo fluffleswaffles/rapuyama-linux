@@ -279,7 +279,13 @@ GLDEF_C TInt E32Main(){
 #endif
 	TBuf<48> m;
 	m.Format(_L("ram %08x, kernel %d kb"), phys, zsz>>10);
-	User::After(5000000); if(0){
+#if defined(RB_E5) || defined(RB_AUTOBOOT)
+	// no Boot/Cancel dialog: boot after 5 s (the E5 has no RNotifier here)
+	User::After(5000000);
+	if(0){
+#else
+	if(Ask(m, _L("boot linux?"), _L("Boot"), _L("Cancel"))!=0){
+#endif
 		L(_L8("cancelled\n"));
 		dev.Close(); gLog.Close(); FSCLOSE();
 		return KErrCancel;
