@@ -28,7 +28,7 @@ COMMON=(
   -nostdinc -fno-exceptions -fno-rtti -fshort-wchar -fno-unit-at-a-time -O2
   -D__SYMBIAN32__ -D__GCCE__ -D__EABI__ -D__MARM__ -D__MARM_ARMV5__ -D__MARM_ARMV6__
   -D__EPOC32__ -D__GCC32__ -D__SUPPORT_CPP_EXCEPTIONS__ -D__GCCV3__ -D__PRODUCT_INCLUDE__='<variant_dummy.h>'
-  -include gcce.h -include "$HERE/gcce_post.h"
+  -include gcce.h -include "$HERE/gcce_post.h" ${RB_DEFS:-}
   "${INC[@]}"
 )
 # pulls __PRODUCT_INCLUDE__: empty dummy on the include path

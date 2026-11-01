@@ -19,7 +19,11 @@ static TInt WriteFile(const TDesC& aName, const TDesC8& aData){
 		RFile f;
 		r=f.Replace(fs, aName, EFileWrite);
 		if(r==KErrNone){r=f.Write(aData);f.Close();}
+#ifdef RB_E5
 		fs.RSessionBase::Close(); // RFs::Close is not exported by the 9.3 efsrv
+#else
+		fs.Close();
+#endif
 		return r;
 	}
 
