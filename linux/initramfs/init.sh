@@ -109,7 +109,7 @@ usb_state() {
 # phone keeps running (display console) and the shell appears once a pc
 # enumerates us
 usb_shell() {
-	# g_serial is built in, it binds as soon as the musb udc shows up
+	# g_serial (E5: g_cdc) is built in, it binds as soon as the musb udc shows up
 	n=0
 	while [ ! -c /dev/ttyGS0 ]; do
 		n=$((n + 1))
@@ -141,6 +141,24 @@ usb_shell() {
 		fi
 		sleep 1
 	done
+}
+
+# E5: usb ethernet (g_cdc ecm = usb0), dhcp from the pc (NetworkManager
+# "shared" = dhcp + dns + nat). udhcpc keeps retrying in the background
+usb_net() {
+	n=0
+	while [ ! -e /sys/class/net/usb0 ] && [ "$n" -lt 20 ]; do
+		n=$((n + 1))
+		sleep 1
+	done
+	if [ ! -e /sys/class/net/usb0 ]; then
+		log "no usb0 after 20 s, no usb network"
+		return
+	fi
+	ifconfig lo 127.0.0.1 up
+	ifconfig usb0 up
+	log "usb0 up ($(cat /sys/class/net/usb0/address)), dhcp in the background"
+	udhcpc -i usb0 -b -S -t 5 -T 3 -A 10 -s /bin/e5-dhcp > /dev/null 2>&1
 }
 
 fb_test() {
@@ -236,6 +254,7 @@ gui() {
 
 if grep -q e6.usbsh /proc/cmdline; then
 	usb_shell &
+	[ "$dev" = e5 ] && [ -x /bin/e5-dhcp ] && usb_net &
 	# after the test pattern, else the pattern lands on top of the shell.
 	# e6.nogui on the cmdline = straight to the screen shell
 	{

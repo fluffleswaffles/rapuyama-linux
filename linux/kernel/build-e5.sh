@@ -29,6 +29,7 @@ file /bin/e6sh $I/e6sh.sh 755 0 0
 dir /etc 755 0 0
 file /etc/e5.kmap $I/e5.kmap 644 0 0
 file /bin/keyscan $I/keyscan.sh 755 0 0
+file /bin/e5-dhcp $I/e5-dhcp.sh 755 0 0
 LIST
 	"$KSRC/scripts/config" --file "$KOUT/.config" --set-str INITRAMFS_SOURCE "$KOUT/initramfs.list"
 }
@@ -44,6 +45,10 @@ config() {
 	for o in FONT_MINI_4x6 FONT_6x8 FONT_6x10 FONT_6x11 FONT_7x14 FONT_10x18; do $S --keep-case -e "$o"; done
 	# phase 5 keyboard: polled matrix
 	for o in INPUT_KEYBOARD KEYBOARD_RAPUYAMA_E5; do $S -e "$o"; done
+	# usb: g_cdc (acm serial = ttyGS0 as before + cdc ecm ethernet = usb0)
+	# instead of the plain g_serial. only one built-in gadget can bind
+	for o in USB_G_SERIAL USB_ETH; do $S -d "$o"; done
+	$S -e USB_CDC_COMPOSITE
 	initramfs_list
 	"${MAKE[@]}" olddefconfig
 }

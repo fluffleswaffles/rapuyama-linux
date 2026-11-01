@@ -43,7 +43,7 @@
 		 * v2 isah block of e5bot3)
 		 * e6.root: btrfs rootfs on the card's p2 (tools/sdroot.sh ... e5);
 		 * no p2 = init.sh stays in the initramfs after a 10 s wait */
-		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=1 e6.root=/dev/mmcblk0p2";
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=1 e6.root=/dev/mmcblk0p2 g_cdc.host_addr=02:e5:00:00:00:01 g_cdc.dev_addr=02:e5:00:00:00:02";
 	};
 
 	cpus {
