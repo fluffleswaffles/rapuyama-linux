@@ -176,7 +176,12 @@ screen_shell() {
 	log "shell on tty1 (screen + keypad)"
 	while true; do
 		clear > /dev/tty1
-		setsid cttyhack sh < /dev/tty1 > /dev/tty1 2>&1
+		# E5: fbcon is a linux console (colours in htop/nano), not a vt100
+		if [ "$dev" = e5 ]; then
+			TERM=linux setsid cttyhack sh < /dev/tty1 > /dev/tty1 2>&1
+		else
+			setsid cttyhack sh < /dev/tty1 > /dev/tty1 2>&1
+		fi
 		sleep 1
 	done
 }
