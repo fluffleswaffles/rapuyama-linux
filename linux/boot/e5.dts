@@ -1,20 +1,22 @@
 /dts-v1/;
 
-/* device tree for the nokia e5-00 (RM-632, fw 101.003): first boot to a usb
- * shell + ram log. FIRST DRAFT, UNTESTED ON THE PHONE: the E5 system tick is a different
- * block from the E6 (see the timer node), it has its own clockevent driver
- * (timer-rapuyama-e5.c, compiles, never run). everything below was
- * checked against the E5 ROM dump and the live phone (docs/devices/e5-00/
- * hw-map.md, ~/e5/HANDOFF.md, plan section 7.5); the E6 values that were NOT
- * confirmed on the E5 are left out instead of copied:
+/* device tree for the nokia e5-00 (RM-632, fw 101.003), loader e5bot3.
+ * tested on the phone: boots to the usb shell + ram log, the E5 system
+ * tick (timer-rapuyama-e5.c, see the timer node: a different block from
+ * the E6), soc/pmic watchdogs, the PA_SWD bridge (e6.swd), e6.lowmem, the
+ * display as fbdev + fbcon and the keyboard. everything below was checked
+ * against the E5 ROM dump and the live phone (docs/devices/e5-00/
+ * hw-map.md); the E6 values that were NOT confirmed on the E5 are left out
+ * instead of copied:
  *   - no clock gate controller (cgc): its gate table is from the E6
  *     power_resources.dll, blind writes to it are what killed E6 phones
- *   - no i2c0 / keypad / touch / charger / battery / modem link: E6 chips
- *   - no mmc, no bt uart: the card slot is mmc@20032800 (phase 7), both need
- *     clock gates; the E5 keyboard is a gpio matrix (phase 5)
- *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push, D3); dispc and
+ *   - no i2c0 / touch / charger / battery / modem link: E6 chips
+ *   - no mmc, no bt uart: the card slot is mmc@20032800 (next), both need
+ *     clock gates
+ *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push); dispc and
  *     vrfb are not touched
- *   - keyboard: keypad node, polled (rapuyama-e5-keypad.c), no gpio node
+ *   - keyboard: 8x8 gpio matrix, keypad node, polled
+ *     (rapuyama-e5-keypad.c), no gpio node
  * standalone on purpose (does not include e6.dts) so the E6 trees stay
  * untouched. boot with the usb cable plugged in so symbian leaves the usb
  * block powered
