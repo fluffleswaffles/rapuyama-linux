@@ -1,8 +1,10 @@
 # Nokia E5-00 (RM-632) port
 
+This is the `e5-port` branch. The original E6 project README is [README.md](../README.md).
+
 This is a port of rapuyama-linux to the Nokia E5-00, firmware 101.003 (Symbian 9.3). The E5 has the same RapuYama SoC as the E6. It differs in the timer, display, keyboard and secure-watchdog addresses, so it gets its own loader build, device tree and drivers. The E6 files and build defaults are left unchanged.
 
-The hardware facts and on-device measurements are in [hw-map.md](hw-map.md).
+The hardware facts and on-device measurements are in [docs/devices/e5-00/hw-map.md](../docs/devices/e5-00/hw-map.md).
 
 ## Status
 
@@ -35,7 +37,7 @@ Not done yet: microSD (one MMC controller at `0x20032800`, IRQ 173), charging, a
 
 ## Build
 
-Set up the toolchain, submodules and `work/dl/busybox-armv5l` first, as for the E6 (see the [main README](../../../README.md)).
+Set up the toolchain, submodules and `work/dl/busybox-armv5l` first, as for the E6 (see the [main README](../README.md)).
 
 The 9.3 kernel lacks two `DObject` virtuals that the ^3 headers declare, so the E5 builds use their own header tree:
 
