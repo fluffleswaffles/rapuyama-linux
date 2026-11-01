@@ -29,10 +29,14 @@
 
 	chosen {
 		/* clk_ignore_unused/pd_ignore_unused: nothing here owns the gates,
-		 * symbian's state must stay. no e6.lowmem (E6 loader layout).
+		 * symbian's state must stay.
+		 * e6.lowmem: ram 0x11600000..loader block back, symbian-mapped pages
+		 * stay reserved (+~27 MB, runs L1/L2 2026-11-01: lowwatch 20 passes
+		 * 0 pages changed). first suspect for random crashes / corruption:
+		 * boot a dtb without it.
 		 * e6.swd: PA_SWD 0x1f bridge, E5 entry in secure_wdt.c (needs the
 		 * v2 isah block of e5bot3) */
-		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1";
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 panic=10 nohlt clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=1";
 	};
 
 	cpus {
