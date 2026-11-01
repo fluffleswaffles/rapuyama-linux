@@ -19,8 +19,11 @@ Tested on the phone:
 | Memory | `e6.lowmem=1` gives back the RAM below the loader block (about 178 MB total) |
 | Display | 320x240 fbdev + fbcon over RFBI, CPU path (`rapuyama-e5-fb.c`) |
 | Keyboard | Polled 8x8 matrix (`rapuyama-e5-keypad.c`). Console layers for sym, fn and sticky ctrl/alt (`tools/e5-kmap.py` -> `linux/initramfs/e5.kmap`) |
+| microSD | MMC controller `0x20032800`, IRQ 173, clock gates through the E6 `cgc` driver (the E5 gate table is the same). PIO, about 5 MB/s |
+| Rootfs | Alpine armhf on the card's second partition (btrfs, `e6.root=/dev/mmcblk0p2`): apk, nano, tmux, htop, python3, git, ssh, 1 GiB swapfile. Without it the phone stays in the initramfs |
+| Fonts | `font list / set / next` switches the console font (kbd + Terminus, e.g. `ter-112n` = 53x20). Built-in kernel fonts for `fbcon=font:` in the dtb |
 
-Not done yet: microSD (one MMC controller at `0x20032800`, IRQ 173), charging, audio, WLAN, modem. Ctrl doesn't work on the test phone because its key contact is dead.
+Not done yet: networking, charging, audio, WLAN, modem. Ctrl doesn't work on the test phone because its key contact is dead.
 
 ## Files
 
@@ -61,6 +64,10 @@ Kernel and dtb:
 ```sh
 linux/kernel/build-e5.sh          # -> linux/kernel/build-e5/arch/arm/boot/Image, build-e5/e5.dtb
 ```
+
+## SD card rootfs
+
+`tools/sdroot.sh /dev/sdX e5` **erases the whole card** (back up E: first). It makes p1 FAT32 2 GiB (Symbian's E:, still mounted by Symbian) and p2 btrfs with Alpine plus the E5 initramfs files. It needs a finished `linux/kernel/build-e5.sh` (for `build-e5/initramfs.list`). Then copy `Image` and `e5.dtb` to p1.
 
 ## Boot
 
