@@ -4,15 +4,17 @@
  * tested on the phone: boots to the usb shell + ram log, the E5 system
  * tick (timer-rapuyama-e5.c, see the timer node: a different block from
  * the E6), soc/pmic watchdogs, the PA_SWD bridge (e6.swd), e6.lowmem, the
- * display as fbdev + fbcon and the keyboard. everything below was checked
+ * display as fbdev + fbcon, the keyboard and the microSD slot (read-only
+ * mount, sha1 of a 16 MB file ok, 5 MB/s pio). everything below was checked
  * against the E5 ROM dump and the live phone (docs/devices/e5-00/
  * hw-map.md); the E6 values that were NOT confirmed on the E5 are left out
  * instead of copied:
- *   - no clock gate controller (cgc): its gate table is from the E6
- *     power_resources.dll, blind writes to it are what killed E6 phones
+ *   - clock gate controller (cgc): the E5 power_resources gate table
+ *     0x06..0x2c equals the E6 one in clk-rapuyama.c (plan 7.17); only the
+ *     mmc uses it (+ the two critical resources the driver turns on)
+ *   - mmc@20032800 = the card slot
  *   - no i2c0 / touch / charger / battery / modem link: E6 chips
- *   - no mmc, no bt uart: the card slot is mmc@20032800 (next), both need
- *     clock gates
+ *   - no bt uart
  *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push); dispc and
  *     vrfb are not touched
  *   - keyboard: 8x8 gpio matrix, keypad node, polled
@@ -102,6 +104,20 @@
 			compatible = "fixed-clock";
 			#clock-cells = <0>;
 			clock-frequency = <32768>;
+		};
+		/* nominal parent of the cgc gates (E6: i2c_fclk 24 MHz); no E5
+		 * driver uses a gate's rate */
+		cgc_ref: cgc-ref {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <24000000>;
+		};
+		/* mmc functional clock: EPBUSMV rate getter 0x8013eb98 returns
+		 * 96000 kHz (plan 7.17) */
+		mmc_fclk: mmc-fclk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <96000000>;
 		};
 	};
 
@@ -195,6 +211,37 @@
 			 * end/power is not in the matrix. r0c4/r0c5 (symbian 0xa2/0xa3)
 			 * unmapped, key unknown */
 			linux,keymap = <0x03000010 0x03010011 0x03020012 0x03030013 0x03040014 0x03050015 0x03060016 0x03070017 0x07000018 0x07010019 0x0200001e 0x0201001f 0x02020020 0x02030021 0x02040022 0x02050023 0x02060024 0x02070025 0x06000026 0x0601000e 0x0100002c 0x0101002d 0x0102002e 0x0103002f 0x01040030 0x01050031 0x01060032 0x01070033 0x05000034 0x0501001c 0x00000061 0x0001002a 0x00020064 0x00030039 0x00060039 0x00070029 0x04000035 0x0401001d 0x05020001 0x0504007d 0x04060038 0x0505003a 0x0506000f 0x05030067 0x0405006c 0x04020069 0x0404006a 0x0403001c>;
+		};
+
+		/* clock gates, clk-rapuyama.c. probe turns on the critical resources
+		 * 0x11 (gates 0x07, 0x12) and 0x1f (gate 0x22): set-bit writes only,
+		 * same regs/bits as the E5 firmware. nothing else is written until a
+		 * driver enables its clock */
+		cgc: clock-controller@20032f00 {
+			compatible = "nokia,rapuyama-cgc";
+			reg = <0x20032f00 0x300>;
+			clocks = <&cgc_ref>;
+			#clock-cells = <1>;
+		};
+
+		/* microSD, EPBUSMV.DLL (plan 7.17): one TI OMAP2420 style controller,
+		 * irq 173 (table 0x801449c0), power resource 0x23 (E5 name
+		 * EHwClkMemCard0) = gates 0x23 (cgc+0x1d0 bit 5) + 0x25 (cgc+0x280
+		 * bit 7). symbian gates both off when the card is idle (M1: off after
+		 * the handoff; setting them by hand made the controller readable,
+		 * card RCA 0xe624 still selected). card power: left on by symbian
+		 * (E: mounted before the handoff), no regulator found. the CD gpio
+		 * symbian names is gpio 0 = keypad column 0 -> broken-cd (polled).
+		 * no dmas: omap.c falls back to pio. 24 MHz = symbian's cap */
+		mmc@20032800 {
+			compatible = "nokia,rapuyama-mmc", "ti,omap2420-mmc";
+			reg = <0x20032800 0x80>;
+			interrupts = <173>;
+			clocks = <&cgc 0x23>, <&mmc_fclk>;
+			clock-names = "ick", "fck";
+			bus-width = <4>;
+			broken-cd;
+			max-frequency = <24000000>;
 		};
 
 		/* pmic watchdog (cbus 0x20030700, dev 1 reg 0x17 = 0x30), soc counter
