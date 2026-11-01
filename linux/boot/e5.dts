@@ -19,7 +19,11 @@
  *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push); dispc and
  *     vrfb are not touched
  *   - keyboard: 8x8 gpio matrix, keypad node, polled
- *     (rapuyama-e5-keypad.c), no gpio node
+ *     (rapuyama-e5-keypad.c, maps the gpio block itself)
+ *   - gpio node (gpio-rapuyama.c, egpio layout == E6, K0/W1): only the
+ *     wlan uses it (power gpio 100, irq gpio 73)
+ *   - wlan: TI WL1251 on spi2 (spi-rapuyama.c, polled): chip id ok,
+ *     firmware boots, wlan0 up (no scan/association tested yet)
  * standalone on purpose (does not include e6.dts) so the E6 trees stay
  * untouched. boot with the usb cable plugged in so symbian leaves the usb
  * block powered
@@ -219,10 +223,12 @@
 		/* clock gates, clk-rapuyama.c. probe turns on the critical resources
 		 * 0x11 (gates 0x07, 0x12) and 0x1f (gate 0x22): set-bit writes only,
 		 * same regs/bits as the E5 firmware. nothing else is written until a
-		 * driver enables its clock */
+		 * driver enables its clock.
+		 * second reg: gate 0x02 (res 0x0b EHwClkExtSysClk, the wl1251 ref
+		 * clock), a plain 1/0 reg (power_resources 0x800ab8f4/0x800ab970) */
 		cgc: clock-controller@20032f00 {
 			compatible = "nokia,rapuyama-cgc";
-			reg = <0x20032f00 0x300>;
+			reg = <0x20032f00 0x300>, <0x20020804 0x4>;
 			clocks = <&cgc_ref>;
 			#clock-cells = <1>;
 		};
@@ -245,6 +251,46 @@
 			bus-width = <4>;
 			broken-cd;
 			max-frequency = <24000000>;
+		};
+
+		/* egpio.dll, same layout as the E6 (K0, W1: the wlan pdd's calls).
+		 * second reg = pin irq banks (also in the intc's second reg and
+		 * ioremapped by the keypad, nobody requests it twice: the intc and
+		 * the keypad don't request their regions). W2 after the handoff:
+		 * gpio 100 low (wlan off), gpio 73 reads high */
+		gpio: gpio@20031900 {
+			compatible = "nokia,rapuyama-gpio";
+			reg = <0x20031900 0x200>, <0x20033400 0x140>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+
+		/* spi2.dll (W1): the WL1251 bus, polled pio (spi-rapuyama.c), cs 0
+		 * (the wlan pdd's requests). clocks = what spi2 open asks for: res
+		 * 0x1c (gate 0x0c, cgc+0x1d0 bit 8) then res 0x0b (gate 0x02,
+		 * 0x20020804). irqs 191-193 and the 0x20020800 irq mux not used */
+		spi@20020600 {
+			compatible = "nokia,rapuyama-e5-spi";
+			reg = <0x20020600 0x70>;
+			clocks = <&cgc 0x1c>, <&cgc 0x0b>;
+			clock-names = "fck", "sys";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* pltwlanpdd: power gpio 100 (high = on, the firmware waits
+			 * 1 + 12 ticks around it), irq gpio 73 (wl1251_spi sets rising
+			 * edge itself). the firmware runs the bus at 48 MHz, 12 MHz
+			 * for the first runs. firmware + nvs from wlanhwinit.dll in
+			 * /lib/firmware/ti-connectivity (~/e5/wlan/README.txt) */
+			wifi@0 {
+				compatible = "ti,wl1251";
+				reg = <0>;
+				spi-max-frequency = <12000000>;
+				ti,power-gpio = <&gpio 100 0>;
+				interrupts-extended = <&gpio 73 1>;
+			};
 		};
 
 		/* pmic watchdog (cbus 0x20030700, dev 1 reg 0x17 = 0x30), soc counter

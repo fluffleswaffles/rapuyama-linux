@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# E5-00 kernel + dtb: e6.config minus drm/sound/wlan, plus the E5 rfbi fbdev + fbcon/the E6 modem keepalive (blind E6 pmic writes), E5 initramfs list (generated in the output dir),
+# E5-00 kernel + dtb: e6.config minus drm/sound/the E6 wlan chips, plus the E5 wl1251 on spi2, plus the E5 rfbi fbdev + fbcon/the E6 modem keepalive (blind E6 pmic writes), E5 initramfs list (generated in the output dir),
 # own output dir so the E6 trees stay untouched. usage: ./build-e5.sh [config|build]
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -8,6 +8,7 @@ KOUT="${KOUT:-$HERE/build-e5}"
 export ARCH=arm CROSS_COMPILE=arm-linux-gnu-
 mkdir -p "$KOUT"
 MAKE=(make -C "$KSRC" O="$KOUT")
+E5_WLAN_FW="${E5_WLAN_FW:-$HOME/e5/wlan/fw}"
 # initramfs/build.sh's busybox list + the E5 keymap, written with this checkout's paths
 initramfs_list() {
 	local I BB
@@ -36,7 +37,7 @@ LIST
 config() {
 	cp "$HERE/e6.config" "$KOUT/.config"
 	local S="$KSRC/scripts/config --file $KOUT/.config"
-	for o in DRM SOUND WLAN RAPUYAMA_MODEM FB_RAPUYAMA FB_SIMPLE; do $S -d "$o"; done
+	for o in DRM SOUND RAPUYAMA_MODEM FB_RAPUYAMA FB_SIMPLE; do $S -d "$o"; done
 	# D3 display: rfbi fbdev + fbcon (8x8 font = 40x30 text on 320x240)
 	for o in FB FB_DEVICE FB_RAPUYAMA_E5 FRAMEBUFFER_CONSOLE FONTS FONT_8x8 FONT_8x16; do $S -e "$o"; done
 	# more built-in fonts, fbcon=font:<name> (grid on 320x240): MINI4x6 80x40,
@@ -49,6 +50,16 @@ config() {
 	# instead of the plain g_serial. only one built-in gadget can bind
 	for o in USB_G_SERIAL USB_ETH; do $S -d "$o"; done
 	$S -e USB_CDC_COMPOSITE
+	# wlan: TI WL1251 on spi2 (polled spi-rapuyama.c), the E6 ones off
+	for o in BRCMUTIL BRCMFMAC ZD1211RW; do $S -d "$o"; done
+	for o in WLAN WLAN_VENDOR_TI WL1251 WL1251_SPI SPI_RAPUYAMA_E5; do $S -e "$o"; done
+	# wl1251 reads its nvs at probe (before the rootfs): both blobs built in
+	# from E5_WLAN_FW (extracted from the E5 rom, ~/e5/wlan/README.txt, not
+	# in the repo). without them the wl1251 probe fails, the rest boots
+	if [ -f "$E5_WLAN_FW/ti-connectivity/wl1251-nvs.bin" ]; then
+		$S --set-str EXTRA_FIRMWARE "ti-connectivity/wl1251-fw.bin ti-connectivity/wl1251-nvs.bin"
+		$S --set-str EXTRA_FIRMWARE_DIR "$E5_WLAN_FW"
+	fi
 	initramfs_list
 	"${MAKE[@]}" olddefconfig
 }
