@@ -4,6 +4,8 @@
 # needs a finished build-vc.sh (it reads build-vc/initramfs.list).
 #   sdroot.sh /dev/sdX   WIPES the whole card: p1 fat32 for symbian, p2 btrfs "e6root"
 #   sdroot.sh <dir>      fills an already mounted btrfs (or any dir)
+#   ... e5               E5-00: slim alpine (console tools, no gui), the E5
+#                        initramfs files (linux/kernel/build-e5.sh) + `font`
 # symbian has to mount p1: a card it can't mount gets its power cut, and
 # linux only finds the card when symbian left it powered
 set -euo pipefail
@@ -14,9 +16,23 @@ LIST="$TOP/linux/kernel/build-vc/initramfs.list"
 ROOTFS="$TOP/work/rootfs-sd"
 FAT_SIZE=2GiB
 SWAP_SIZE=1GiB
-T="${1:?usage: sdroot.sh /dev/sdX | <dir>}"
+FAT_LABEL=E6CARD
+ROOT_LABEL=e6root
+T="${1:?usage: sdroot.sh /dev/sdX | <dir> [e5]}"
+DEV="${2:-e6}"
+if [ "$DEV" = e5 ]; then
+	LIST="${KOUT:-$TOP/linux/kernel/build-e5}/initramfs.list"
+	ROOTFS="$TOP/work/rootfs-sd-e5"
+	FAT_LABEL=E5CARD
+	ROOT_LABEL=e5root
+	# fbdev console only (no drm = no weston). networking later: the apk
+	# db stays whole, so `apk add` works once there is a network
+	export ALPINE_PKGS="alpine-baselayout apk-tools busybox musl alpine-keys
+ca-certificates ca-certificates-bundle nano tmux htop python3 git
+openssh-client-default less ncurses-terminfo-base kbd kbd-misc font-terminus"
+fi
 
-[ -f "$LIST" ] || { echo "no $LIST, run linux/kernel/build-vc.sh first"; exit 1; }
+[ -f "$LIST" ] || { echo "no $LIST, run linux/kernel/build-$([ "$DEV" = e5 ] && echo e5 || echo vc).sh first"; exit 1; }
 SUDO=
 [ "$(id -u)" = 0 ] || SUDO=sudo
 
@@ -45,8 +61,8 @@ if [ -b "$T" ]; then
 	$SUDO udevadm settle 2>/dev/null || sleep 2
 	p=
 	[[ "$name" =~ [0-9]$ ]] && p=p
-	$SUDO mkfs.vfat -F 32 -n E6CARD "/dev/$name${p}1"
-	$SUDO mkfs.btrfs -q -f -L e6root "/dev/$name${p}2"
+	$SUDO mkfs.vfat -F 32 -n "$FAT_LABEL" "/dev/$name${p}1"
+	$SUDO mkfs.btrfs -q -f -L "$ROOT_LABEL" "/dev/$name${p}2"
 	MNT=$(mktemp -d)
 	$SUDO mount -o noatime "/dev/$name${p}2" "$MNT"
 	trap '$SUDO umount "$MNT"; rmdir "$MNT"' EXIT
@@ -62,6 +78,7 @@ while read -r kind dst a b _ || [ -n "$kind" ]; do
 	slink) $SUDO ln -sfn "$a" "$MNT$dst" ;;
 	esac
 done < "$LIST"
+[ "$DEV" = e5 ] && $SUDO install -D -m 755 "$TOP/linux/initramfs/e5-font.sh" "$MNT/usr/bin/font"
 $SUDO mkdir -p "$MNT/dev" "$MNT/proc" "$MNT/sys" "$MNT/run" "$MNT/root"
 $SUDO install -d -m 1777 "$MNT/tmp"
 # btrfs swap files must be nocow and fully allocated, init.sh swapon's it

@@ -31,6 +31,9 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin HOME=/root TERM=vt100 PS1="$dev:\\w# "
 # busybox line editing only does utf-8 (cyrillic in weston-terminal) with this
 export LANG=C.UTF-8
 hostname $dev
+# E5 sd rootfs: /usr first, so alpine's less, setfont ... win over the busybox
+# links /bin gets below
+[ "$dev" = e5 ] && [ -n "$E6_ROOT" ] && export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 log() { echo "$dev: $*" > /dev/kmsg; }
 
@@ -165,6 +168,10 @@ screen_shell() {
 	# e5 keypad layers (sym, fn-arrow, sticky ctrl/alt): tools/e5-kmap.py
 	if [ -r /etc/$dev.kmap ]; then
 		loadkmap < /etc/$dev.kmap && log "keymap /etc/$dev.kmap loaded"
+	fi
+	# E5 sd rootfs: console font saved by `font set` (/etc/e5-font)
+	if [ "$dev" = e5 ] && [ -x /usr/bin/font ] && [ -r /etc/e5-font ]; then
+		font apply 2>&1 | to_kmsg font
 	fi
 	log "shell on tty1 (screen + keypad)"
 	while true; do

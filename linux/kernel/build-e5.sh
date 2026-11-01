@@ -38,6 +38,10 @@ config() {
 	for o in DRM SOUND WLAN RAPUYAMA_MODEM FB_RAPUYAMA FB_SIMPLE; do $S -d "$o"; done
 	# D3 display: rfbi fbdev + fbcon (8x8 font = 40x30 text on 320x240)
 	for o in FB FB_DEVICE FB_RAPUYAMA_E5 FRAMEBUFFER_CONSOLE FONTS FONT_8x8 FONT_8x16; do $S -e "$o"; done
+	# more built-in fonts, fbcon=font:<name> (grid on 320x240): MINI4x6 80x40,
+	# 6x8 53x30, 6x10 53x24, ProFont6x11 53x21, 7x14 45x17, 10x18 32x13.
+	# --keep-case: scripts/config upper-cases names (FONT_6X10 doesn't exist)
+	for o in FONT_MINI_4x6 FONT_6x8 FONT_6x10 FONT_6x11 FONT_7x14 FONT_10x18; do $S --keep-case -e "$o"; done
 	# phase 5 keyboard: polled matrix
 	for o in INPUT_KEYBOARD KEYBOARD_RAPUYAMA_E5; do $S -e "$o"; done
 	initramfs_list
