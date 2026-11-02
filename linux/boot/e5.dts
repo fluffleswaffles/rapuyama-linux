@@ -56,7 +56,7 @@
 		 * E5 power.dll has the same sequence) instead of nohlt = the cpu
 		 * spinning at full speed. fallback if it hangs: nohlt
 		 * consoleblank: screen off (panel sleep) 60 s after the last key */
-		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 consoleblank=60 panic=10 e6.idle=1 clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=1 e6.root=/dev/mmcblk0p2 g_cdc.host_addr=02:e5:00:00:00:01 g_cdc.dev_addr=02:e5:00:00:00:02";
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 consoleblank=60 loglevel=3 panic=10 e6.idle=1 clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=1 e6.root=/dev/mmcblk0p2 g_cdc.host_addr=02:e5:00:00:00:01 g_cdc.dev_addr=02:e5:00:00:00:02";
 	};
 
 	cpus {

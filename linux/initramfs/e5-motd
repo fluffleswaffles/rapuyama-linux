@@ -1,0 +1,13 @@
+
+ Linux on the Nokia E5 (alpha)
+
+ wifi 'name' 'password'    connect
+ wifi                      status
+ apk add <package>         install
+ brightness 50% | up | down
+ blank <minutes> | off     screen off
+ font list | font set <name>
+ dmesg                     kernel log
+ poweroff                  phone off
+ reboot                    to Symbian
+

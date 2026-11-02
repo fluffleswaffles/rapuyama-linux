@@ -80,8 +80,10 @@ while read -r kind dst a b _ || [ -n "$kind" ]; do
 done < "$LIST"
 if [ "$DEV" = e5 ]; then
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-font.sh" "$MNT/usr/bin/font"
-	# the shells go through `login -f root` (init.sh): no alpine welcome
-	$SUDO truncate -s 0 "$MNT/etc/motd"
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-wifi.sh" "$MNT/usr/bin/wifi"
+	# the shells go through `login -f root` (init.sh), which prints this
+	# welcome (the helpers) instead of alpine's
+	$SUDO install -m 644 "$TOP/linux/initramfs/e5-motd" "$MNT/etc/motd"
 fi
 $SUDO mkdir -p "$MNT/dev" "$MNT/proc" "$MNT/sys" "$MNT/run" "$MNT/root"
 $SUDO install -d -m 1777 "$MNT/tmp"

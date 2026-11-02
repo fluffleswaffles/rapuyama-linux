@@ -212,7 +212,8 @@ wlan_net() {
 	if [ "$dev" = e5 ] && command -v iw >/dev/null; then
 		iw dev wlan0 set power_save off || log "wlan0: power_save off failed"
 	fi
-	wpa_supplicant -B -i wlan0 -c "$conf" || { log "wpa_supplicant failed"; return; }
+	# its "Successfully initialized" / rfkill lines would land on tty1
+	out=$(wpa_supplicant -B -i wlan0 -c "$conf" 2>&1) || { log "wpa_supplicant failed: $out"; return; }
 	log "wlan0 up ($(cat /sys/class/net/wlan0/address)), wpa_supplicant + dhcp in the background"
 	udhcpc -i wlan0 -b -S -t 5 -T 3 -A 10 -s /usr/share/udhcpc/default.script > /dev/null 2>&1
 	# no rtc: the clock starts at 1970 and tls (apk) rejects every cert
