@@ -210,6 +210,10 @@ screen_shell() {
 	if [ "$dev" = e5 ] && [ -x /usr/bin/font ] && [ -r /etc/e5-font ]; then
 		font apply 2>&1 | to_kmsg font
 	fi
+	# E5: screen brightness saved by `brightness <n>` (/etc/e5-brightness)
+	if [ "$dev" = e5 ] && [ -x /bin/brightness ] && [ -r /etc/e5-brightness ]; then
+		brightness apply 2>&1 | to_kmsg brightness
+	fi
 	log "shell on tty1 (screen + keypad)"
 	while true; do
 		clear > /dev/tty1

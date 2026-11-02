@@ -31,6 +31,7 @@ dir /etc 755 0 0
 file /etc/e5.kmap $I/e5.kmap 644 0 0
 file /bin/keyscan $I/keyscan.sh 755 0 0
 file /bin/e5-dhcp $I/e5-dhcp.sh 755 0 0
+file /bin/brightness $I/e5-brightness.sh 755 0 0
 LIST
 	"$KSRC/scripts/config" --file "$KOUT/.config" --set-str INITRAMFS_SOURCE "$KOUT/initramfs.list"
 }
@@ -60,6 +61,9 @@ config() {
 		$S --set-str EXTRA_FIRMWARE "ti-connectivity/wl1251-fw.bin ti-connectivity/wl1251-nvs.bin"
 		$S --set-str EXTRA_FIRMWARE_DIR "$E5_WLAN_FW"
 	fi
+	# P1: gazoo light pwm as backlight class devices (not the screen; the
+	# screen backlight is in the fbdev driver, /sys/class/backlight/panel)
+	for o in BACKLIGHT_CLASS_DEVICE BACKLIGHT_RAPUYAMA_E5; do $S -e "$o"; done
 	initramfs_list
 	"${MAKE[@]}" olddefconfig
 }

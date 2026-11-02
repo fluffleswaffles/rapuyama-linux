@@ -14,10 +14,12 @@
  *     0x06..0x2c equals the E6 one in clk-rapuyama.c (plan 7.17); only the
  *     mmc uses it (+ the two critical resources the driver turns on)
  *   - mmc@20032800 = the card slot
- *   - no i2c0 / touch / charger / battery / modem link: E6 chips
+ *   - no i2c0 / touch / charger / modem link: E6 chips
+ *   - battery: read-only gazoo adc (vbat, ntc, charger present), E5 cal
  *   - no bt uart
  *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push); dispc and
- *     vrfb are not touched
+ *     vrfb are not touched. brightness = panel DCS 0x53/0x51 from the
+ *     same driver (/sys/class/backlight/panel)
  *   - keyboard: 8x8 gpio matrix, keypad node, polled
  *     (rapuyama-e5-keypad.c, maps the gpio block itself)
  *   - gpio node (gpio-rapuyama.c, egpio layout == E6, K0/W1): only the
@@ -301,6 +303,32 @@
 		watchdog@20030700 {
 			compatible = "nokia,rapuyama-wdt";
 			reg = <0x20030700 0x40>, <0x200336c4 0x4>, <0x20033114 0x4>;
+		};
+
+		/* battery from the gazoo adc behind the cbus above (rapuyama-battery.c,
+		 * E5 calibration from the E5 isasw scaler). read only: no charger
+		 * node, linux does not program the bq2415x (charging stays in
+		 * symbian) */
+		/* gazoo light pwm (rapuyama-e5-bl.c, E5 isasw hal_light_phy_gazoo):
+		 * /sys/class/backlight/gazoo-pwm0 and -pwm1, 0..127. only the pwm
+		 * field is written. NOT the screen (pwm0 changed, the screen did
+		 * not): the screen is the panel DCS backlight in the display driver
+		 * (/sys/class/backlight/panel). pwm0 probably = key light */
+		light-pwm0 {
+			compatible = "nokia,rapuyama-e5-light-pwm";
+			nokia,pwm-channel = <0>;
+		};
+
+		light-pwm1 {
+			compatible = "nokia,rapuyama-e5-light-pwm";
+			nokia,pwm-channel = <1>;
+		};
+
+		battery {
+			compatible = "nokia,rapuyama-e5-battery";
+
+			usb {
+			};
 		};
 	};
 };
