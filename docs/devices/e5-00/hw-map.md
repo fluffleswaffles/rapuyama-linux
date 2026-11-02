@@ -74,6 +74,44 @@ PA_SWD on this firmware (ISASW VA = `0xc6300000` + offset in the `P:0x10480000` 
 
 Unlike what the E6 notes recorded, the call path leaves ISASW memory: it uses Symbian's software page-table walk (host table `V:0xc80088f4`, ROM `0x800a03f0`), the protected-application table at `*(0xc6831104)` (PA_SWD is record 4, image offset `0x32b0`, length `0x23d0`), and the INTC (`P:0x20400000` +`0x54`/`0x58`/`0x88`/`0x8c`) and `P:0x20030300` around the `smc #0`. All of these pages were below Linux RAM in run 5. The kernel's `rapuyama_swd_reserve()` reserves any of them that land inside Linux RAM, and refuses to arm the bridge if one is unmapped or under the kernel image. It needs the v2 handoff block saved by the `e5bot3` loader (CP15 state, the TTBR1 L1 and the ISASW L2 tables, at `P:0x1f0f1000`).
 
+## Storage, WLAN and power on the device (2026-11-01/02)
+
+Static analysis of the E5 ROM and ISASW, checked on the phone under Linux.
+
+**microSD.** One controller at `P:0x20032800`, IRQ 173 (table `0x801449c0` plus the immediate at `0x801409a8`), as the E6's mmc1. Power resource `0x23` (`EHwClkMemCard0`) switches gates `0x23` (`0x200330d0` bit 5) and `0x25` (`0x20033180` bit 7). The E5 gate table `0x06..0x2c` (`0x800aab90..0x800ab4b4`) equals `ry_gates[]` in `clk-rapuyama.c`, so the E6 `cgc` driver is used unchanged. Functional clock 96 MHz (`EPBUSMV` getter `0x8013eb98`). The card-detect entry is GPIO 0, which is keypad column 0, so the DT says `broken-cd`. Card power is left on by Symbian when E: is mounted. PIO only, about 5 MB/s, data checked by SHA-1.
+
+**SPI 2** (`spi2.dll` `0x8015df18..0x80160178`, `P:0x20020600`), PIO as used by the WLAN driver:
+
+| Offset | Use |
+| --- | --- |
+| `+0x04` | enable (1) |
+| `+0x08` | pad bits = 16 - bits % 16 |
+| `+0x0c`, `+0x34`, `+0x40` | halfwords per frame - 1 |
+| `+0x10`, `+0x14` | CPOL; 1 for SPI mode 0 and 3 |
+| `+0x18` | 0 full duplex, 1 TX-only or RX-only |
+| `+0x1c` | clock divider, SCLK = 96 MHz / (div + 1); the WLAN uses 48 MHz |
+| `+0x28`, `+0x6c` | TX busy |
+| `+0x2c` / `+0x38` | TX / RX FIFO, 16 bit |
+| `+0x30` / `+0x3c` | TX FIFO space / RX FIFO level |
+| `+0x44` | 7 = clock out RX without TX data |
+| `+0x4c` | manual chip select, bit per CS |
+| `+0x5c` | write 0, poll non-zero: apply the configuration |
+| `+0x60` | must be 1, or the TX FIFO never shifts (Symbian sets it around its IRQ bind) |
+
+Clocks: resource `0x1c` = gate `0x0c` (`0x200330d0` bit 8), and resource `0x0b` (`EHwClkExtSysClk`) = a software gate that writes 1 to `P:0x20020804`, most likely the WL1251 reference clock. `clk-rapuyama.c` got that gate for the E5.
+
+**WL1251.** `pltwlanpdd`: power on = GPIO 100 high, then 12 ms. IRQ = GPIO 73, rising edge. The WL1251 IRQ line is active high. GPIO IRQ polarity registers: bank `+0x34` = high/rising, `+0x38` = low/falling (the E6 driver had them swapped; confirmed with this IRQ). The 32-bit SPI words go out as two 16-bit frames, high half first. Firmware `Rev 4.0.4.12.12` and the default nvs are in `Sys\Bin\wlanhwinit.dll` (offsets in the branch README). The nvs MAC is TI's placeholder `08:00:28:33:18:97`. Symbian replaces it from its permanent data (`CWlanHwInitPermParser`).
+
+**Screen brightness and keyboard light.** The screen backlight belongs to the panel: DCS `0x53` = `0x2c`, then `0x51` = level 0..255 over RFBI. ISASW `hal_light_phy_gazoo.c` (`0xc633f0d2`) drives two Gazoo PMIC PWMs, `level * 127 / 10000`: channel 0 = CBUS device 2 reg 5 bits 14:8 is the keyboard light (127 at the handoff); channel 1 = device 2 reg `0xa` bits 6:0 lights nothing visible (0 at the handoff).
+
+**Battery.** Symbian's kernel does no battery work. ISASW's energy-management stack does, with the E6's sources (`em_hal_gazoo.c`, `hw_ad.c`, `em_hal_adc_cal.c`, `em_batmon5.c`, the bq2415x HALs). ADC = Gazoo device 1 reg 8 (`0xc63ec534`), the logical-to-hardware channel table `0xc66775d8` and the measurement switch `0xc6333424` are byte-identical to the E6. Battery voltage is hardware channel 8, the NTC channel 2, the charger voltage channel 9. The ISASW scaler `0xc6334294` run on this phone's calibration (`0xc682ac5c`, its XOR-`0xaa` backup at `0xc682ae9c` matches) gives `mV = 2.04825 * raw + 2674.4`. The E6 numbers would read about 50 mV high on this E5.
+
+`em_batmon5.c` copies a battery table from `0xc6666770` into its state (`0xc682b328`): 19 pairs of {used mAh, mV}, from 0 at 4179 mV to 1052 mAh at 3100 mV, followed by 4179, 3636 and the nominal 1200 mAh (BL-4D). Its low limit is 3300 mV (`0xce4` at `0xc6335888`, live `0xc682b1ae` = 3300; the setter `0xc6335f98` refuses anything lower). At boot it wants 3400 mV (`0xc6335a0e`), and a low state clears above 3450 mV (`0xc63353fe`). Linux uses the table for the capacity and powers off below 3300 mV.
+
+The charger is not programmed by Linux. With the USB cable in, the voltage never rose in a 50-minute log at about 3.9 V, and the battery drained about 16 %/h (screen at full, WLAN up, CPU spinning with `nohlt`). The bq2415x falls back to its defaults (3.54 V regulation) 32 s after the last host write, so below about 3.54 V it might charge on its own at those settings. This was not measured.
+
+**CPU idle.** The E5 `power.dll` has the E6's shallow idle: the WFI routine at `0x8011619c` (L2 sync `0xc6e00730`, then wait for `0x20033130` bit 10 and `0x20033120` bits 15:14 clear) and the constrained/unconstrained choice at `0x8011778c`, which writes 8 to clock `+0x144` (set) or `+0x148` (clear). `mach-rapuyama/idle.c` (`e6.idle=1`) follows the constrained path and is enabled for `nokia,e5`.
+
 ## Address conventions
 
 - `P:` means a physical bus address, suitable for a device tree after validation
@@ -339,16 +377,18 @@ Remaining work is specific rather than a reason to rescan all words:
 
 - ~~reconcile the step 0 MIDR/RAM map with bootstrap bank records, reserve the actual modem/shared memory and choose an E5 ram console location~~ done, see "Measured on the device"
 - ~~follow initial arming and source/divider selection for the IRQ-35 tick~~ done (hardware periodic 1 kHz, measured)
-- resolve the selected display configuration, panel identity/geometry, pins, regulators, command sequence and framebuffer format
-- follow MMC configuration for card-detect GPIO, IRQ, voltage resources and clock parent
-- verify the WLAN 1251 revision and module selection, SPI-2 setup and GPIO power/IRQ sequence
-- analyze the E5 EM/ISASW charging, temperature and audio paths independently (the secure watchdog is done, see "Measured on the device")
+- ~~follow MMC configuration for card-detect GPIO, IRQ, voltage resources and clock parent~~ done, see "Storage, WLAN and power on the device"
+- ~~verify the WLAN 1251 revision and module selection, SPI-2 setup and GPIO power/IRQ sequence~~ done, same section
+- ~~battery voltage, temperature and Symbian's capacity table and low-battery limit~~ done, same section
+- resolve the panel identity, its power/reset pins and regulators, and Symbian's full panel init sequence (Linux keeps the panel as Symbian left it and only sends DCS commands)
+- charging under Linux: the bq2415x sequence and limits from the ISASW EM stack (`em_hal_cha_usb_bq24150_PG1_1.c`, `em_hal_cha_dyn_bq24156.c`); until then Linux does not charge
+- audio, camera, the power key (modem side, ISASW MTC) and the cellular modem (ISA link)
 
 ## Porting order
 
 After the step 0, start from the E5 RAM/IRQ/timer/watchdog findings above, then bring up a RAM log and USB gadget serial with display, charger, camera, WLAN and experimental secure calls disabled. SoC address matches are useful for reusing code, but the timer, keyboard and native display require E5-specific configuration or drivers. Keep internal flash read-only. Do not enable an unknown MMIO block in a daily device tree: an unpowered access can abort the CPU before a log is available.
 
-Status (2026-11-01): RAM log, USB gadget shell, timer, SoC/PMIC watchdogs and the PA_SWD bridge work on the device (`linux/boot/e5.dts`, `linux/kernel/build-e5.sh`, loader `e5bot3`). The display runs as fbdev + fbcon over the RFBI CPU path (`rapuyama-e5-fb.c`) and the keyboard as a polled matrix (`rapuyama-e5-keypad.c`) with console layers (`tools/e5-kmap.py`). Next: microSD (phase 7).
+Status (2026-11-02, alpha): RAM log, USB gadget shell, timer, CPU idle, SoC/PMIC watchdogs and the PA_SWD bridge work on the device (`linux/boot/e5.dts`, `linux/kernel/build-e5.sh`, loader `e5bot3`). The display runs as fbdev + fbcon over the RFBI CPU path (`rapuyama-e5-fb.c`) with panel brightness and panel sleep on console blank, the keyboard as a polled matrix (`rapuyama-e5-keypad.c`) with console layers (`tools/e5-kmap.py`) and its light. microSD with the Alpine rootfs, USB ethernet, WLAN and the battery (read only) work too. What is left is listed in the branch README (`.github/README.md`).
 
 ## Module address index
 

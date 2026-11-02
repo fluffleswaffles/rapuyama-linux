@@ -10,4 +10,7 @@ while IFS= read -r l; do
 done
 stty echo
 echo "$(hostname): shell. kernel log: dmesg (-w to follow)"
+# E5 sd rootfs: init.sh starts this from a background job, which leaves
+# SIGINT ignored all the way down (^C did nothing). busybox login resets it
+[ "$(hostname)" = e5 ] && grep -q '^root:' /etc/passwd 2>/dev/null && exec login -f root
 exec sh

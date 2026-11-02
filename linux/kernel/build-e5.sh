@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# E5-00 kernel + dtb: e6.config minus drm/sound/the E6 wlan chips, plus the E5 wl1251 on spi2, plus the E5 rfbi fbdev + fbcon/the E6 modem keepalive (blind E6 pmic writes), E5 initramfs list (generated in the output dir),
-# own output dir so the E6 trees stay untouched. usage: ./build-e5.sh [config|build]
+# E5-00 kernel + dtb: e6.config minus drm, sound, the E6 fbdevs, the E6 modem
+# keepalive (blind E6 pmic writes) and the E6 wlan chips; plus the E5 rfbi
+# fbdev + fbcon, keypad, g_cdc usb, the wl1251 on spi2 and the gazoo light
+# pwm. writes the E5 initramfs list into the output dir. own output dir, so
+# the E6 trees stay untouched. usage: ./build-e5.sh [config|build]
+# E5_WLAN_FW = dir with ti-connectivity/wl1251-{fw,nvs}.bin (see the E5
+# README); without them the kernel builds and boots, just without wlan
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KSRC="$HERE/linux"
@@ -55,8 +60,8 @@ config() {
 	for o in BRCMUTIL BRCMFMAC ZD1211RW; do $S -d "$o"; done
 	for o in WLAN WLAN_VENDOR_TI WL1251 WL1251_SPI SPI_RAPUYAMA_E5; do $S -e "$o"; done
 	# wl1251 reads its nvs at probe (before the rootfs): both blobs built in
-	# from E5_WLAN_FW (extracted from the E5 rom, ~/e5/wlan/README.txt, not
-	# in the repo). without them the wl1251 probe fails, the rest boots
+	# from E5_WLAN_FW (cut from the E5 rom, see the E5 README; not in the
+	# repo). without them the wl1251 probe fails, the rest boots
 	if [ -f "$E5_WLAN_FW/ti-connectivity/wl1251-nvs.bin" ]; then
 		$S --set-str EXTRA_FIRMWARE "ti-connectivity/wl1251-fw.bin ti-connectivity/wl1251-nvs.bin"
 		$S --set-str EXTRA_FIRMWARE_DIR "$E5_WLAN_FW"

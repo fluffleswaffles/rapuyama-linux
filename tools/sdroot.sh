@@ -78,7 +78,11 @@ while read -r kind dst a b _ || [ -n "$kind" ]; do
 	slink) $SUDO ln -sfn "$a" "$MNT$dst" ;;
 	esac
 done < "$LIST"
-[ "$DEV" = e5 ] && $SUDO install -D -m 755 "$TOP/linux/initramfs/e5-font.sh" "$MNT/usr/bin/font"
+if [ "$DEV" = e5 ]; then
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-font.sh" "$MNT/usr/bin/font"
+	# the shells go through `login -f root` (init.sh): no alpine welcome
+	$SUDO truncate -s 0 "$MNT/etc/motd"
+fi
 $SUDO mkdir -p "$MNT/dev" "$MNT/proc" "$MNT/sys" "$MNT/run" "$MNT/root"
 $SUDO install -d -m 1777 "$MNT/tmp"
 # btrfs swap files must be nocow and fully allocated, init.sh swapon's it

@@ -166,6 +166,12 @@ usb_net() {
 wlan_net() {
 	conf=/etc/wpa_supplicant/wpa_supplicant.conf
 	[ -f "$conf" ] && [ -x /sbin/wpa_supplicant ] && [ -e /sys/class/net/wlan0 ] || return
+	# the rom's default nvs has TI's placeholder mac (08:00:28:33:18:97, the
+	# same on every E5); /etc/e5-wlan-mac = this phone's own (symbian:
+	# *#62209526#), set while wlan0 is still down
+	if [ -r /etc/e5-wlan-mac ]; then
+		ip link set wlan0 address "$(cat /etc/e5-wlan-mac)" || log "wlan0: mac from /etc/e5-wlan-mac refused"
+	fi
 	ifconfig wlan0 up || { log "wlan0 up failed"; return; }
 	wpa_supplicant -B -i wlan0 -c "$conf" || { log "wpa_supplicant failed"; return; }
 	log "wlan0 up ($(cat /sys/class/net/wlan0/address)), wpa_supplicant + dhcp in the background"
@@ -214,12 +220,20 @@ screen_shell() {
 	if [ "$dev" = e5 ] && [ -x /bin/brightness ] && [ -r /etc/e5-brightness ]; then
 		brightness apply 2>&1 | to_kmsg brightness
 	fi
+	# E5: one unblank so the backlight core ties the panel and the key
+	# light (gazoo-pwm0) to fb0: the console blank (consoleblank=) turns
+	# both off, any key turns them on
+	[ "$dev" = e5 ] && echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null
+	# E5 sd rootfs: through busybox login, which resets the SIGINT that
+	# this background job leaves ignored (else ^C does nothing)
+	e5sh=sh
+	[ "$dev" = e5 ] && grep -q '^root:' /etc/passwd 2>/dev/null && e5sh="login -f root"
 	log "shell on tty1 (screen + keypad)"
 	while true; do
 		clear > /dev/tty1
 		# E5: fbcon is a linux console (colours in htop/nano), not a vt100
 		if [ "$dev" = e5 ]; then
-			TERM=linux setsid cttyhack sh < /dev/tty1 > /dev/tty1 2>&1
+			TERM=linux setsid cttyhack $e5sh < /dev/tty1 > /dev/tty1 2>&1
 		else
 			setsid cttyhack sh < /dev/tty1 > /dev/tty1 2>&1
 		fi
