@@ -872,7 +872,7 @@ GL_APICALL void GL_APIENTRY glLinkProgram(GLuint prog){
 }
 
 GL_APICALL void GL_APIENTRY glPolygonOffset(GLfloat factor, GLfloat units){call2(0x2010, fbits(factor), fbits(units));}
-GL_APICALL void GL_APIENTRY glScissor(GLint x, GLint y, GLsizei w, GLsizei h){call4(0x2015, x, y, w, h);}
+GL_APICALL void GL_APIENTRY glScissor(GLint x, GLint y, GLsizei w, GLsizei h){call4(0x2012, x, y, w, h);}
 
 /*
  * khclient FUN_0001b630, vc-main 0x667fe: {shader, count, workspace, has

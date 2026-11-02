@@ -10,6 +10,9 @@
 #include <e32std.h>
 #include <f32file.h>
 #include "runblob.h"
+#ifdef RB_IMAGE_BOOT
+#include "factory_identity.h"
+#endif
 
 _LIT(KLog, "E:\\boot.log");
 #ifdef RB_IMAGE_BOOT
@@ -55,6 +58,11 @@ static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC& aBut1, co
 	n.Close();
 	return (s.Int()==KErrNone) ? button : s.Int();
 }
+#ifdef RB_IMAGE_BOOT
+static void FactoryIdentityDiag(TInt resource,TInt received,TInt matched,TInt result){
+	Lf(_L8("identity INFO resource=%02x bytes=%d matched=%d result=%d\n"),resource,received,matched,result);
+}
+#endif
 
 static void Fail(const TDesC& aWhat, TInt aErr){
 	TBuf<32> e;
@@ -212,6 +220,17 @@ GLDEF_C TInt E32Main(){
 	RRunBlob dev;
 	TInt r=dev.Open();
 	if(r!=KErrNone){L(_L8("open failed\n")); Fail(_L("can't open the ldd"), r); gLog.Close(); gFs.Close(); return r;}
+	#ifdef RB_IMAGE_BOOT
+	TBuf8<15> factoryIdentity;
+	r=ReadFactoryIdentity(factoryIdentity);
+	if(r==KErrNone){r=dev.FactoryIdentity(factoryIdentity);}
+	factoryIdentity.FillZ();
+	if(r!=KErrNone){
+		Lf(_L8("factory identity handoff unavailable: %d\n"),r);
+		Fail(_L("factory identity unavailable"),r);dev.Close();gLog.Close();gFs.Close();return r;
+	}
+	L(_L8("factory identity ready; value private\n"));
+	#endif
 
 	TUint8* buf=(TUint8*)User::Alloc(KBuf);
 	if(!buf){L(_L8("no mem\n")); Fail(_L("no heap"), KErrNoMemory); dev.Close(); gLog.Close(); gFs.Close(); return KErrNoMemory;}
@@ -306,6 +325,6 @@ GLDEF_C TInt E32Main(){
 #endif
 	L(_L8("about-to-Boot (one-way)\n"));
 	gLog.Close(); gFs.Close();
-	dev.Boot(KZOff, KDtbOff, 0xFFFFFFFFu, 0); // never returns
-	return KErrNone;
+	r=dev.Boot(KZOff, KDtbOff, 0xFFFFFFFFu, 0); // never returns on success
+	Fail(_L("linux handoff failed"),r);dev.Close();return r;
 }

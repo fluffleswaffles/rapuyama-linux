@@ -36,8 +36,9 @@ GCCE="$ROOT/tools/gcce/arm-2012.03/bin/arm-none-symbianelf"
 DRV="$ROOT/driver"
 STAGE="$DRV/stage"
 [ -d "$STAGE" ] || "$DRV/mkstage.sh"
-OUT="$HERE/build/$NAME"
-mkdir -p "$OUT" "$ROOT/out"
+OUT="${RB_BUILD_ROOT:-$HERE/build}/$NAME"
+SIS_OUT="${RB_SIS_OUT:-$ROOT/out}"
+mkdir -p "$OUT" "$SIS_OUT"
 
 # rebuild the embedded blobs
 make -C "$HERE/.." all >/dev/null
@@ -139,5 +140,5 @@ cp "$DRV/sis/cert.pem" "$DRV/sis/key_trad.pem" "$W/"
 podman run --rm -v "$ROOT/tools/src/ensymble:/ens:ro,Z" -v "$W:/w:Z" -w /w \
 	docker.io/library/python:2.7 python /ens/ensymble.py simplesis \
 	-u "$UID3" -c "$NAME" -a cert.pem -k key_trad.pem -p "" approot out.sis
-cp "$W/out.sis" "$ROOT/out/$NAME.sis"
-ls -la "$ROOT/out/$NAME.sis"
+cp "$W/out.sis" "$SIS_OUT/$NAME.sis"
+ls -la "$SIS_OUT/$NAME.sis"

@@ -1,0 +1,96 @@
+#!/bin/sh
+
+set -eu
+umask 077
+lib=/usr/libexec/rapuyama-modem
+state=/run/rapuyama-modem
+mkdir -p "$state"
+settings=${XDG_CONFIG_HOME:-${HOME:-/root}/.config}/yamashell/settings.conf
+case "${1:-}" in
+ --attach) test "$#" = 1;;
+ '') test "$#" = 0
+     if test -f "$settings" && grep -q '^modem_autostart=0$' "$settings"; then exit 0;fi;;
+ *) exit 2;;
+esac
+mkdir "$state/watcher" 2>/dev/null || exit 0
+echo "$$" > "$state/watcher/pid"
+listener=;failed=1;reason=activation
+printf '%s\n' starting > "$state/status"
+finish(){
+ trap - 0 HUP INT TERM
+ if test -n "$listener"; then kill "$listener" 2>/dev/null || true;wait "$listener" 2>/dev/null || true;fi
+ rm -f "$state/sms-listener.pid" "$state/signal" "$state/call" "$state/calls" "$state/watcher/pid"
+ rmdir "$state/watcher" 2>/dev/null || true
+ if test "$failed" = 1; then
+  /usr/bin/yamashell-modem-state --offline >/dev/null 2>&1 || true
+   printf '%s\n' "$reason" > "$state/failed"
+   printf '%s\n' failed > "$state/status"
+ fi
+}
+trap finish 0
+trap 'failed=0;exit 0' HUP INT TERM
+if test "${1:-}" != --attach; then
+ mkdir "$state/start-once" 2>/dev/null || { failed=0;exit 0; }
+ modem-start > /tmp/modem-startup.log 2>&1 || exit 1
+fi
+test ! -e /tmp/isasw.exit
+read owner < /tmp/isasw.pid
+case "$owner" in ''|*[!0-9]*) exit 1;;esac
+test "$owner" -gt 1
+kill -0 "$owner"
+echo "$owner" > "$state/owner.pid"
+modem-incoming-ready >> /tmp/modem-startup.log 2>&1 || exit 1
+: "${MODEM_SMS_INBOX:=${XDG_DATA_HOME:-${HOME:-/root}/.local/share}/yamashell/messages-incoming}"
+export MODEM_SMS_INBOX
+mkdir -p "$MODEM_SMS_INBOX"
+PHONET_LOCAL_OBJECT=0xa7 "$lib/phonet-client" --sms-listen > /tmp/modem-receive.log 2>&1 &
+listener=$!
+echo "$listener" > "$state/sms-listener.pid"
+rm -f "$state/failed"
+printf '%s\n' ready > "$state/status"
+reason=runtime
+tick=0;misses=0
+while test ! -e /tmp/isasw.exit && kill -0 "$owner" 2>/dev/null; do
+ # original CALL_STATUS_MODE_ADDR_AND_ORIGIN, not a guessed number/address layout
+ if PHONET_LOCAL_OBJECT=0xa9 "$lib/phonet-test" --send c9 0df0011c040200 > "$state/reply" 2>/dev/null &&
+    /usr/bin/yamashell-modem-state < "$state/reply" > "$state/calls.new"; then
+   mv "$state/calls.new" "$state/calls";misses=0
+   rm -f "$state/failed"
+   printf '%s\n' ready > "$state/status"
+  read stamp id status incoming number < "$state/calls"
+  if test "$status" = 5 && test "$incoming" = 1; then
+   printf '%s %s\n' "$stamp" "$id" > "$state/call.new";mv "$state/call.new" "$state/call"
+  else rm -f "$state/call";fi
+ else
+   misses=$((misses+1))
+   if test "$misses" -ge 3; then
+    # a failed observer query is not evidence that the owner must be killed
+    rm -f "$state/call" "$state/calls" "$state/signal"
+    printf '%s\n' observer > "$state/failed"
+    printf '%s\n' degraded > "$state/status"
+   fi
+ fi
+ if test "$tick" = 0; then
+  registration=$(PHONET_LOCAL_OBJECT=0xa8 "$lib/phonet-test" --send c8 0000 2>/dev/null || true)
+  registered=0
+   registration_state=$(printf '%s\n' "$registration" | sed -n 's/.*res c8: 42 01 00 [0-9a-f][0-9a-f] 00 04 \([0-9a-f][0-9a-f]\) .*/\1/p')
+   case "$registration_state" in 00|01) registered=1;;esac
+   rat_reply=$(PHONET_LOCAL_OBJECT=0xa8 "$lib/phonet-test" --send c8 3600 2>/dev/null || true)
+   rat=0
+   if test "$registered" = 1; then
+    case "$rat_reply" in
+     *'res c8: 42 37 00 01 2c 04 01 00') rat=2;;
+     *'res c8: 42 37 00 01 2c 04 02 00') rat=3;;
+    esac
+   fi
+  reply=$(PHONET_LOCAL_OBJECT=0xa8 "$lib/phonet-test" --send c8 0b000200000000 2>/dev/null || true)
+  value=$(printf '%s\n' "$reply" | sed -n 's/.*res c8: 42 0c 00 01 04 04 \([0-9a-f][0-9a-f]\) .*/\1/p')
+  percent=0
+  if test -n "$value" && test "$registered" = 1; then percent=$((0x$value));fi
+  read uptime rest < /proc/uptime
+   printf '%s %s %s\n' "${uptime%.*}" "$percent" "$rat" > "$state/signal.new";mv "$state/signal.new" "$state/signal"
+ fi
+ tick=$(((tick+1)%10))
+ sleep 1
+done
+exit 1

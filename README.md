@@ -26,6 +26,7 @@ The former 240-second reset is **fixed on the Nokia E6**: Linux now services the
 | 19.10.2026 | Touchscreen: Atmel maXTouch on I2C, multitouch |
 | 22.10.2026 | SD card and internal eMMC work under Linux, btrfs rootfs on the card ([notes](docs/driver-re.md#sd--mmc-epbusmvdll)) |
 | 22.10.2026 | 240-second reset fixed: PA_SWD secure watchdog serviced from Linux, four successful calls through 648 s ([log](docs/secure-watchdog_SUCCESS.txt)) |
+| 01.11.2026 | First sound during a real outgoing modem call, with the sandboxed ISASW runtime |
 
 ## The hardware
 

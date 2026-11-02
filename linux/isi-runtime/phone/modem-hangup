@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -eu
+lib=/usr/libexec/rapuyama-modem
+reply=$(PHONET_LOCAL_OBJECT=0xaa "$lib/phonet-client" --send c9 0df0011c040000)
+id=$(printf '%s\n' "$reply" | sed -n 's/.*res c9: 42 0e f0 01 0b 08 \([0-9a-f][0-9a-f]\) [0-9a-f][0-9a-f] [0-9a-f][0-9a-f] [0-9a-f][0-9a-f] 00 00[[:space:]]*$/\1/p')
+test -n "$id"
+id=$((0x$id & 7));test "$id" -ne 0
+PHONET_LOCAL_OBJECT=0xaa "$lib/phonet-client" --send c9 "09$(printf '%02x' "$id")0108040103"

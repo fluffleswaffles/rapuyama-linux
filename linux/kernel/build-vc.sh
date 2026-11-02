@@ -44,13 +44,28 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/vctri %s 755 0 0\n' "$KOUT/vc-khrn/vctri"
 	printf 'file /usr/bin/vcwl %s 755 0 0\n' "$KOUT/vc-khrn/vcwl"
 	printf 'file /usr/bin/yamashell %s 755 0 0\n' "$KOUT/yamashell/yamashell"
-	printf 'file /usr/bin/yamashell-settings %s 755 0 0\n' "$KOUT/yamashell/yamashell-settings"
+	printf 'file /usr/bin/yamashell-modem-state %s 755 0 0\n' "$KOUT/yamashell/yamashell-modem-state"
+	for app in "$HERE/../yamashell/apps"/*/; do
+		name=$(basename "$app")
+		[ "$name" != common ] || continue
+		[ "$name" != contacts ] || continue
+		printf 'file /usr/bin/yamashell-%s %s 755 0 0\n' "$name" "$KOUT/yamashell/yamashell-$name"
+	done
 	printf 'file /usr/bin/yamashell-session %s 755 0 0\n' "$HERE/../yamashell/session.sh"
 	printf 'dir /usr/share/yamashell 755 0 0\n'
+	printf 'dir /usr/share/yamashell/sounds 755 0 0\n'
+	for f in "$HERE/../yamashell/sounds"/*; do
+		printf 'file /usr/share/yamashell/sounds/%s %s 644 0 0\n' "$(basename "$f")" "$f"
+	done
 	printf 'dir /usr/share/yamashell/applications 755 0 0\n'
 	printf 'dir /usr/share/yamashell/wallpapers 755 0 0\n'
 	printf 'dir /usr/share/yamashell/icons 755 0 0\ndir /usr/share/yamashell/icons/hicolor 755 0 0\ndir /usr/share/yamashell/icons/hicolor/scalable 755 0 0\ndir /usr/share/yamashell/icons/hicolor/scalable/apps 755 0 0\n'
-	for f in wallpaper.jpg Ubuntu-Regular.ttf Ubuntu-Light.ttf MaterialIcons-Regular.ttf applications/Alacritty.desktop applications/yamashell-settings.desktop icons/hicolor/scalable/apps/yamashell-settings.svg icons/hicolor/scalable/apps/yamashell-device-e6.svg icons/hicolor/scalable/apps/yamashell-device-n8.svg icons/hicolor/scalable/apps/yamashell-device-e7.svg; do
+	for f in wallpaper.jpg Ubuntu-Regular.ttf Ubuntu-Light.ttf MaterialIcons-Regular.ttf \
+		applications/Alacritty.desktop applications/yamashell-settings.desktop \
+		applications/yamashell-phone.desktop applications/yamashell-messages.desktop \
+		icons/hicolor/scalable/apps/yamashell-phone.svg icons/hicolor/scalable/apps/yamashell-messages.svg \
+		icons/hicolor/scalable/apps/yamashell-settings.svg icons/hicolor/scalable/apps/yamashell-device-e6.svg \
+		icons/hicolor/scalable/apps/yamashell-device-n8.svg icons/hicolor/scalable/apps/yamashell-device-e7.svg; do
 		printf 'file /usr/share/yamashell/%s %s 644 0 0\n' "$f" "$HERE/../yamashell/assets/$f"
 	done
 	printf 'file /usr/lib/libvcgl.so %s 755 0 0\n' "$KOUT/vc-khrn/libvcgl.so"
@@ -85,6 +100,13 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 "$KSRC/scripts/config" --file "$KOUT/.config" --disable INITRAMFS_COMPRESSION_GZIP --enable INITRAMFS_COMPRESSION_XZ
 # modem experiments off (drivers/misc/rapuyama_*), they made boots die
 "$KSRC/scripts/config" --file "$KOUT/.config" --disable RAPUYAMA_MODEM
+
+if [ -n "${INITRAMFS_EXTRA:-}" ]; then
+	"$KSRC/scripts/config" --file "$KOUT/.config" --set-str INITRAMFS_SOURCE "$ROOTFS $KOUT/initramfs.list $INITRAMFS_EXTRA"
+fi
+if [ -n "${KCONFIG_FRAGMENT:-}" ]; then
+	"$KSRC/scripts/kconfig/merge_config.sh" -m -O "$KOUT" "$KOUT/.config" "$KCONFIG_FRAGMENT"
+fi
 
 make -C "$KSRC" O="$KOUT" olddefconfig
 make -C "$KSRC" O="$KOUT" -j"$(nproc)" zImage

@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+test ! -e /tmp/isasw.exit || { cat /tmp/isasw.exit; echo 'modem exited; do not warm-restart' >&2; exit 1; }
+read pid < /tmp/isasw.pid
+kill -0 "$pid"
+echo "modem runtime alive: $pid"
+/usr/libexec/rapuyama-modem/phonet-test --send c9 0df0011c040000

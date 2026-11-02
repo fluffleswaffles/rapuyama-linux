@@ -1,0 +1,24 @@
+#!/bin/sh
+
+set -eu
+umask 077
+lib=/usr/libexec/rapuyama-modem
+test ! -e /tmp/isasw.exit
+read owner < /tmp/isasw.pid;kill -0 "$owner"
+mkdir /tmp/isasw-call-lock || { echo 'another call command is running' >&2;exit 1; }
+trap 'rmdir /tmp/isasw-call-lock' 0
+PHONET_LOCAL_OBJECT=0xa5 "$lib/phonet-client" --send c9 0df0011c040000 > /tmp/isasw-resource-status
+grep -Eq 'res c9: 42 0e f0 01 08 04 02 01[[:space:]]*$' /tmp/isasw-resource-status || { echo 'resource handoff requires NO_CALL' >&2;exit 1; }
+current(){
+	PHONET_LOCAL_OBJECT=0xa5 "$lib/phonet-client" --send c9 440100 > /tmp/isasw-resource-config
+	value=$(sed -n 's/.*res c9: 42 45 01 01 41 04 \([0-9a-f][0-9a-f]\) \([0-9a-f][0-9a-f]\)[[:space:]]*$/\1\2/p' /tmp/isasw-resource-config)
+	test "${#value}" = 4
+}
+current;before=$((0x$value))
+if test "$((before & 2))" -ne 0; then
+	PHONET_LOCAL_OBJECT=0xa5 "$lib/phonet-client" --send c9 4402014208000000020000 > /tmp/isasw-resource-set
+	grep -q 'res c9: 42 45 02' /tmp/isasw-resource-set
+fi
+current;after=$((0x$value))
+test "$after" -eq "$((before & 65533))" || { echo 'unexpected resource mask; stop testing' >&2;exit 1; }
+printf 'incoming activation handoff verified: %04x -> %04x; other resource bits unchanged\n' "$before" "$after"

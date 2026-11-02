@@ -1,0 +1,9 @@
+/* Release candidate: identical MDI hardware layout, proven shallow WFI idle.
+ * Modem+idle combination still needs a live boot/call test. */
+/include/ "e6-vc-565-gpu-dma-mdi.dts"
+
+/ {
+	chosen {
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 panic=10 e6.idle=1 clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh videocore.dma=1 videocore.rgb565=1 e6.swd=1 e6.lowmem=1 e6.gui=yamashell";
+	};
+};

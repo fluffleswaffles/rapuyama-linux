@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+lib=/usr/libexec/rapuyama-modem
+test "$#" -le 1 || exit 2
+action=${1:-status}
+case "$action" in
+status) ;;
+gsm|umts|auto|reselect)
+ status=$(modem-status)
+ printf '%s\n' "$status" | grep -Eq 'res c9: 42 0e f0 01 08 04 02 01[[:space:]]*$' || { echo 'call not cleared; refusing network change' >&2; exit 1; }
+ case "$action" in
+ gsm) mode=01;; umts) mode=02;; auto) mode=03;;
+ reselect) "$lib/phonet-test" --send c8 07000102040300 30;exit;;
+ esac
+ "$lib/phonet-test" --send 32 "000e010b04${mode}00";;
+*) echo 'usage: modem-net [status|gsm|umts|auto|reselect]' >&2;exit 2;;
+esac
+rat=$("$lib/phonet-test" --send c8 3600)
+case "$rat" in
+*'42 37 00 01 2c 04 01 00'*) echo 'RAT: GSM/2G';;
+*'42 37 00 01 2c 04 02 00'*) echo 'RAT: UMTS/3G';;
+*) echo 'RAT not confirmed';;
+esac
+registration=$("$lib/phonet-test" --send c8 0000)
+state=$(printf '%s\n' "$registration" | sed -n 's/.*res c8: 42 01 00 [0-9a-f][0-9a-f] 00 04 \([0-9a-f][0-9a-f]\) .*/\1/p')
+case "$state" in
+00) echo 'Network: home';;01) echo 'Network: roaming';;
+03|04|05|06|08|09|0a|0b) echo "Network: not registered ($state)";;
+*) echo 'Network registration not confirmed';;
+esac

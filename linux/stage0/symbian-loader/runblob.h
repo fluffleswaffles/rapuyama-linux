@@ -59,9 +59,13 @@ class RRunBlob : public RBusLogicalChannel{
 			EControlHookCbus, EControlHookCbusRead, EControlHookCbusRemove,
 			EControlModemReset, EControlPeek,
 			EControlHookBeac8, EControlHookBeac8Read, EControlHookBeac8Remove,
-			EControlWatchService};
+			EControlWatchService, EControlFactoryIdentity};
 	#ifndef __KERNEL_MODE__
 		TInt Open(){return DoCreate(KRunBlobName, TVersion(1,0,0), KNullUnit, NULL, NULL);}
+		TInt FactoryIdentity(const TDesC8& aValue){
+			if(aValue.Length()!=15){return KErrArgument;}
+			return DoControl(EControlFactoryIdentity, (TAny*)aValue.Ptr());
+		}
 		TInt Run(TDes8& aBuf){return DoControl(EControlRunBlob, (TAny*)&aBuf);}
 
 		// builds an armv6 identity section mapping (virt==phys) in the page table and

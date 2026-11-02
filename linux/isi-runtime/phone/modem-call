@@ -1,0 +1,65 @@
+#!/bin/sh
+set -eu
+umask 077
+encode(){
+	case "$1" in +*) number=${1#?};; *) echo 'use an international number starting with +' >&2; return 2;; esac
+	case "$number" in ''|*[!0-9]*) return 2;; esac
+	n=${#number};test "$n" -ge 3 && test "$n" -le 15 || return 2
+	length=$(( (6+2*n+3)/4*4 ))
+	body=$(printf '0100020704010003%02x110000%02x' "$length" "$n")
+	while test -n "$number"; do
+		rest=${number#?};digit=${number%"$rest"};number=$rest
+		body=$body$(printf '00%02x' "'$digit")
+	done
+	padding=$((length-6-2*n))
+	while test "$padding" -gt 0; do body=${body}00;padding=$((padding-1));done
+}
+if test "${1:-}" = --encode; then test "$#" = 2;encode "$2";printf '%s\n' "$body";exit;fi
+test "$#" -ge 1 && test "$#" -le 2 || { echo 'usage: modem-call +number [test duration1..60s; default until call ends]' >&2; exit 2; }
+encode "$1"
+seconds=${2:-0}
+case "$seconds" in ''|*[!0-9]*) exit 2;; esac
+test "$seconds" -ge 0 && test "$seconds" -le 60 || exit 2
+wait_mode=$seconds
+if test "$seconds" = 0; then wait_mode=call;fi
+lib=/usr/libexec/rapuyama-modem
+test ! -e /tmp/isasw.exit
+read owner < /tmp/isasw.pid;kill -0 "$owner"
+mkdir /tmp/isasw-call-lock || { echo 'another call command is running' >&2; exit 1; }
+app=;clock=;dialed=;child=
+log=/tmp/isasw-call-$$.log
+finish(){
+	status=$?;trap - 0 HUP INT TERM;set +e
+	if test -n "$child"; then kill "$child" 2>/dev/null;wait "$child" 2>/dev/null;fi
+	if test -n "$dialed"; then PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send c9 09f00108040103;fi
+	if test -n "$app"; then PHONET_LOCAL_OBJECT=0xa4 "$lib/phonet-client" --send 0b "04${app}0000";fi
+	if test -n "$clock"; then rmmod audio_clock;fi
+	rmdir /tmp/isasw-call-lock
+	exit "$status"
+}
+trap finish 0
+trap 'exit 143' HUP INT TERM
+: > "$log"
+ln -f "$log" /tmp/isasw-call.log
+PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send c9 0df0011c040000 > /tmp/isasw-call-status
+grep -Eq 'res c9: 42 0e f0 01 08 04 02 01[[:space:]]*$' /tmp/isasw-call-status || { cat /tmp/isasw-call-status;echo 'previous call not cleared; refusing to dial' >&2;exit 1; }
+PHONET_LOCAL_OBJECT=0xa4 "$lib/phonet-client" --send 0b 000100 > /tmp/isasw-call-register
+app=$(sed -n 's/.*res 0b: 42 01 \([0-9a-f][0-9a-f]\) 00[[:space:]]*$/\1/p' /tmp/isasw-call-register)
+test -n "$app" && test "$app" != 00
+if test ! -d /sys/module/audio_clock; then insmod "$lib/audio_clock.ko";clock=1;fi
+PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send 10 120100000000c9 1 || true
+if test "$seconds" = 0; then echo 'dialing; until call ends, interrupt to release';else echo "dialing; maximum ${seconds}s, interrupt to release";fi
+dialed=1
+PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send c9 "$body" "$wait_mode" > "$log" 2>&1 &
+child=$!;configured=;i=0
+while kill -0 "$child" 2>/dev/null && { test "$seconds" = 0 || test "$i" -lt "$seconds"; }; do
+	if test -z "$configured" && grep -Eq 'res c9: ([0-9a-f]{2} 0f [0-9a-f]{2} .* 0a 04 0[348]|41 0e f0 01 0b 08 [0-9a-f]{2} [0-9a-f]{2} [0-9a-f]{2} 0[348])' "$log"; then
+		PHONET_LOCAL_OBJECT=0xa4 "$lib/phonet-client" --send 0b "14${app}0500000008030800000001000003080200000100000308070000010000030808000001000003080c00000100000308060000010000030805000021000003080e0000010000" > /tmp/isasw-call-audio
+		grep -q 'res 0b: 42 15 05 00' /tmp/isasw-call-audio
+		configured=1;echo 'speech output policy accepted'
+	fi
+	kill -0 "$owner" || exit 1
+	sleep 1;i=$((i+1))
+done
+wait "$child";child=
+cat "$log"

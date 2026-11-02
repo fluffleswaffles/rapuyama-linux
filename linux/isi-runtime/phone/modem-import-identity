@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+umask 077
+test "$(id -u)" = 0 || exit 1
+test -c /dev/rapuyama-identity || exit 1
+mkdir -p /etc/rapuyama
+chmod 700 /etc/rapuyama
+tmp=$(mktemp /etc/rapuyama/.identity.XXXXXX)
+trap 'rm -f "$tmp"' 0 HUP INT TERM
+cat /dev/rapuyama-identity > "$tmp"
+test "$(wc -c < "$tmp")" = 16
+IFS= read -r value < "$tmp"
+case "$value" in ''|*[!0-9]*) exit 1;; esac
+test "${#value}" = 15
+chmod 600 "$tmp"
+mv "$tmp" /etc/rapuyama/imei
+unset value
+echo 'private factory identity imported'

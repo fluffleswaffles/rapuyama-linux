@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+umask 077
+seconds=${1:-0}
+test "$#" -le 1 || exit 2
+case "$seconds" in ''|*[!0-9]*) exit 2;; esac
+test "$seconds" -ge 0 && test "$seconds" -le 60 || exit 2
+lib=/usr/libexec/rapuyama-modem
+test ! -e /tmp/isasw.exit
+read owner < /tmp/isasw.pid;kill -0 "$owner"
+mkdir /tmp/isasw-call-lock || { echo 'another call command is running' >&2; exit 1; }
+app=;clock=;answered=;child=;id=
+finish(){
+	status=$?;trap - 0 HUP INT TERM;set +e
+	if test -n "$child"; then kill "$child" 2>/dev/null;wait "$child" 2>/dev/null;fi
+	if test -n "$answered"; then PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send c9 "09${id}0108040103";fi
+	if test -n "$app"; then PHONET_LOCAL_OBJECT=0xa4 "$lib/phonet-client" --send 0b "04${app}0000";fi
+	if test -n "$clock"; then rmmod audio_clock;fi
+	rmdir /tmp/isasw-call-lock;exit "$status"
+}
+trap finish 0
+trap 'exit 143' HUP INT TERM
+echo 'waiting up to60s for one incoming call'
+i=0
+while test "$i" -lt 60; do
+	PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send c9 0df0011c040000 > /tmp/isasw-incoming-status
+	id=$(sed -n 's/.*res c9: 42 0e f0 01 0b 08 \([0-9a-f][0-9a-f]\) [0-9a-f][0-9a-f] [0-9a-f][0-9a-f] 05 00 00[[:space:]]*$/\1/p' /tmp/isasw-incoming-status)
+	if test -n "$id"; then
+		id=$((0x$id & 7));test "$id" -ne 0;id=$(printf '%02x' "$id");break
+	fi
+
+	grep -Eq 'res c9: 42 0e f0 01 (08 04 02 01|0b 08 [0-9a-f]{2} [0-9a-f]{2} [0-9a-f]{2} 02 00 00|0b 08 [0-9a-f]{2} 01 01 03 00 00)[[:space:]]*$' /tmp/isasw-incoming-status || { cat /tmp/isasw-incoming-status;echo 'not a single incoming call; refusing to answer' >&2;exit 1; }
+	kill -0 "$owner";sleep 1;i=$((i+1))
+done
+test -n "$id" || { echo 'no incoming call within60s' >&2;exit 1; }
+PHONET_LOCAL_OBJECT=0xa4 "$lib/phonet-client" --send 0b 000100 > /tmp/isasw-incoming-register
+app=$(sed -n 's/.*res 0b: 42 01 \([0-9a-f][0-9a-f]\) 00[[:space:]]*$/\1/p' /tmp/isasw-incoming-register)
+test -n "$app" && test "$app" != 00
+if test ! -d /sys/module/audio_clock; then insmod "$lib/audio_clock.ko";clock=1;fi
+PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send 10 120100000000c9 1 || true
+answered=1
+wait_seconds=$seconds
+if test "$seconds" = 0; then wait_seconds=1;fi
+PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send c9 "07${id}00" "$wait_seconds" > /tmp/isasw-incoming.log 2>&1 &
+child=$!;configured=;i=0
+while { test "$seconds" = 0 || test "$i" -lt "$seconds"; }; do
+	if test "$seconds" = 0; then
+		if test -n "$child"; then wait "$child";child=;fi
+		PHONET_LOCAL_OBJECT=0xa3 "$lib/phonet-client" --send c9 0df0011c040000 > /tmp/isasw-incoming-current
+		if grep -Eq 'res c9: 42 0e f0 01 08 04 02 01[[:space:]]*$' /tmp/isasw-incoming-current; then answered=;break;fi
+		cat /tmp/isasw-incoming-current >> /tmp/isasw-incoming.log
+	elif ! kill -0 "$child" 2>/dev/null; then break;fi
+	if grep -Eq 'res c9: [0-9a-f]{2} 08 [0-9a-f]{2} 01' /tmp/isasw-incoming.log; then
+		answered=;cat /tmp/isasw-incoming.log;echo 'answer rejected; not releasing an unaccepted call' >&2;exit 1
+	fi
+	if test -z "$configured" && grep -Eq 'res c9: ([0-9a-f]{2} 0f [0-9a-f]{2} .* 0a 04 0[78]|42 0e f0 01 0b 08 [0-9a-f]{2} [0-9a-f]{2} [0-9a-f]{2} 0[78])' /tmp/isasw-incoming.log; then
+		PHONET_LOCAL_OBJECT=0xa4 "$lib/phonet-client" --send 0b "14${app}0500000008030800000001000003080200000100000308070000010000030808000001000003080c00000100000308060000010000030805000021000003080e0000010000" > /tmp/isasw-incoming-audio
+		grep -q 'res 0b: 42 15 05 00' /tmp/isasw-incoming-audio
+		configured=1;echo 'incoming speech output policy accepted'
+	fi
+	kill -0 "$owner";sleep 1;i=$((i+1))
+done
+if test -n "$child"; then wait "$child";child=;fi
+cat /tmp/isasw-incoming.log

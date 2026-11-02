@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+umask 077
+lib=/usr/libexec/rapuyama-modem
+test "$(id -u)" = 0 || { echo 'run as root' >&2; exit 1; }
+test ! -e /tmp/isasw-base && test ! -e /tmp/isasw-base.new || { echo 'fresh Linux boot required; refusing modem restart' >&2; exit 1; }
+if test ! -r /etc/rapuyama/imei && test -c /dev/rapuyama-identity; then modem-import-identity;fi
+test -r /etc/rapuyama/imei || { echo 'missing private factory IMEI handoff' >&2; exit 1; }
+ifconfig phonet0 up
+insmod "$lib/sim_bridge.ko"
+ISI_DEVICE_IMEI_FILE=/etc/rapuyama/imei ISI_OS_TIMERS=1 ISI_SIM_DEVICE=/dev/rapuyama-sim ISI_TRACE=/tmp/isasw.trace RUNTIME="$lib/runtime" sh "$lib/modem-probe" live
+for attempt in 1 2 3; do
+	test ! -e /tmp/isasw.exit || { cat /tmp/isasw.exit; exit 1; }
+	if test ! -r /tmp/isasw.pid; then sleep 1;continue;fi
+	read pid < /tmp/isasw.pid
+	kill -0 "$pid"
+	if "$lib/phonet-test" --version e6 > /tmp/isasw-start-version &&
+	   grep -q 'res e6: 42 f0 13 09 00' /tmp/isasw-start-version; then
+		cat /tmp/isasw-start-version
+		test ! -e /tmp/isasw.exit
+		echo 'modem started; use modem-call +number [seconds]'
+		exit 0
+	fi
+	sleep 1
+done
+echo 'DSP readiness timed out; owner preserved, no modem restart' >&2
+exit 1

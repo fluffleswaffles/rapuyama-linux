@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -eu
+umask 077
+state=/run/rapuyama-modem
+mkdir -p "$state"
+for file in "$state/sms-listener.pid" /tmp/isasw.pid; do
+ test -r "$file" || continue
+ read pid < "$file" || continue
+ case "$pid" in ''|*[!0-9]*) continue;;esac
+ test "$pid" -gt 1 || continue
+ exe=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
+ case "$exe" in
+  /usr/libexec/rapuyama-modem/runtime|'/usr/libexec/rapuyama-modem/runtime (deleted)'|/usr/libexec/rapuyama-modem/phonet-client) kill -TERM "$pid" 2>/dev/null || true;;
+ esac
+done
+ifconfig phonet0 down 2>/dev/null || true
+if test -f "$state/audio-clock"; then rmmod audio_clock 2>/dev/null || true;rm -f "$state/audio-clock";fi
+rm -f "$state/signal" "$state/call" "$state/calls"
+printf '%s\n' offline > "$state/status"

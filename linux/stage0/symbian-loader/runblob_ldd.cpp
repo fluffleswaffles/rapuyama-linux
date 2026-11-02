@@ -259,12 +259,15 @@ static void PrepareHw(){
 	cb[0x04/4]=0;
 }
 
+#include "../../kernel/linux/include/linux/rapuyama_identity.h"
+static void IdentityErase(TUint8* p,TInt size){volatile TUint8* v=p;while(size--){*v++=0;}}
 class DRunBlobChan : public DLogicalChannelBase{
 	public:
-		DRunBlobChan() : iBootChunk(NULL), iBootPhys(0), iBootVirt(0), iBootSize(0), iBootAlloc(0){}
+		DRunBlobChan() : iBootChunk(NULL), iBootPhys(0), iBootVirt(0), iBootSize(0), iBootAlloc(0), iHaveIdentity(EFalse){IdentityErase(iIdentity,15);}
 		// a booter that quits after AllocBoot must give the block back, else
 		// it stays held until reboot and every next try finds less ram
 		virtual ~DRunBlobChan(){
+			IdentityErase(iIdentity,15);
 			if(iBootChunk){iBootChunk->Close(NULL);}
 			if(iBootAlloc){Epoc::FreePhysicalRam(iBootPhys, iBootAlloc);}
 		}
@@ -274,12 +277,21 @@ class DRunBlobChan : public DLogicalChannelBase{
 		TLinAddr iBootVirt;
 		TUint32 iBootSize; // mapped
 		TUint32 iBootAlloc; // allocated, >= iBootSize (e6bfix holds more)
+		TUint8 iIdentity[15];
+		TBool iHaveIdentity;
 	protected:
 		virtual TInt DoCreate(TInt, const TDesC8*, const TVersion&){return KErrNone;}
 		virtual TInt Request(TInt aFunction, TAny* a1, TAny* a2);
 };
 
 TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
+	if(aFunction==RRunBlob::EControlFactoryIdentity){
+		iHaveIdentity=EFalse;IdentityErase(iIdentity,15);
+		TInt r=Kern::ThreadRawRead(&Kern::CurrentThread(),a1,iIdentity,15);
+		if(r!=KErrNone){return r;}
+		if(!e6_id_valid(iIdentity)){IdentityErase(iIdentity,15);return KErrArgument;}
+		iHaveIdentity=ETrue;return KErrNone;
+	}
 	// trampoline stage 1: build + check an identity section map
 	if(aFunction==RRunBlob::EControlIdentityTest){
 		const TInt KSec=0x100000; // 1 mb section
@@ -621,6 +633,7 @@ TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 		// filled with irqs off (symbian may own that ram until it dies)
 		DPlatChunkHw* hc=NULL;
 		if(DPlatChunkHw::New(hc, KIsaHandoffPhys, KIsaHandoffSz, EMapAttrSupRw|EMapAttrFullyBlocking)!=KErrNone){hc=NULL;}
+		if(iHaveIdentity && !hc){return KErrNoMemory;} // never silently lose a promised identity
 
 #ifdef RB_CALIB_KICK
 		// send securitykext's periodic request now
@@ -638,6 +651,12 @@ TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 		if(hc){
 			SaveIsaHandoff((volatile TUint32*)hc->LinearAddress());
 			WriteCalib((volatile TUint32*)hc->LinearAddress());
+			TUint8 packet[E6_ID_SIZE];e6_id_pack(packet,iHaveIdentity ? iIdentity : NULL);
+			volatile TUint8* id=(volatile TUint8*)hc->LinearAddress()+E6_ID_OFFSET;
+			for(TInt n=0;n<E6_ID_SIZE;++n){id[n]=0;}
+			for(TInt n=4;n<E6_ID_SIZE;++n){id[n]=packet[n];}
+			for(TInt n=0;n<4;++n){id[n]=packet[n];} // publish magic last
+			IdentityErase(packet,E6_ID_SIZE);IdentityErase(iIdentity,15);
 			Dsb();
 		}
 		PrepareHw();

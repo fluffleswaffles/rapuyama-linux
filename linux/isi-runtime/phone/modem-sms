@@ -1,0 +1,8 @@
+#!/bin/sh
+
+set -eu
+test "$#" = 2 || { echo 'usage: modem-sms +RECIPIENT "text" (up to ten SMS parts)' >&2; exit 2; }
+test ! -e /tmp/isasw.exit
+read pid < /tmp/isasw.pid
+kill -0 "$pid"
+exec /usr/libexec/rapuyama-modem/phonet-client --sms-text "$1" "$2"

@@ -69,6 +69,11 @@ if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
 fi
 
 # swap: compressed zram first (the card is slow), then /swapfile on the card
+if command -v modem-boot >/dev/null 2>&1; then
+	export MODEM_SMS_INBOX=/root/.local/share/yamashell/messages-incoming
+	modem-boot &
+fi
+
 if [ -e /sys/block/zram0 ]; then
 	echo 128M > /sys/block/zram0/disksize
 	mkswap /dev/zram0 > /dev/null && swapon -p 100 /dev/zram0

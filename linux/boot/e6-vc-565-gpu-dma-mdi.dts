@@ -1,0 +1,14 @@
+/* test only: gpu-dma-nohlt + the MCU/DSP MDI rings for the isolated ISASW runtime (VMSPLIT_3G25 kernel) */
+/include/ "e6-vc-565-gpu-dma-nohlt.dts"
+
+/ {
+	soc {
+		/* hal_mdi.c: rings in SRAM, doorbells status/set/clear, lines 0x13/0x15/0x17 */
+		mdi@30003ce0 {
+			compatible = "nokia,e6-mdi";
+			reg = <0x30003ce0 0x220>, <0x20040280 0xc>;
+			interrupts = <19>, <21>, <23>;
+			interrupt-names = "rx", "tx", "event";
+		};
+	};
+};
