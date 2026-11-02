@@ -161,6 +161,40 @@ usb_net() {
 	udhcpc -i usb0 -b -S -t 5 -T 3 -A 10 -s /bin/e5-dhcp > /dev/null 2>&1
 }
 
+# E5 wlan files from the card: the public Image has no Nokia blobs built in,
+# so the wl1251 probe at boot failed (no nvs). LinuxE5 (the symbian loader)
+# copies the fw + default nvs out of this phone's rom and its wlan MAC to
+# E:\linux\ (= p1 of the card) on its first run. copy them into this root,
+# then bind wl1251 again. a dev Image with the blobs built in has wlan0 already
+e5_wlan_files() {
+	card=${root%p[0-9]*}p1
+	[ -n "$root" ] || card=/dev/mmcblk0p1
+	fwd=/lib/firmware/ti-connectivity
+	mkdir -p /tmp/card
+	mount -t vfat -o ro "$card" /tmp/card 2>/dev/null || { log "wlan: can't mount $card"; return; }
+	c=/tmp/card/linux
+	if [ ! -e /sys/class/net/wlan0 ] && [ -f "$c/wl1251-nvs.bin" ] && [ -f "$c/wl1251-fw.bin" ]; then
+		mkdir -p "$fwd"
+		for f in wl1251-fw.bin wl1251-nvs.bin; do
+			cmp -s "$c/$f" "$fwd/$f" || cp "$c/$f" "$fwd/$f" || log "wlan: copy $f failed"
+		done
+	fi
+	# the user's own /etc/e5-wlan-mac wins
+	[ -f "$c/e5-wlan-mac" ] && [ ! -f /etc/e5-wlan-mac ] && cp "$c/e5-wlan-mac" /etc/e5-wlan-mac
+	umount /tmp/card
+	[ -e /sys/class/net/wlan0 ] && return
+	[ -f "$fwd/wl1251-nvs.bin" ] || { log "wlan: no firmware (run LinuxE5 once with E:\\linux\\ on the card)"; return; }
+	for d in /sys/bus/spi/devices/*; do
+		grep -q ti,wl1251 "$d/of_node/compatible" 2>/dev/null && echo "${d##*/}" > /sys/bus/spi/drivers/wl1251/bind
+	done
+	n=0
+	while [ ! -e /sys/class/net/wlan0 ] && [ "$n" -lt 5 ]; do
+		n=$((n + 1))
+		sleep 1
+	done
+	[ -e /sys/class/net/wlan0 ] && log "wlan: wl1251 bound with the card's firmware" || log "wlan: wl1251 bind failed"
+}
+
 # saved wlan (sd rootfs only: wpa_supplicant + iw come from alpine).
 # wlan0 exists from the wl1251 probe, the firmware boots on ifup
 wlan_net() {
@@ -301,7 +335,7 @@ gui() {
 if grep -q e6.usbsh /proc/cmdline; then
 	usb_shell &
 	[ "$dev" = e5 ] && [ -x /bin/e5-dhcp ] && usb_net &
-	[ "$dev" = e5 ] && wlan_net &
+	[ "$dev" = e5 ] && { e5_wlan_files; wlan_net; } &
 	# after the test pattern, else the pattern lands on top of the shell.
 	# e6.nogui on the cmdline = straight to the screen shell
 	{

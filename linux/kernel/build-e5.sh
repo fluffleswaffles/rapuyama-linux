@@ -62,7 +62,9 @@ config() {
 	for o in WLAN WLAN_VENDOR_TI WL1251 WL1251_SPI SPI_RAPUYAMA_E5; do $S -e "$o"; done
 	# wl1251 reads its nvs at probe (before the rootfs): both blobs built in
 	# from E5_WLAN_FW (cut from the E5 rom, see the E5 README; not in the
-	# repo). without them the wl1251 probe fails, the rest boots
+	# repo). without them (release Image: E5_WLAN_FW=/none) the wl1251 probe
+	# fails, the rest boots, and init.sh binds it later with the files that
+	# LinuxE5 copied out of the phone's rom to E:\linux\
 	if [ -f "$E5_WLAN_FW/ti-connectivity/wl1251-nvs.bin" ]; then
 		$S --set-str EXTRA_FIRMWARE "ti-connectivity/wl1251-fw.bin ti-connectivity/wl1251-nvs.bin"
 		$S --set-str EXTRA_FIRMWARE_DIR "$E5_WLAN_FW"

@@ -10,6 +10,9 @@
 #include <e32std.h>
 #include <f32file.h>
 #include "runblob.h"
+#ifdef RB_E5
+#include <iscapi.h>
+#endif
 
 #ifdef RB_E5
 // the 9.3 efsrv has no RFs::Close (ordinal 390 > its 351 exports): close the session by its base
@@ -80,6 +83,159 @@ static void Fail(const TDesC& aWhat, TInt aErr){
 	e.Format(_L("error %d"), aErr);
 	Ask(aWhat, e, _L("OK"), KNullDesC);
 }
+
+#ifdef RB_E5
+// wlan files for linux (init.sh copies them into the rootfs and binds
+// wl1251): the wl1251 firmware + default nvs are Nokia's and can't ship, so
+// they come out of this phone's own rom (wlanhwinit.dll), and the phone's
+// wlan MAC comes from the modem (the nvs only has TI's placeholder). Done once:
+// a file already on the card is left alone. Nothing here stops the boot, a
+// failure is logged and linux runs without wlan / with the placeholder MAC
+_LIT(KWlanDir, "E:\\linux\\");
+_LIT(KWlanFw, "E:\\linux\\wl1251-fw.bin");
+_LIT(KWlanNvs, "E:\\linux\\wl1251-nvs.bin");
+_LIT(KWlanMac, "E:\\linux\\e5-wlan-mac");
+_LIT(KWlanTmp, "E:\\linux\\wlan.tmp");
+_LIT(KWlanDll, "Z:\\sys\\bin\\wlanhwinit.dll");
+// offsets from the dll's code start (rom of firmware 101.003, wlanhwinit uid3
+// 0x10207267). any other rom: the crc check refuses, no guessing
+const TUint32 KWlanUid3=0x10207267;
+const TInt KFwOff=0x268b, KFwLen=200460; // linux wl1251 format, "Rev 4.0.4.12.12"
+const TInt KNvsOff=0x2216, KNvsLen=729;  // + 3 zero bytes = the 732 B nvs file
+const TUint32 KFwCrc=0x38a5a30du, KNvsCrc=0x006428bfu; // zlib crc32
+const TInt KIscWait=3000000;
+
+static TUint32 Crc32(const TDesC8& aData){
+	TUint32 c=0xffffffffu;
+	for(TInt i=0;i<aData.Length();++i){
+		c^=aData[i];
+		for(TInt k=0;k<8;++k){c=(c>>1)^(0xedb88320u&(0u-(c&1)));}
+	}
+	return ~c;
+}
+
+static TBool Exists(const TDesC& aName){TEntry e; return gFs.Entry(aName, e)==KErrNone;}
+
+// via a temp file + rename: a pulled card / battery never leaves half a file
+// under the real name (linux would take it, the next run would skip it)
+static TInt WriteFile(const TDesC& aName, const TDesC8& aData, const TDesC8& aTail){
+	RFile f;
+	TInt r=f.Replace(gFs, KWlanTmp, EFileWrite);
+	if(r!=KErrNone){return r;}
+	r=f.Write(aData);
+	if(r==KErrNone && aTail.Length()){r=f.Write(aTail);}
+	if(r==KErrNone){r=f.Flush();}
+	f.Close();
+	if(r==KErrNone){r=gFs.Rename(KWlanTmp, aName);}
+	if(r!=KErrNone){gFs.Delete(KWlanTmp);}
+	return r;
+}
+
+static void WlanRomFiles(){
+	// TRomImageHeader: [2] uid3, [5] iCodeAddress, [7] iCodeSize. the rom is
+	// readable from user side (the wlan stack uses these blobs in place too)
+	const TUint32* h=(const TUint32*)gFs.IsFileInRom(KWlanDll);
+	if(!h){L(_L8("wlan: no wlanhwinit.dll in the rom\n")); return;}
+	if(h[2]!=KWlanUid3 || h[7]<(TUint32)(KFwOff+KFwLen)){
+		Lf(_L8("wlan: unknown wlanhwinit.dll uid3=%08x size=%x\n"), h[2], h[7]);
+		return;
+	}
+	const TUint8* code=(const TUint8*)h[5];
+	TPtrC8 fw(code+KFwOff, KFwLen), nvs(code+KNvsOff, KNvsLen);
+	TUint32 cf=Crc32(fw), cn=Crc32(nvs);
+	if(cf!=KFwCrc || cn!=KNvsCrc){
+		Lf(_L8("wlan: unknown rom blobs fw crc=%08x nvs crc=%08x\n"), cf, cn);
+		return;
+	}
+	TBuf8<3> pad; pad.FillZ(3);
+	Lf(_L8("wlan: fw write=%d\n"), WriteFile(KWlanFw, fw, KNullDesC8));
+	Lf(_L8("wlan: nvs write=%d\n"), WriteFile(KWlanNvs, nvs, pad));
+}
+
+// the request wlanhwinit.dll's ConstructL sends (rom 0x8092ca82), but every
+// wait with a timeout (ROM wlanhwinit waits forever). reference + phone
+// result: e5wmac_app.cpp (probe run 2). channel 0x20 = EIscNokiaStartup
+static TInt IscWait(TRequestStatus& aStatus, TRequestStatus& aDeadline){
+	User::WaitForRequest(aStatus, aDeadline);
+	return aStatus==KRequestPending ? KErrTimedOut : aStatus.Int();
+}
+
+static TInt WlanMacRead(RTimer& aTimer, TDes8& aReply, TUint8* aMac){
+	// ROM RIscApi: OpenCancel panics while an open is pending, Close panics if
+	// the driver refuses => a failed open is left alone (the process ends
+	// with the handoff anyway). heap objects, so a late completion hits live
+	// memory; no operator new in this link: User::Alloc + placement new
+	TAny* m1=User::Alloc(sizeof(RIscApi));
+	TAny* m2=User::Alloc(sizeof(TRequestStatus));
+	if(!m1 || !m2){return KErrNoMemory;}
+	RIscApi& isc=*new(m1) RIscApi;
+	TRequestStatus& st=*new(m2) TRequestStatus;
+	TRequestStatus deadline;
+	isc.Open(0x20, st);
+	aTimer.After(deadline, KIscWait);
+	TInt r=IscWait(st, deadline);
+	aTimer.Cancel(); User::WaitForRequest(deadline);
+	Lf(_L8("wlan: isc open=%d\n"), r);
+	if(r!=KErrNone){return r;}
+
+	TBuf8<12> q; q.FillZ(12);
+	q[3]=0x1b; q[4]=6; q[8]=0x51; q[9]=0x23; // PN_PHONE_INFO, len LE = 12-6
+	r=isc.Send(q);
+	if(r==KErrNone){
+		aTimer.After(deadline, KIscWait);
+		r=KErrTimedOut;
+		for(TInt packet=0;packet<16;++packet){ // skip other resources' packets
+			TRequestStatus rs; TUint16 needed=0;
+			aReply.Zero();
+			isc.Receive(rs, aReply, needed);
+			r=IscWait(rs, deadline);
+			if(r==KErrTimedOut){isc.ReceiveCancel(); User::WaitForRequest(rs); break;}
+			if(r!=KErrNone){break;}
+			if(aReply.Length()>=10 && aReply[3]==q[3] && aReply[8]==q[8]){break;}
+			r=KErrCorrupt;
+		}
+		aTimer.Cancel(); User::WaitForRequest(deadline);
+	}
+	isc.Close();
+	User::Free(m1); User::Free(m2);
+	Lf(_L8("wlan: mac request=%d len=%d\n"), r, aReply.Length());
+	if(r!=KErrNone){return r;}
+	// reply: [9] 0x24, [10] status 0, 6 bytes at [11] in reverse order
+	if(aReply.Length()<17 || aReply[9]!=0x24 || aReply[10]!=0){return KErrNotSupported;}
+	for(TInt i=0;i<6;++i){aMac[i]=aReply[16-i];}
+	return KErrNone;
+}
+
+static void WlanMacFile(){
+	RTimer timer;
+	TUint8* buf=(TUint8*)User::Alloc(1024);
+	if(!buf || timer.CreateLocal()!=KErrNone){User::Free(buf); L(_L8("wlan: no timer/heap\n")); return;}
+	TPtr8 reply(buf, 0, 1024);
+	TUint8 m[6];
+	TInt r=WlanMacRead(timer, reply, m);
+	timer.Close();
+	User::Free(buf);
+	if(r!=KErrNone){Lf(_L8("wlan: no mac (%d), linux keeps the default\n"), r); return;}
+	// unicast, not all zero (a global Nokia one is 30:38:55:..)
+	if((m[0]&1) || (m[0]|m[1]|m[2]|m[3]|m[4]|m[5])==0){
+		Lf(_L8("wlan: bad mac %02x:%02x:%02x:%02x:%02x:%02x\n"), m[0],m[1],m[2],m[3],m[4],m[5]);
+		return;
+	}
+	TBuf8<20> t;
+	t.Format(_L8("%02x:%02x:%02x:%02x:%02x:%02x\n"), m[0],m[1],m[2],m[3],m[4],m[5]);
+	Lf(_L8("wlan: mac %S"), &t);
+	Lf(_L8("wlan: mac write=%d\n"), WriteFile(KWlanMac, t, KNullDesC8));
+}
+
+static void WlanFiles(){
+	TBool fw=Exists(KWlanFw) && Exists(KWlanNvs), mac=Exists(KWlanMac);
+	if(fw && mac){return;}
+	TInt r=gFs.MkDirAll(KWlanDir);
+	if(r!=KErrNone && r!=KErrAlreadyExists){Lf(_L8("wlan: mkdir E:\\linux=%d\n"), r); return;}
+	if(!fw){WlanRomFiles();}
+	if(!mac){WlanMacFile();}
+}
+#endif
 
 #ifdef RB_IMAGE_BOOT
 static TInt CheckBootFile(const TDesC& aName, TInt aMax){
@@ -239,6 +395,9 @@ GLDEF_C TInt E32Main(){
 		gLog.Close(); FSCLOSE();
 		return check;
 	}
+#endif
+#ifdef RB_E5
+	WlanFiles();
 #endif
 
 	User::FreeLogicalDevice(KRunBlobName);
