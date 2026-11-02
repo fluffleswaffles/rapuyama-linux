@@ -161,6 +161,25 @@ usb_net() {
 	udhcpc -i usb0 -b -S -t 5 -T 3 -A 10 -s /bin/e5-dhcp > /dev/null 2>&1
 }
 
+# saved wlan (sd rootfs only: wpa_supplicant + iw come from alpine).
+# wlan0 exists from the wl1251 probe, the firmware boots on ifup
+wlan_net() {
+	conf=/etc/wpa_supplicant/wpa_supplicant.conf
+	[ -f "$conf" ] && [ -x /sbin/wpa_supplicant ] && [ -e /sys/class/net/wlan0 ] || return
+	ifconfig wlan0 up || { log "wlan0 up failed"; return; }
+	wpa_supplicant -B -i wlan0 -c "$conf" || { log "wpa_supplicant failed"; return; }
+	log "wlan0 up ($(cat /sys/class/net/wlan0/address)), wpa_supplicant + dhcp in the background"
+	udhcpc -i wlan0 -b -S -t 5 -T 3 -A 10 -s /usr/share/udhcpc/default.script > /dev/null 2>&1
+	# no rtc: the clock starts at 1970 and tls (apk) rejects every cert
+	n=0
+	until ntpd -n -q -p pool.ntp.org > /dev/null 2>&1; do
+		n=$((n + 1))
+		[ "$n" -ge 60 ] && { log "ntp: no time after 5 min"; return; }
+		sleep 5
+	done
+	log "ntp: clock set, $(date)"
+}
+
 fb_test() {
 	n=0
 	while [ ! -c /dev/fb0 ] && [ "$n" -lt 10 ]; do
@@ -255,6 +274,7 @@ gui() {
 if grep -q e6.usbsh /proc/cmdline; then
 	usb_shell &
 	[ "$dev" = e5 ] && [ -x /bin/e5-dhcp ] && usb_net &
+	[ "$dev" = e5 ] && wlan_net &
 	# after the test pattern, else the pattern lands on top of the shell.
 	# e6.nogui on the cmdline = straight to the screen shell
 	{

@@ -10,7 +10,8 @@ bound|renew)
 	ifconfig "$interface" "$ip" netmask "${subnet:-255.255.255.0}" up
 	while route del default dev "$interface" 2>/dev/null; do :; done
 	for r in $router; do
-		route add default gw "$r" dev "$interface" && break
+		# high metric: the pc link has no internet, a wlan default wins
+		route add default gw "$r" dev "$interface" metric 500 && break
 	done
 	if [ -n "$dns" ]; then
 		: > /etc/resolv.conf

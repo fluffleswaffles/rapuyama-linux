@@ -136,7 +136,7 @@ Keypad = **LM8320** on i2c (keypad_exp.dll: `DIOExpHwLM8320ST/NSC/Toshiba`), mai
 - R T Y U F G H J V B N M are NOT in that map -> some other scan path (second expander / direct gpio matrix classes `DIOExpHwDirect36Pin`, `Small25Pin`), get the rest live by pressing keys under linux.
 - symbian global gpio id -> bank/bit: id > 105 is id - 18 (egpio `0x800c1900`).
 
-GPIO irqs in linux: `gpio-rapuyama` is a hierarchical irqchip on the (now hierarchical) intc, parent line per pin from the egpio table. Enable/ack/edge/level are from the code, the polarity regs are a guess.
+GPIO irqs in linux: `gpio-rapuyama` is a hierarchical irqchip on the (now hierarchical) intc, parent line per pin from the egpio table. Enable/ack/edge/level are from the code; polarity 0x34 = high/rising, 0x38 = low/falling (confirmed on the E5 with the wl1251 irq, 2026-11-02).
 
 Live check: `driver/regprobe.sis` -> `E:\regprobe.bin` -> `tools/parse_regprobe.py` (i2c REV for i2c-omap, i2c fclk source, gpio state).
 
@@ -301,4 +301,4 @@ Symbian's kernel has no battery code (`power.dll` `DBatteryMonitor` is the base 
 - oneshot clockevent: built, opt-in `e6.oneshot=1` (next event in MST_COUNT, MST_RELOAD parked at 100 ms so the watchdog / flight recorder / stall check still run). qemu: ~100 timer irqs/s instead of 1000. untested on the phone.
 - input: keypad and touchscreen are polled (no reliable irq / CHG line yet: the gpio level regs never moved in the flight recorder, the keypad line shows in the irq bank raw state `0x33448` bit 10). they now poll fast only after activity (keypad 20 ms -> 40 ms idle, touch 10 ms -> 50 ms idle). i2c stays at 100 kHz: at 400 kHz both chips stop answering (NACK / XUDF timeouts, 22.10.2026), so reading Symbian's SCLL/SCLH as 400 kHz was wrong.
 - SD card rescan, then writable rootfs on the card.
-- gpio irq polarity regs `0x34/0x38` (guess), mednand (onenand), modem (ISA, paused).
+- mednand (onenand), modem (ISA, paused).
