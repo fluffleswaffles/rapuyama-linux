@@ -37,6 +37,7 @@ file /etc/e5.kmap $I/e5.kmap 644 0 0
 file /bin/keyscan $I/keyscan.sh 755 0 0
 file /bin/e5-dhcp $I/e5-dhcp.sh 755 0 0
 file /bin/brightness $I/e5-brightness.sh 755 0 0
+file /bin/blank $I/e5-blank.sh 755 0 0
 LIST
 	"$KSRC/scripts/config" --file "$KOUT/.config" --set-str INITRAMFS_SOURCE "$KOUT/initramfs.list"
 }

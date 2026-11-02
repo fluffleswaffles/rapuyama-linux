@@ -173,6 +173,11 @@ wlan_net() {
 		ip link set wlan0 address "$(cat /etc/e5-wlan-mac)" || log "wlan0: mac from /etc/e5-wlan-mac refused"
 	fi
 	ifconfig wlan0 up || { log "wlan0 up failed"; return; }
+	# E5 wl1251: power save misses ~11 beacons/min (0 with it off) and
+	# dropped the link once; off for v0.01 until the ps timing is fixed
+	if [ "$dev" = e5 ] && command -v iw >/dev/null; then
+		iw dev wlan0 set power_save off || log "wlan0: power_save off failed"
+	fi
 	wpa_supplicant -B -i wlan0 -c "$conf" || { log "wpa_supplicant failed"; return; }
 	log "wlan0 up ($(cat /sys/class/net/wlan0/address)), wpa_supplicant + dhcp in the background"
 	udhcpc -i wlan0 -b -S -t 5 -T 3 -A 10 -s /usr/share/udhcpc/default.script > /dev/null 2>&1
@@ -219,6 +224,10 @@ screen_shell() {
 	# E5: screen brightness saved by `brightness <n>` (/etc/e5-brightness)
 	if [ "$dev" = e5 ] && [ -x /bin/brightness ] && [ -r /etc/e5-brightness ]; then
 		brightness apply 2>&1 | to_kmsg brightness
+	fi
+	# E5: screen-off delay saved by `blank <minutes>|off` (/etc/e5-blank)
+	if [ "$dev" = e5 ] && [ -x /bin/blank ] && [ -r /etc/e5-blank ]; then
+		blank apply 2>&1 | to_kmsg blank
 	fi
 	# E5: one unblank so the backlight core ties the panel and the key
 	# light (gazoo-pwm0) to fb0: the console blank (consoleblank=) turns

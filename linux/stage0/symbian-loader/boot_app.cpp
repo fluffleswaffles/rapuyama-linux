@@ -56,28 +56,24 @@ static void Lf(TRefByValue<const TDesC8> f, ...){
 	L(b);
 }
 
-#ifdef RB_E5
-// no RNotifier on the E5 (not needed to prove the loader, one less import to
-// check against the 9.3 euser): show the text, wait, answer "first button"
-static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC&, const TDesC&){
-	TBuf<96> t;
-	t.Format(_L("%S %S"), &aLine1, &aLine2);
-	User::InfoPrint(t);
-	User::After(4000000);
-	return 0;
-}
-#else
+// a real dialog on the E5 too: User::InfoPrint shows nothing on the retail
+// E5 firmware (phone-tested 2026-11-02), RNotifier is exported by its euser
 static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC& aBut1, const TDesC& aBut2){
 	RNotifier n;
-	if(n.Connect()!=KErrNone){return KErrGeneral;}
+	TInt r=n.Connect();
 	TInt button=-1;
-	TRequestStatus s;
-	n.Notify(aLine1, aLine2, aBut1, aBut2, button, s);
-	User::WaitForRequest(s);
-	n.Close();
-	return (s.Int()==KErrNone) ? button : s.Int();
-}
+	if(r==KErrNone){
+		TRequestStatus s;
+		n.Notify(aLine1, aLine2, aBut1, aBut2, button, s);
+		User::WaitForRequest(s);
+		n.Close();
+		r=s.Int();
+	}
+#ifdef RB_E5
+	if(gLog.SubSessionHandle()){Lf(_L8("notifier=%d button=%d\n"), r, button);}
 #endif
+	return (r==KErrNone) ? button : r;
+}
 
 static void Fail(const TDesC& aWhat, TInt aErr){
 	TBuf<32> e;
@@ -213,7 +209,13 @@ static void Calibrate(RRunBlob& aDev){
 
 GLDEF_C TInt E32Main(){
 	if(gFs.Connect()!=KErrNone){return KErrGeneral;}
-	if(gLog.Replace(gFs, KLog, EFileWrite)!=KErrNone){FSCLOSE(); return KErrGeneral;}
+	if(gLog.Replace(gFs, KLog, EFileWrite)!=KErrNone){
+#ifdef RB_E5
+		// no card in the phone (E: is the card on the E5) or it is read-only
+		Ask(_L("No memory card (E:)."), _L("Linux boots from E:\\Image + E:\\e5.dtb"), _L("OK"), KNullDesC);
+#endif
+		FSCLOSE(); return KErrGeneral;
+	}
 	L(_L8("boot: started\n"));
 
 #ifdef RB_IMAGE_BOOT
@@ -221,7 +223,19 @@ GLDEF_C TInt E32Main(){
 	if(check==KErrNone){check=CheckBootFile(KDtb, KChunkSz-KDtbOff);}
 	if(check!=KErrNone){
 		Lf(_L8("boot files invalid: %d\n"), check);
+#ifdef RB_E5
+		// say which file and what is wrong instead of a bare error number
+		_LIT(KMissing, "missing"); _LIT(KTooBig, "too big");
+		_LIT(KEmpty, "is empty"); _LIT(KUnreadable, "unreadable");
+		const TDesC* file=(CheckBootFile(KZImage, KDtbOff-KZOff)!=KErrNone) ? &KZImage() : &KDtb();
+		const TDesC* why=(check==KErrNotFound || check==KErrPathNotFound) ? &KMissing() :
+			check==KErrTooBig ? &KTooBig() : check==KErrCorrupt ? &KEmpty() : &KUnreadable();
+		TBuf<48> what;
+		what.Format(_L("%S %S."), file, why);
+		Ask(what, _L("Copy the release files to the card."), _L("OK"), KNullDesC);
+#else
 		Fail(_L("check E:\\Image and E:\\e6.dtb"), check);
+#endif
 		gLog.Close(); FSCLOSE();
 		return check;
 	}
@@ -280,8 +294,14 @@ GLDEF_C TInt E32Main(){
 	TBuf<48> m;
 	m.Format(_L("ram %08x, kernel %d kb"), phys, zsz>>10);
 #if defined(RB_E5) || defined(RB_AUTOBOOT)
-	// no Boot/Cancel dialog: boot after 5 s (the E5 has no RNotifier here)
+	// no Boot/Cancel dialog (the E5 has no RNotifier here), so no reason to
+	// wait: 1 s so the message is seen (was a silent 5 s)
+#ifdef RB_E5
+	User::InfoPrint(_L("Starting Linux..."));
+	User::After(1000000);
+#else
 	User::After(5000000);
+#endif
 	if(0){
 #else
 	if(Ask(m, _L("boot linux?"), _L("Boot"), _L("Cancel"))!=0){
