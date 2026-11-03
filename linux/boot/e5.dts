@@ -14,7 +14,7 @@
  *   - clock gate controller (cgc): the E5 power_resources gate table
  *     0x06..0x2c equals the E6 one in clk-rapuyama.c (plan 7.17); only the
  *     mmc uses it (+ the two critical resources the driver turns on)
- *   - mmc@20032800 = the card slot
+ *   - mmc@20032800 = the card slot (pio, fifo irq level 8 words)
  *   - no i2c0 / touch / charger / modem link: E6 chips
  *   - battery: read-only gazoo adc (vbat, ntc, charger present), E5 cal,
  *     symbian's capacity curve, clean poweroff below 3.3 V
@@ -273,6 +273,10 @@
 			bus-width = <4>;
 			broken-cd;
 			max-frequency = <24000000>;
+			/* pio irq at 8 of the 32 fifo words (default the full
+			 * fifo): the card refills while the irq drains, class 2
+			 * card: reads 5.9 -> 7.5 MB/s, less cpu per MB */
+			nokia,pio-fifo-words = <8>;
 		};
 
 		/* egpio.dll, same layout as the E6 (K0, W1: the wlan pdd's calls).
