@@ -199,11 +199,20 @@
 
 		/* panel interface: OMAP2-style RFBI, MIPI DCS panel on an 8-bit bus,
 		 * RGB888 (D0..D2, plan 7.13-7.15). symbian's rfbi/dispc setup is kept
-		 * as is; the driver only writes CMD (+0x4c) / PARAM (+0x50) and polls
-		 * SYSSTATUS (+0x14). no irq, no clocks (left running by symbian) */
+		 * as is; the cpu path only writes CMD (+0x4c) / PARAM (+0x50) and polls
+		 * SYSSTATUS (+0x14). 2nd reg = DISPC (OMAP2 layout) for the dma path
+		 * (default on, rapuyama_e5_fb.dma=0 = cpu only; d_display.ldd
+		 * 0x80180498): gfx plane address,
+		 * size and go, rfbi CONTROL start/stop, FRAMEDONE polled. no irq (146
+		 * not used yet). clock = power resource 0x18 EHwClkViSSI (cgc gate
+		 * 0x17, 0x20033190 bit 5): the gfx dma needs it and symbian leaves it
+		 * off (phone test: dma timed out, worked by hand after setting it);
+		 * the driver switches it on only during a dma push. rfbi/dispc
+		 * registers themselves answer without it (cpu path) */
 		display@20025800 {
 			compatible = "nokia,rapuyama-e5-rfbi";
-			reg = <0x20025800 0x100>;
+			reg = <0x20025800 0x100>, <0x20024800 0x200>;
+			clocks = <&cgc 0x18>;
 		};
 
 		/* qwerty 8x8 matrix, polled (rapuyama-e5-keypad.c, ekeyb.dll scan):
