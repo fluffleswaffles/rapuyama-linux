@@ -21,7 +21,7 @@ Tested on the phone:
 | System tick | IRQ 35, 1 kHz (`timer-rapuyama-e5.c`) |
 | CPU idle | `e6.idle=1`: Symbian's shallow WFI between interrupts (`mach-rapuyama/idle.c`, the E5 `power.dll` has the same sequence) instead of `nohlt` |
 | Watchdogs | SoC/PMIC watchdog with the E6 driver. PA_SWD secure watchdog via the bridge's `nokia,e5` entry (`e6.swd=1`). Linux stays up past the old 64-150 s reset |
-| Memory | `e6.lowmem=1` gives back the RAM below the loader block (about 178 MB total) |
+| Memory | `e6.lowmem=2` gives back the RAM below the loader block, keeping only what Symbian's leftovers (the PA_SWD bridge, device windows) still use: about 207 MB total (`e6.lowmem=1` keeps every page Symbian mapped, about 178 MB) |
 | Display | 320x240 fbdev + fbcon over RFBI (`rapuyama-e5-fb.c`). DISPC + RFBI DMA push, as Symbian does it: a full frame takes about 20 ms with the CPU free, instead of 36-57 ms of CPU byte writes, and console scrolling is twice as fast. `rapuyama_e5_fb.dma=0` on the kernel command line, or `echo 0 > /sys/module/rapuyama_e5_fb/parameters/dma`, goes back to the CPU path. The v0.01-e5 release still uses the CPU path |
 | Brightness | Panel DCS backlight, `/sys/class/backlight/panel` and the `brightness` command |
 | Screen off | The console blanks after 60 s without a key press (`consoleblank=60`): panel sleep, screen and keyboard light off. Any key wakes it |

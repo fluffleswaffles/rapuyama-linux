@@ -44,10 +44,14 @@
 	chosen {
 		/* clk_ignore_unused/pd_ignore_unused: nothing here owns the gates,
 		 * symbian's state must stay.
-		 * e6.lowmem: ram 0x11600000..loader block back, symbian-mapped pages
-		 * stay reserved (+~27 MB, runs L1/L2 2026-11-01: lowwatch 20 passes
-		 * 0 pages changed). first suspect for random crashes / corruption:
-		 * boot a dtb without it.
+		 * e6.lowmem: ram 0x11600000..loader block back (lowmem.c). =1 keeps
+		 * every page symbian's kernel L1 maps (+~27 MB, runs L1/L2
+		 * 2026-11-01); =2 keeps only the L2 tables, symbian's kernel core
+		 * (va c0000000..c9ffffff, fc000000+: the PA_SWD bridge runs kernel
+		 * code that reads it), device windows, the DSP-area page and the
+		 * bridge's pages: +24.7 MB more (MemTotal 182 -> 207 MB; lowwatch=2
+		 * run, 140 MB fill test, 20 min with X: 2026-11-03). first suspect
+		 * for random crashes / corruption: boot with e6.lowmem=1, then 0.
 		 * e6.swd: PA_SWD 0x1f bridge, E5 entry in secure_wdt.c (needs the
 		 * v2 isah block of e5bot3)
 		 * e6.root: btrfs rootfs on the card's p2 (tools/sdroot.sh ... e5);
@@ -56,7 +60,7 @@
 		 * E5 power.dll has the same sequence) instead of nohlt = the cpu
 		 * spinning at full speed. fallback if it hangs: nohlt
 		 * consoleblank: screen off (panel sleep) 60 s after the last key */
-		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 consoleblank=60 loglevel=3 panic=10 e6.idle=1 clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=1 e6.root=/dev/mmcblk0p2 g_cdc.host_addr=02:e5:00:00:00:01 g_cdc.dev_addr=02:e5:00:00:00:02";
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 consoleblank=60 loglevel=3 panic=10 e6.idle=1 clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=2 e6.root=/dev/mmcblk0p2 g_cdc.host_addr=02:e5:00:00:00:01 g_cdc.dev_addr=02:e5:00:00:00:02";
 	};
 
 	cpus {
