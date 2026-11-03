@@ -52,7 +52,7 @@ You need:
 
 1. Charge the phone in Symbian. Linux doesn't charge the battery.
 2. Copy `LinuxE5.sis`, `Image` and `e5.dtb` from the release to the root of the memory card (E:\), with a card reader or USB mass storage.
-3. Install `LinuxE5.sis` on the phone (open it from the card in the file manager).
+3. Install `LinuxE5.sis` on the phone (open it from the card in the file manager). When the installer asks where, choose the phone memory (C:), not the memory card.
 4. Start LinuxE5 from the menu. The first start copies the WLAN firmware and the phone's MAC address out of its own ROM into `E:\linux\`. LinuxE5 waits 5 s, then Linux boots.
 5. The screen shows a welcome with the commands below, then a shell on the phone's keyboard.
 
