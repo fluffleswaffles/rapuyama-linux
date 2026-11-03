@@ -108,6 +108,8 @@ config() {
 	# P1: gazoo light pwm as backlight class devices (not the screen; the
 	# screen backlight is in the fbdev driver, /sys/class/backlight/panel)
 	for o in BACKLIGHT_CLASS_DEVICE BACKLIGHT_RAPUYAMA_E5; do $S -e "$o"; done
+	# sd card dma: the general dma (gdma)
+	for o in DMADEVICES RAPUYAMA_GDMA; do $S -e "$o"; done
 	initramfs_list
 	"${MAKE[@]}" olddefconfig
 }

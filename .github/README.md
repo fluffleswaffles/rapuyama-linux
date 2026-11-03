@@ -27,7 +27,7 @@ Tested on the phone:
 | Screen off | The console blanks after 60 s without a key press (`consoleblank=60`): panel sleep, screen and keyboard light off. Any key wakes it |
 | Keyboard | Polled 8x8 matrix (`rapuyama-e5-keypad.c`). Console layers for sym, fn and sticky ctrl/alt (`tools/e5-kmap.py` -> `linux/initramfs/e5.kmap`) |
 | Keyboard light | Gazoo PMIC PWM 0, `/sys/class/backlight/gazoo-pwm0` (0..127) |
-| microSD | MMC controller `0x20032800`, IRQ 173, clock gates through the E6 `cgc` driver (the E5 gate table is the same). PIO with the FIFO interrupt at 8 of 32 words: reads about 7.5 MB/s, writes about 4 MB/s on a class 2 card (was 5.9 and 3.4 MB/s) |
+| microSD | MMC controller `0x20032800`, IRQ 173, clock gates through the E6 `cgc` driver (the E5 gate table is the same). DMA through the general DMA controller (GDMA, `rapuyama-gdma.c`, reversed from `dma.dll`): on a class 2 card reads about 8 MB/s with 0.67 s of CPU per 32 MB (PIO: 1.72 s), writes about 4 MB/s (both limited by the card). Without the GDMA node, PIO with the FIFO interrupt at 8 of 32 words |
 | Rootfs | Alpine armhf on the card's second partition (btrfs, `e6.root=/dev/mmcblk0p2`): apk, nano, tmux, htop, python3, git, ssh, 1 GiB swapfile. Without it (simple mode) Linux runs from the initramfs in RAM, with WLAN and `apk` |
 | Fonts | `font list / set / next` switches the console font (kbd + Terminus, e.g. `ter-112n` = 53x20). Built-in kernel fonts for `fbcon=font:` in the dtb |
 | USB ethernet | `g_cdc`: the serial shell plus CDC ECM `usb0`, DHCP from the PC |
@@ -96,7 +96,9 @@ Kernel (`linux/kernel/linux`, branch `e5`):
 | `arch/arm/mach-rapuyama/secure_wdt.c` | PA_SWD bridge, E5 entry |
 | `arch/arm/mach-rapuyama/idle.c` | Shallow WFI idle, enabled for the E5 too |
 | `drivers/gpio/gpio-rapuyama.c`, `drivers/net/wireless/ti/wl1251/spi.c` | GPIO IRQ polarity fix, WL1251 IRQ edge from the DT |
-| `drivers/mmc/host/omap.c` | PIO FIFO interrupt level from the DT (`nokia,pio-fifo-words`, default the full FIFO as before) |
+| `drivers/mmc/host/omap.c` | PIO FIFO interrupt level from the DT (`nokia,pio-fifo-words`, default the full FIFO as before); DMA with one word per request on the RapuYama host |
+| `drivers/dma/rapuyama-gdma.c` | General DMA controller (GDMA), slave transfers for the card slot |
+| `drivers/clk/clk-rapuyama.c` | Resource `0x3a`: the two GDMA clock bits (not a firmware resource id, the E6 doesn't use it) |
 | `drivers/watchdog/rapuyama_wdt.c` | `rapuyama_pmic_update()` for the light PWM |
 
 ## Build
