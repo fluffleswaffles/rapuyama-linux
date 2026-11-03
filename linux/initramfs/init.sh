@@ -51,14 +51,20 @@ fi
 # wrong with it = stay in the initramfs. -t btrfs: the emmc (symbian E:) is
 # never btrfs, so a swapped mmcblk number can't mount it
 root=$(sed -n 's/.*e6\.root=\([^ ]*\).*/\1/p' /proc/cmdline)
-if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
+wait_blk() {
 	n=0
-	while [ ! -b "$root" ] && [ "$n" -lt 10 ]; do
+	while [ ! -b "$1" ] && [ "$n" -lt "$2" ]; do
 		n=$((n + 1))
 		sleep 1
 	done
+}
+if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
+	# simple install = a card without p2: wait for the card itself, then
+	# only briefly for its partitions, not 10 s for a p2 that never comes
+	wait_blk "${root%p[0-9]*}" 10
+	wait_blk "$root" 2
 	mkdir -p /newroot
-	if mount -t btrfs -o noatime "$root" /newroot 2>/dev/kmsg; then
+	if [ -b "$root" ] && mount -t btrfs -o noatime "$root" /newroot 2>/dev/kmsg; then
 		if [ -x /newroot/init ]; then
 			log "switching to the rootfs on $root"
 			for d in dev proc sys tmp; do
@@ -275,6 +281,9 @@ screen_shell() {
 	log "shell on tty1 (screen + keypad)"
 	while true; do
 		clear > /dev/tty1
+		# E5 simple install (still in the initramfs): what it is + helpers
+		[ "$dev" = e5 ] && [ -z "$E6_ROOT" ] && [ -r /etc/e5-welcome ] &&
+			cat /etc/e5-welcome > /dev/tty1
 		# E5: fbcon is a linux console (colours in htop/nano), not a vt100
 		if [ "$dev" = e5 ]; then
 			TERM=linux setsid cttyhack $e5sh < /dev/tty1 > /dev/tty1 2>&1

@@ -1,6 +1,7 @@
 #!/bin/sh
 # wlan setup on the E5, installed as /usr/bin/wifi on the sd rootfs
-# (tools/sdroot.sh e5; needs alpine's wpa_supplicant + iw). init.sh
+# (tools/sdroot.sh e5) and in the initramfs (build-e5.sh, simple mode);
+# needs alpine's wpa_supplicant + iw. init.sh
 # wlan_net connects the saved network at boot; this saves one and
 # connects at once (same steps as wlan_net: own mac, power save off).
 #   wifi                      status
@@ -70,7 +71,7 @@ on)
 off)
 	stop
 	ip link set wlan0 down 2>/dev/null
-	echo "off (the saved network connects again at the next boot)"
+	echo "off (wifi on: connect again)"
 	;;
 forget)
 	stop

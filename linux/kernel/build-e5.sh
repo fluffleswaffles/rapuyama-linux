@@ -38,8 +38,44 @@ file /bin/keyscan $I/keyscan.sh 755 0 0
 file /bin/e5-dhcp $I/e5-dhcp.sh 755 0 0
 file /bin/brightness $I/e5-brightness.sh 755 0 0
 file /bin/blank $I/e5-blank.sh 755 0 0
+file /etc/e5-welcome $I/e5-welcome 644 0 0
 LIST
+	alpine_list >> "$KOUT/initramfs.list"
 	"$KSRC/scripts/config" --file "$KOUT/.config" --set-str INITRAMFS_SOURCE "$KOUT/initramfs.list"
+}
+# simple install (no sd rootfs, linux stays in the initramfs) gets wifi
+# (wpa_supplicant + iw) and apk from alpine (the same armhf packages as the
+# sd rootfs), pruned to their DT_NEEDED closure, ~+4 MB in the gzipped
+# Image. `apk add` installs into RAM, gone at reboot. alpine's busybox is in
+# the apk db but its files stay out: `apk add` must never replace our static
+# /bin/busybox (init's shells use its cttyhack). cached in
+# work/rootfs-e5-simple, delete it and its .done/.pruned stamps to rebuild
+alpine_list() {
+	local W f
+	W="$(realpath -m "$HERE/../../work/rootfs-e5-simple")"
+	if [ ! -e "$W.pruned" ]; then
+		ALPINE_PKGS="musl wpa_supplicant iw apk-tools alpine-keys
+ca-certificates-bundle busybox busybox-binsh" "$HERE/../initramfs/alpine.sh" "$W" full
+		python3 "$HERE/../../tools/prune_rootfs.py" "$W" sbin/wpa_supplicant \
+			sbin/wpa_passphrase usr/sbin/iw sbin/apk lib/ld-musl-armhf.so.1
+		touch "$W.pruned"
+	fi
+	# not /bin, /etc/busybox*, usr/share/udhcpc: alpine busybox's files
+	(cd "$W" && find lib usr sbin etc/apk etc/ssl -path usr/share/udhcpc -prune -o -print | sort) |
+	while read -r f; do
+		if [ "$f" = sbin ]; then
+			continue
+		elif [ -L "$W/$f" ]; then
+			echo "slink /$f $(readlink "$W/$f") 777 0 0"
+		elif [ -d "$W/$f" ]; then
+			echo "dir /$f $(stat -c %a "$W/$f") 0 0"
+		else
+			echo "file /$f $W/$f $(stat -c %a "$W/$f") 0 0"
+		fi
+	done
+	echo 'dir /usr/share/udhcpc 755 0 0'
+	echo "file /usr/bin/wifi $I/e5-wifi.sh 755 0 0"
+	echo "file /usr/share/udhcpc/default.script $I/e5-dhcp.sh 755 0 0"
 }
 config() {
 	cp "$HERE/e6.config" "$KOUT/.config"

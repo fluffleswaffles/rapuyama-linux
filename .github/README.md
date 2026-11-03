@@ -8,7 +8,9 @@ The hardware facts and on-device measurements are in [docs/devices/e5-00/hw-map.
 
 ## Status: alpha
 
-The alpha is a usable console phone: Alpine on the memory card, the phone's own screen and keyboard, USB and WLAN networking, the battery level and screen power management. Linux runs from RAM after a handoff from Symbian. The internal flash is never written. A reboot returns to Symbian.
+The alpha is a usable console phone: the phone's own screen and keyboard, USB and WLAN networking, Alpine's `apk`, the battery level and screen power management. Linux runs from RAM after a handoff from Symbian. The internal flash is never written. A reboot returns to Symbian.
+
+To try it, see [Install (simple mode)](#install-simple-mode): three files on the memory card, nothing to format.
 
 Tested on the phone:
 
@@ -26,18 +28,43 @@ Tested on the phone:
 | Keyboard | Polled 8x8 matrix (`rapuyama-e5-keypad.c`). Console layers for sym, fn and sticky ctrl/alt (`tools/e5-kmap.py` -> `linux/initramfs/e5.kmap`) |
 | Keyboard light | Gazoo PMIC PWM 0, `/sys/class/backlight/gazoo-pwm0` (0..127) |
 | microSD | MMC controller `0x20032800`, IRQ 173, clock gates through the E6 `cgc` driver (the E5 gate table is the same). PIO, about 5 MB/s |
-| Rootfs | Alpine armhf on the card's second partition (btrfs, `e6.root=/dev/mmcblk0p2`): apk, nano, tmux, htop, python3, git, ssh, 1 GiB swapfile. Without it the phone stays in the initramfs |
+| Rootfs | Alpine armhf on the card's second partition (btrfs, `e6.root=/dev/mmcblk0p2`): apk, nano, tmux, htop, python3, git, ssh, 1 GiB swapfile. Without it (simple mode) Linux runs from the initramfs in RAM, with WLAN and `apk` |
 | Fonts | `font list / set / next` switches the console font (kbd + Terminus, e.g. `ter-112n` = 53x20). Built-in kernel fonts for `fbcon=font:` in the dtb |
 | USB ethernet | `g_cdc`: the serial shell plus CDC ECM `usb0`, DHCP from the PC |
-| WLAN | TI WL1251 on SPI 2 (`spi-rapuyama.c`), firmware from the E5 ROM. WPA2, DHCP and NTP at boot, power save on |
+| WLAN | TI WL1251 on SPI 2 (`spi-rapuyama.c`). The firmware and the phone's own MAC address are copied out of its ROM by LinuxE5 to `E:\linux\`, the Image contains no Nokia files. WPA2, DHCP and NTP, power save off |
 | Battery | Voltage, temperature and capacity from the Gazoo ADC with the E5's own calibration (`rapuyama-battery.c`). The capacity follows Symbian's battery table. Clean power-off when the average voltage stays below 3.3 V (Symbian's limit) |
 
 Not done:
 
 - Charging under Linux. Linux does not program the bq2415x charger. Charge in Symbian, then start Linux. With the cable in, the battery reads "Not charging" and keeps draining.
 - Cellular modem, calls, SMS (planned for v2), audio, camera, Bluetooth, suspend to RAM, the power key (it belongs to the modem side).
-- The WLAN MAC address is TI's placeholder from the ROM's default nvs, the same on every E5. Put your phone's own address in `/etc/e5-wlan-mac` (see [WLAN](#wlan)).
 - Ctrl doesn't work on the test phone because its key contact is dead (the sticky ctrl layer covers it).
+- The advanced install (Alpine on the card's own partition, changes are kept) has no installer yet. Developers can make the card by hand, see [SD card rootfs](#sd-card-rootfs).
+
+## Install (simple mode)
+
+Simple mode runs Linux entirely in RAM. It doesn't format or change the memory card, and nothing is saved: every boot starts fresh.
+
+You need:
+
+- A Nokia E5-00 with firmware 101.003 and a memory card in it (E:).
+- A hacked phone: RomPatcher+ with the Install Server patch applied (auto-apply on). LinuxE5 is self-signed but needs all capabilities (it loads its own kernel driver and reads the ROM), and an unpatched Symbian 9.3 refuses to install it. After a battery pull, check in RomPatcher+ that the patch is active again before installing. The hack tools are third-party software, so use a phone without personal data on it.
+
+1. Charge the phone in Symbian. Linux doesn't charge the battery.
+2. Copy `LinuxE5.sis`, `Image` and `e5.dtb` from the release to the root of the memory card (E:\), with a card reader or USB mass storage.
+3. Install `LinuxE5.sis` on the phone (open it from the card in the file manager).
+4. Start LinuxE5 from the menu. The first start copies the WLAN firmware and the phone's MAC address out of its own ROM into `E:\linux\`. LinuxE5 waits 5 s, then Linux boots.
+5. The screen shows a welcome with the commands below, then a shell on the phone's keyboard.
+
+```sh
+wifi 'network name' 'password'   # connect (WPA/WPA2) and set the clock
+wifi                             # status
+apk add fastfetch                # install a package (into RAM)
+```
+
+The network and installed packages are gone after a reboot, so run `wifi` again each time. `apk` needs the clock, which `wifi` sets over NTP.
+
+`reboot` goes back to Symbian, `poweroff` turns the phone off. To remove it, uninstall LinuxE5 in Symbian and delete `Image`, `e5.dtb` and `E:\linux\`.
 
 ## Files
 
@@ -46,7 +73,8 @@ Not done:
 | `linux/boot/e5.dts` | Device tree, self-contained (does not include `e6.dts`). The bootargs are documented in it |
 | `linux/kernel/build-e5.sh` | Kernel + dtb build into `linux/kernel/build-e5/`, writes the E5 initramfs list |
 | `linux/initramfs/init.sh` | Shared with the E6; the E5 parts are keyed on `nokia,e5` in the dtb (keymap, font, brightness, USB/WLAN networking, login shells) |
-| `linux/initramfs/e5-brightness.sh`, `e5-font.sh`, `e5-dhcp.sh`, `e5.kmap` | `brightness` and `font` commands, the `usb0` DHCP script, the console keymap |
+| `linux/initramfs/e5-brightness.sh`, `e5-font.sh`, `e5-blank.sh`, `e5-wifi.sh`, `e5-dhcp.sh`, `e5.kmap` | `brightness`, `font`, `blank` and `wifi` commands, the DHCP script (`usb0`, and `wlan0` in simple mode), the console keymap |
+| `linux/initramfs/e5-welcome`, `e5-motd` | Screen welcome in simple mode, login message on the card rootfs |
 | `tools/sdroot.sh` | Memory card with the Alpine rootfs (`... e5`) |
 | `linux/stage0/symbian-loader/e5boot_ldd.cpp` | Loader LDD for the 9.3 kernel (`AllocBoot`, `LoadChunk`, `Boot`, `ReadPhys`, `SaveIsah`) |
 | `linux/stage0/symbian-loader/boot_app.cpp` | Loader app, E5 parts under `RB_E5` / `RB_E5_ISAH` |
@@ -79,13 +107,14 @@ The 9.3 kernel lacks two `DObject` virtuals that the ^3 headers declare, so the 
 driver/mkstage-e5.sh
 ```
 
-Loader (`e5bot3`, uid `0xe1000062`). The phone only accepts a SHA-1 signing certificate, so pass yours with `CERT=`:
+Loader (LinuxE5, uid `0xe1000064`, own menu name and icon). The phone only accepts a SHA-1 signing certificate, so pass yours with `CERT=`:
 
 ```sh
 cd linux/stage0/symbian-loader
-STAGE=$PWD/../../../driver/stage-e5 LDD_SRC=e5boot_ldd.cpp NO_ISC=1 NO_BLOBS=1 \
+STAGE=$PWD/../../../driver/stage-e5 LDD_SRC=e5boot_ldd.cpp NO_BLOBS=1 \
 CERT=/path/to/cert_sha1.pem RB_DEFS="-DRB_IMAGE_BOOT -DRB_E5 -DRB_E5_ISAH" \
-./build_app.sh e5bot3 boot_app.cpp 0xe1000062
+CAPTION="LinuxE5" ICON=$PWD/../../../driver/sis/linuxe5.svg \
+./build_app.sh linuxb boot_app.cpp 0xe1000064
 ```
 
 RAM log reader (`e5logs`, uid `0xe1000056`, writes `E:\klog.bin`): same variables, but `RB_DEFS="-DRB_E5"` and `./build_app.sh e5logs ramread_app.cpp 0xe1000056`.
@@ -98,7 +127,7 @@ dd if=e5rom.dmp of=fw/ti-connectivity/wl1251-fw.bin bs=1 skip=$((0x92eb73)) coun
 { dd if=e5rom.dmp bs=1 skip=$((0x92e6fe)) count=729; head -c 3 /dev/zero; } > fw/ti-connectivity/wl1251-nvs.bin
 ```
 
-The firmware is `Rev 4.0.4.12.12` (200460 bytes) and the nvs is 732 bytes. Both are built into the kernel, because the driver reads the nvs before the rootfs is mounted.
+The firmware is `Rev 4.0.4.12.12` (200460 bytes) and the nvs is 732 bytes. This is only for a development Image with both built in. LinuxE5 cuts the same bytes from the phone's own ROM to `E:\linux\`, which is what a release Image uses.
 
 Kernel and dtb:
 
@@ -106,7 +135,17 @@ Kernel and dtb:
 E5_WLAN_FW=/path/to/fw linux/kernel/build-e5.sh   # -> build-e5/arch/arm/boot/Image, build-e5/e5.dtb
 ```
 
-Without `E5_WLAN_FW` (default `~/e5/wlan/fw`) the kernel still builds and boots, only without WLAN.
+Release Image, without Nokia files (WLAN firmware from `E:\linux\` at boot):
+
+```sh
+cd linux/kernel
+KOUT=$PWD/build-e5-pub E5_WLAN_FW=/none ./build-e5.sh config
+KOUT=$PWD/build-e5-pub ./build-e5.sh build
+```
+
+The initramfs gets `wpa_supplicant`, `iw` and `apk` from Alpine (cached in `work/rootfs-e5-simple`), so simple mode has WLAN and packages without a rootfs.
+
+Release files: `tools/e5-release.sh out/linuxb.sis` builds this Image (with a neutral `user@host` in the version string), checks that no firmware, saved network, MAC address or path of the build PC is in it, and writes `LinuxE5.sis`, `Image`, `e5.dtb` and `SHA256SUMS` to `out/e5-release/`.
 
 ## SD card rootfs
 
@@ -118,7 +157,7 @@ On a card made before an update, copy the changed scripts by hand: `linux/initra
 
 1. Charge the phone in Symbian.
 2. Copy `Image` and `e5.dtb` to the memory card as `E:\Image` and `E:\e5.dtb`.
-3. Install `out/e5bot3.sis` and plug in the USB cable, so Symbian leaves the USB block powered.
+3. Install `out/linuxb.sis` (LinuxE5). For the USB serial shell, plug in the USB cable first, so Symbian leaves the USB block powered.
 4. Start the loader. It waits 5 s, then boots without asking.
 5. The shell appears on the screen and on the PC as a USB serial port (e.g. `picocom /dev/ttyACM0`, then press Enter).
 
@@ -128,6 +167,9 @@ On a card made before an update, copy the changed scripts by hand: `linux/initra
 
 | Command | What |
 | --- | --- |
+| `wifi 'name' 'password'`, `wifi`, `wifi off` | WLAN, see [WLAN](#wlan) |
+| `apk add <package>` | Install from Alpine (in simple mode into RAM, until the next boot) |
+| `blank 5`, `blank off` | Screen-off delay in minutes |
 | `brightness`, `brightness 40%`, `brightness up` | Screen brightness, kept in `/etc/e5-brightness` |
 | `font list`, `font set ter-112n` | Console font, kept in `/etc/e5-font` |
 | `echo 0 > /sys/class/backlight/gazoo-pwm0/brightness` | Keyboard light off (127 = full) |
@@ -146,10 +188,6 @@ The phone then gets an address in `10.42.0.0/24`, and the PC is `10.42.0.1`.
 
 ### WLAN
 
-Put the network in `/etc/wpa_supplicant/wpa_supplicant.conf` on the rootfs. `init.sh` starts `wpa_supplicant`, DHCP and NTP at boot. There is no RTC, so the clock is wrong until NTP sets it, and TLS (`apk`) fails until then.
+`wifi 'name' 'password'` saves the network in `/etc/wpa_supplicant/wpa_supplicant.conf` and connects: `wpa_supplicant`, DHCP, then NTP. On the card rootfs the saved network connects again at every boot; in simple mode `/etc` is in RAM, so it is gone after a reboot. `wifi off` disconnects, `wifi on` connects again, `wifi forget` deletes the network. There is no RTC, so the clock is wrong until NTP sets it, and TLS (`apk`) fails until then.
 
-```sh
-wpa_passphrase 'YourSSID' 'your passphrase' > /etc/wpa_supplicant/wpa_supplicant.conf
-```
-
-To use the phone's own MAC address, look it up in Symbian (`*#62209526#`) and save it: `echo 'aa:bb:cc:dd:ee:ff' > /etc/e5-wlan-mac`. It applies at the next boot.
+WLAN needs LinuxE5 to have run once with the memory card in: it copies the firmware and the phone's MAC address (`E:\linux\e5-wlan-mac`) from the ROM, and `init.sh` loads them at boot. An address in `/etc/e5-wlan-mac` on the rootfs takes priority.

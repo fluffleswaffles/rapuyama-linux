@@ -1,0 +1,14 @@
+
+ Linux on the Nokia E5 (alpha)
+ Runs in RAM: nothing is saved, the
+ memory card is not changed.
+
+ wifi 'name' 'password'    connect
+ wifi                      status
+ apk add <package>         install
+ brightness 50% | up | down
+ blank <minutes> | off     screen off
+ dmesg                     kernel log
+ poweroff                  phone off
+ reboot                    to Symbian
+
