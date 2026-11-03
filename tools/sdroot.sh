@@ -81,6 +81,10 @@ done < "$LIST"
 if [ "$DEV" = e5 ]; then
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-font.sh" "$MNT/usr/bin/font"
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-wifi.sh" "$MNT/usr/bin/wifi"
+	# optional graphical browser: the launcher + X config only, X itself is
+	# an apk add away (see the README, "Graphical browser")
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-browser.sh" "$MNT/usr/bin/browser"
+	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5-xorg.conf" "$MNT/etc/X11/xorg.conf.d/10-e5.conf"
 	# the shells go through `login -f root` (init.sh), which prints this
 	# welcome (the helpers) instead of alpine's
 	$SUDO install -m 644 "$TOP/linux/initramfs/e5-motd" "$MNT/etc/motd"

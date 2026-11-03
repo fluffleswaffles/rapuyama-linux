@@ -75,6 +75,7 @@ The network and installed packages are gone after a reboot, so run `wifi` again 
 | `linux/initramfs/init.sh` | Shared with the E6; the E5 parts are keyed on `nokia,e5` in the dtb (keymap, font, brightness, USB/WLAN networking, login shells) |
 | `linux/initramfs/e5-brightness.sh`, `e5-font.sh`, `e5-blank.sh`, `e5-wifi.sh`, `e5-dhcp.sh`, `e5.kmap` | `brightness`, `font`, `blank` and `wifi` commands, the DHCP script (`usb0`, and `wlan0` in simple mode), the console keymap |
 | `linux/initramfs/e5-welcome`, `e5-motd` | Screen welcome in simple mode, login message on the card rootfs |
+| `linux/initramfs/e5-browser.sh`, `e5-xorg.conf` | `browser` command and the X config for the optional [graphical browser](#graphical-browser) |
 | `tools/sdroot.sh` | Memory card with the Alpine rootfs (`... e5`) |
 | `linux/stage0/symbian-loader/e5boot_ldd.cpp` | Loader LDD for the 9.3 kernel (`AllocBoot`, `LoadChunk`, `Boot`, `ReadPhys`, `SaveIsah`) |
 | `linux/stage0/symbian-loader/boot_app.cpp` | Loader app, E5 parts under `RB_E5` / `RB_E5_ISAH` |
@@ -175,6 +176,7 @@ On a card made before an update, copy the changed scripts by hand: `linux/initra
 | `echo 0 > /sys/class/backlight/gazoo-pwm0/brightness` | Keyboard light off (127 = full) |
 | `printf '\033[9;5]' > /dev/tty1` | Screen-off delay for this boot, in minutes (0 = never). The default is in `consoleblank=` in the dtb (seconds) |
 | `cat /sys/class/power_supply/battery/{capacity,voltage_now,temp,status}` | Battery |
+| `browser`, `browser links`, `browser dillo <url>` | Graphical browser in X, see [Graphical browser](#graphical-browser) |
 
 ### USB network
 
@@ -185,6 +187,25 @@ nmcli connection add type ethernet ifname enx02e500000001 con-name e5-usb ipv4.m
 ```
 
 The phone then gets an address in `10.42.0.0/24`, and the PC is `10.42.0.1`.
+
+### Graphical browser
+
+Optional, on the card rootfs (X and the browsers need about 240 MB on the card, mostly Mesa libraries that X depends on but does not load here). With WLAN up:
+
+```sh
+apk add xorg-server xf86-video-fbdev xf86-input-evdev xinit font-misc-misc dillo font-dejavu links-graphics
+```
+
+`browser` starts X on the framebuffer (about 30 s) with Dillo, `browser links` with `links -g`; a URL can follow. Quitting the browser returns to the console. X uses the keypad directly (`/etc/X11/xorg.conf.d/10-e5.conf`, no udev on the phone), with OpenGL and video overlays switched off (there is no GPU). In use: about 25 MB RAM in total.
+
+| Key | In X |
+| --- | --- |
+| Right soft key | Pointer mode on/off |
+| Navi key | Arrows; in pointer mode it moves the pointer (`E5_PTR_STEP`, default 2 pixels per step, accelerating while held) |
+| Enter, navi centre | Enter; in pointer mode a left click |
+| fn (bottom left), held | Ctrl: fn+L address bar, fn+Q quit (Dillo) |
+
+`links -g` works from the keyboard alone. Dillo needs pointer mode to follow links. Alpine's NetSurf framebuffer build and `links` without X can't draw on the E5 screen (they need SDL with a display backend the E5 doesn't have, or X).
 
 ### WLAN
 
