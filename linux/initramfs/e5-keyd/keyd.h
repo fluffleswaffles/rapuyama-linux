@@ -5,6 +5,7 @@
 #define E5_KEYD_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define KEYD_W		320	/* the fb overlay: panel rows 120..239 */
@@ -49,7 +50,25 @@ extern const char keyd_navline[];
 
 /* one input event (EV_KEY): value 0 up, 1 down, 2 repeat -> KEYD_* bits */
 unsigned keyd_event(struct keyd_state *s, int code, int value);
-/* the picture, rows 0..KEYD_H-1 of the overlay */
-void keyd_render(uint32_t px[KEYD_H][KEYD_W]);
+
+/* a font for the picture, at most 8 px wide: one byte per glyph row (msb =
+ * leftmost pixel), g[c - 32] = the glyph of ASCII c, NULL = none. The glyphs
+ * point into the buffer it was read from */
+struct keyd_font {
+	int h;
+	const unsigned char *g[95];
+};
+/* a psf1/psf2 file (uncompressed); ASCII through its unicode table when it
+ * has one. 0, or -1: not psf, wider than 8 px, truncated */
+int keyd_font_psf(struct keyd_font *f, const unsigned char *buf, size_t len);
+/* the console font as KD_FONT_OP_GET returns it (32 rows per glyph, glyph
+ * number = character code). 0, or -1: wider than 8 px, taller than 32 */
+int keyd_font_console(struct keyd_font *f, const unsigned char *data,
+		      unsigned w, unsigned h, unsigned count);
+/* the picture, rows 0..KEYD_H-1 of the overlay: Fn symbols 16 px tall from
+ * big, key letters 8 px tall from small (rows scaled to fit, so an 8x8 font
+ * does both); a NULL font leaves that text out */
+void keyd_render(uint32_t px[KEYD_H][KEYD_W], const struct keyd_font *big,
+		 const struct keyd_font *small);
 
 #endif

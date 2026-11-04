@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <linux/input.h>
+#include <linux/kd.h>
 #include <poll.h>
 #include <stdio.h>
 #include <string.h>
@@ -17,6 +18,11 @@
 
 #define OVL	"/sys/class/graphics/fb0/device/overlay"
 #define OVL_ON	OVL "_on"
+/* the picture's fonts from the sd rootfs (font-terminus, kbd-misc); simple
+ * mode has no font files: then the console font (fbcon=font:, VGA8x8) */
+#define FONTS	"/usr/share/consolefonts/"
+#define BIG	FONTS "ter-u16n.psf.gz"
+#define SMALL	FONTS "cp850-8x8.psfu.gz"
 
 static void klog(const char *msg)
 {
@@ -104,6 +110,50 @@ static int console_blanked(long idle)
 	return after > 0 && idle >= after && !strncmp(vt, "tty1", 4);
 }
 
+/* a font file, plain or gzip, through zcat -f; 0 bytes when missing */
+static size_t slurp(const char *path, unsigned char *buf, size_t max)
+{
+	char cmd[128];
+	size_t n = 0, got;
+	FILE *p;
+
+	if (access(path, R_OK))
+		return 0;
+	snprintf(cmd, sizeof(cmd), "zcat -f %s 2>/dev/null", path);
+	p = popen(cmd, "r");
+	if (!p)
+		return 0;
+	while (n < max && (got = fread(buf + n, 1, max - n, p)) > 0)
+		n += got;
+	pclose(p);
+	return n;
+}
+
+/* the tty1 console font; width 8 = the kernel refuses wider fonts instead
+ * of writing more than the buffer holds */
+static int console_font(struct keyd_font *f)
+{
+	static unsigned char data[512 * 32];
+	struct console_font_op op = {
+		.op = KD_FONT_OP_GET, .width = 8, .height = 32, .charcount = 512,
+		.data = data,
+	};
+	int fd = open("/dev/tty1", O_RDONLY | O_NOCTTY | O_CLOEXEC), r;
+
+	if (fd < 0)
+		return -1;
+	r = ioctl(fd, KDFONTOP, &op);
+	close(fd);
+	return r < 0 ? -1 : keyd_font_console(f, data, op.width, op.height, op.charcount);
+}
+
+static const struct keyd_font *font(struct keyd_font *f, const char *path,
+				    unsigned char *buf, size_t max,
+				    const struct keyd_font *con)
+{
+	return keyd_font_psf(f, buf, slurp(path, buf, max)) ? con : f;
+}
+
 static long now(void)
 {
 	struct timespec ts;
@@ -127,6 +177,9 @@ static void apply(int fb, unsigned a)
 int main(void)
 {
 	static uint32_t px[KEYD_H][KEYD_W];
+	static unsigned char bigbuf[65536], smallbuf[65536];
+	struct keyd_font big, small, con;
+	const struct keyd_font *pb, *ps, *cf;
 	struct pollfd pfd[2];
 	struct keyd_state s = { 0 };
 	int n = 0, fd, fb;
@@ -147,7 +200,12 @@ int main(void)
 	else
 		klog("no power key input, fn picture only");
 
-	keyd_render(px);
+	cf = console_font(&con) ? NULL : &con;
+	pb = font(&big, BIG, bigbuf, sizeof(bigbuf), cf);
+	ps = font(&small, SMALL, smallbuf, sizeof(smallbuf), cf);
+	klog(pb == &big && ps == &small ? "font: ter-u16n + cp850-8x8" :
+	     cf ? "font: the console font (no font files)" : "no font, picture without text");
+	keyd_render(px, pb, ps);
 	fd = open(OVL, O_WRONLY | O_CLOEXEC);
 	if (fd < 0 || write_all(fd, px, sizeof(px))) {
 		klog("no fb overlay (older Image?), exiting");

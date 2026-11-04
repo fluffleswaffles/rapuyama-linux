@@ -1,8 +1,8 @@
 #!/bin/sh
 # e5-keyd: host tests, then a static armv6 musl binary (the Alpine armhf
-# sysroot of linux/initramfs/sysroot.sh, like yamashell). font.h and layer.h
-# are generated and committed: tools/psf2h.py (from the pc's console-setup
-# fonts) and tools/e5-keyd-layer.py (from tools/e5_keys.py).
+# sysroot of linux/initramfs/sysroot.sh, like yamashell). layer.h is generated
+# and committed: tools/e5-keyd-layer.py (from tools/e5_keys.py). The picture's
+# fonts are read on the phone at start (main.c), none are built in.
 # usage: build.sh [out dir]   (default: ./out) -> <out>/e5-keyd
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
