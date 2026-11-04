@@ -24,8 +24,8 @@ Tested on the phone:
 | Memory | `e6.lowmem=2` gives back the RAM below the loader block, keeping only what Symbian's leftovers (the PA_SWD bridge, device windows) still use: about 207 MB total (`e6.lowmem=1` keeps every page Symbian mapped, about 178 MB) |
 | Display | 320x240 fbdev + fbcon over RFBI (`rapuyama-e5-fb.c`). DISPC + RFBI DMA push, as Symbian does it: a full frame takes about 20 ms with the CPU free, instead of 36-57 ms of CPU byte writes, and console scrolling is twice as fast. `rapuyama_e5_fb.dma=0` on the kernel command line, or `echo 0 > /sys/module/rapuyama_e5_fb/parameters/dma`, goes back to the CPU path. The v0.01-e5 release still uses the CPU path |
 | Brightness | Panel DCS backlight, `/sys/class/backlight/panel` and the `brightness` command |
-| Screen off | The console blanks after 60 s without a key press (`consoleblank=60`): panel sleep, screen and keyboard light off. Any key wakes it |
-| Keyboard | Polled 8x8 matrix (`rapuyama-e5-keypad.c`). Console layers for sym, fn and sticky ctrl/alt (`tools/e5-kmap.py` -> `linux/initramfs/e5.kmap`) |
+| Screen off | The console blanks after 60 s without a key press (`consoleblank=60`): panel sleep, screen and keyboard light off. The red end key switches the screen off and on (`e5-keyd`, PMIC latch polled by `rapuyama_wdt.c`). Any key wakes it |
+| Keyboard | Polled 8x8 matrix (`rapuyama-e5-keypad.c`). Layers for sym (printed symbols) and fn (the rest, one key at a time) plus sticky ctrl/alt, the same in the console and in X (`tools/e5_keys.py` -> `e5-kmap.py`, `e5-xkb.py` -> `linux/initramfs/e5.kmap`, `e5.xkb`). See "Keyboard" |
 | Keyboard light | Gazoo PMIC PWM 0, `/sys/class/backlight/gazoo-pwm0` (0..127) |
 | microSD | MMC controller `0x20032800`, IRQ 173, clock gates through the E6 `cgc` driver (the E5 gate table is the same). DMA through the general DMA controller (GDMA, `rapuyama-gdma.c`, reversed from `dma.dll`): on a class 2 card reads about 8 MB/s with 0.67 s of CPU per 32 MB (PIO: 1.72 s), writes about 4 MB/s (both limited by the card). Without the GDMA node, PIO with the FIFO interrupt at 8 of 32 words |
 | Rootfs | Alpine armhf on the card's second partition (btrfs, `e6.root=/dev/mmcblk0p2`): apk, nano, tmux, htop, python3, git, ssh, 1 GiB swapfile. Without it (simple mode) Linux runs from the initramfs in RAM, with WLAN and `apk` |
@@ -81,7 +81,8 @@ The network and installed packages are gone after a reboot, so run `wifi` again 
 | `linux/stage0/symbian-loader/boot_app.cpp` | Loader app, E5 parts under `RB_E5` / `RB_E5_ISAH` |
 | `linux/stage0/symbian-loader/e5*_app.cpp`, `e5*_ldd.cpp` | Read-only probes used for the bring-up (ids, RAM map, ROM, timers) |
 | `driver/mkstage-e5.sh` | Header tree for the 9.3 kernel (`driver/stage-e5/`) |
-| `tools/e5-kmap.py`, `tools/parse_isah.py`, `tools/dram_dump_isasw.py` | Keymap generator, handoff block decoder, ISASW dump helper |
+| `tools/e5_keys.py`, `tools/e5-kmap.py`, `tools/e5-xkb.py`, `tools/test_e5_keymaps.py` | Keyboard layer table, console and X keymap generators, their host tests |
+| `tools/parse_isah.py`, `tools/dram_dump_isasw.py` | Handoff block decoder, ISASW dump helper |
 
 Kernel (`linux/kernel/linux`, branch `e5`):
 
@@ -181,6 +182,23 @@ On a card made before an update, copy the changed scripts by hand: `linux/initra
 | `cat /sys/class/power_supply/battery/{capacity,voltage_now,temp,status}` | Battery |
 | `browser`, `browser links`, `browser dillo <url>` | Graphical browser in X, see [Graphical browser](#graphical-browser) |
 
+### Keyboard
+
+Two layers on top of the printed letters, the same in the console and in X:
+
+- **sym** (bottom row, third key): the second symbol printed on each key (digits, `" ( ) * + = # - ' ; : / !`). Hold it, or tap it once for the next key. Mail locks it in the console.
+- **fn** (bottom left, arrow): everything not printed, for **one** key. Tapping fn shows a picture of this layer on the bottom half of the screen until the next key; fn again closes it.
+
+| Keys | With fn |
+| --- | --- |
+| Q W E R T Y U I O P | F1 ... F10 |
+| A S D F G H J K L, backspace | `& $ % ^ _ < > [ ]`, Delete |
+| Z X C V B N | `` ~ ` \ | { } `` |
+| `,` `.` | F11, F12 |
+| Navi up, down, left, right | Page Up, Page Down, Home, End |
+
+Front keys: left soft key Esc, Home key Alt (for the next key), call key Tab, right soft key Ctrl (for the next key), the red end key switches the screen off and on (any key wakes it too). In X, Mail toggles pointer mode (see "Graphical browser").
+
 ### USB network
 
 The phone asks for an address on `usb0` by DHCP. On the PC, make the new `enx02e500000001` interface a NetworkManager shared connection (DHCP, DNS and NAT for the phone):
@@ -203,10 +221,11 @@ apk add xorg-server xf86-video-fbdev xf86-input-evdev xinit font-misc-misc dillo
 
 | Key | In X |
 | --- | --- |
-| Right soft key | Pointer mode on/off |
+| Right soft key | Ctrl for the next key: rsk+L address bar, rsk+Q quit (Dillo) |
+| Mail | Pointer mode on/off |
 | Navi key | Arrows; in pointer mode it moves the pointer (`E5_PTR_STEP`, default 2 pixels per step, accelerating while held) |
 | Enter, navi centre | Enter; in pointer mode a left click |
-| fn (bottom left), held | Ctrl: fn+L address bar, fn+Q quit (Dillo) |
+| sym, fn | As in the console (see "Keyboard") |
 
 `links -g` works from the keyboard alone. Dillo needs pointer mode to follow links. Alpine's NetSurf framebuffer build and `links` without X can't draw on the E5 screen (they need SDL with a display backend the E5 doesn't have, or X).
 

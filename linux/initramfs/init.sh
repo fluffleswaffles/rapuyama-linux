@@ -258,6 +258,11 @@ screen_shell() {
 	if [ -r /etc/$dev.kmap ]; then
 		loadkmap < /etc/$dev.kmap && log "keymap /etc/$dev.kmap loaded"
 	fi
+	# e5: fn key picture + power key screen toggle (linux/initramfs/e5-keyd),
+	# once per boot; it logs to the kernel log itself
+	if [ "$dev" = e5 ] && command -v e5-keyd > /dev/null; then
+		e5-keyd < /dev/null > /dev/null 2>&1 &
+	fi
 	# E5 sd rootfs: console font saved by `font set` (/etc/e5-font)
 	if [ "$dev" = e5 ] && [ -x /usr/bin/font ] && [ -r /etc/e5-font ]; then
 		font apply 2>&1 | to_kmsg font

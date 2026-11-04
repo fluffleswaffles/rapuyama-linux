@@ -19,6 +19,7 @@ initramfs_list() {
 	local I BB
 	I="$(cd "$HERE/../initramfs" && pwd)"
 	BB="$(realpath "$HERE/../../work/dl/busybox-armv5l")"
+	"$I/e5-keyd/build.sh" "$KOUT/e5-keyd" > /dev/null
 	cat > "$KOUT/initramfs.list" <<LIST
 dir /dev 755 0 0
 nod /dev/console 600 0 0 c 5 1
@@ -34,6 +35,8 @@ file /sbin/init $I/init 755 0 0
 file /bin/e6sh $I/e6sh.sh 755 0 0
 dir /etc 755 0 0
 file /etc/e5.kmap $I/e5.kmap 644 0 0
+file /etc/e5.xkb $I/e5.xkb 644 0 0
+file /bin/e5-keyd $KOUT/e5-keyd/e5-keyd 755 0 0
 file /bin/keyscan $I/keyscan.sh 755 0 0
 file /bin/e5-dhcp $I/e5-dhcp.sh 755 0 0
 file /bin/brightness $I/e5-brightness.sh 755 0 0
