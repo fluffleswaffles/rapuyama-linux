@@ -2,7 +2,6 @@
 the X keymap (e5-xkb.py) and e5-keyd's key picture (e5-keyd-layer.py).
 
 Linux keycodes as in linux,keymap of linux/boot/e5.dts (all < 128).
-Design: ~/e5/kbdmap/2026-11-04-e5-keyboard-design.md (layout B).
 """
 
 KC = dict(Q=16, W=17, E=18, R=19, T=20, Y=21, U=22, I=23, O=24, P=25,

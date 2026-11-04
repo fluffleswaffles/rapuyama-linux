@@ -1,5 +1,4 @@
 /* e5-keyd: the Fn key picture and the power key screen toggle (Nokia E5).
- * Design: ~/e5/kbdmap/2026-11-04-e5-keyboard-design.md, 2.1, 2.4, 2.5.
  * core.c = state machine + picture (no I/O, host-tested), main.c = devices. */
 #ifndef E5_KEYD_H
 #define E5_KEYD_H
