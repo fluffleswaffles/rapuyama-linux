@@ -32,12 +32,12 @@ Tested on the phone:
 | Fonts | `font list / set / next` switches the console font (kbd + Terminus, e.g. `ter-112n` = 53x20). Built-in kernel fonts for `fbcon=font:` in the dtb |
 | USB ethernet | `g_cdc`: the serial shell plus CDC ECM `usb0`, DHCP from the PC |
 | WLAN | TI WL1251 on SPI 2 (`spi-rapuyama.c`). The firmware and the phone's own MAC address are copied out of its ROM by LinuxE5 to `E:\linux\`, the Image contains no Nokia files. WPA2, DHCP and NTP, power save off |
-| Battery | Voltage, temperature and capacity from the Gazoo ADC with the E5's own calibration (`rapuyama-battery.c`). The capacity follows Symbian's battery table. Clean power-off when the average voltage stays below 3.3 V (Symbian's limit) |
+| Battery | Voltage, temperature and capacity from the Gazoo ADC with the E5's own calibration (`rapuyama-battery.c`). The capacity follows Symbian's battery table, read from the voltage plus the drop under load (current x 140 mOhm), so it doesn't dip when the screen or CPU is busy. Battery current (`current_now`, 5 s average) from the Gazoo current meter. Clean power-off when the average voltage stays below 3.3 V (Symbian's limit) |
 
 Not done:
 
 - Charging under Linux. Linux does not program the bq2415x charger. Charge in Symbian, then start Linux. With the cable in, the battery reads "Not charging" and keeps draining.
-- Cellular modem, calls, SMS (planned for v2), audio, camera, Bluetooth, suspend to RAM, the power key (it belongs to the modem side).
+- Cellular modem, calls, SMS (planned for v2), audio, camera, Bluetooth, suspend to RAM.
 - Ctrl doesn't work on the test phone because its key contact is dead (the sticky ctrl layer covers it).
 - The advanced install (Alpine on the card's own partition, changes are kept) has no installer yet. Developers can make the card by hand, see [SD card rootfs](#sd-card-rootfs).
 
@@ -75,6 +75,8 @@ The network and installed packages are gone after a reboot, so run `wifi` again 
 | `linux/initramfs/init.sh` | Shared with the E6; the E5 parts are keyed on `nokia,e5` in the dtb (keymap, font, brightness, USB/WLAN networking, login shells) |
 | `linux/initramfs/e5-brightness.sh`, `e5-font.sh`, `e5-blank.sh`, `e5-wifi.sh`, `e5-dhcp.sh`, `e5.kmap` | `brightness`, `font`, `blank` and `wifi` commands, the DHCP script (`usb0`, and `wlan0` in simple mode), the console keymap |
 | `linux/initramfs/e5-welcome`, `e5-motd` | Screen welcome in simple mode, login message on the card rootfs |
+| `linux/initramfs/e5-keyd/` | `e5-keyd`: the fn key picture and the end key screen toggle (static C, host tests in `test_core.c`, `build.sh`). It draws with the phone's console fonts (Terminus 8x16 and the VGA 8x8 from the rootfs, the kernel's console font in simple mode) |
+| `linux/initramfs/e5.xkb` | X keymap with the console layers (from `tools/e5-xkb.py`) |
 | `linux/initramfs/e5-browser.sh`, `e5-xorg.conf` | `browser` command and the X config for the optional [graphical browser](#graphical-browser) |
 | `tools/sdroot.sh` | Memory card with the Alpine rootfs (`... e5`) |
 | `linux/stage0/symbian-loader/e5boot_ldd.cpp` | Loader LDD for the 9.3 kernel (`AllocBoot`, `LoadChunk`, `Boot`, `ReadPhys`, `SaveIsah`) |
@@ -89,18 +91,18 @@ Kernel (`linux/kernel/linux`, branch `e5`):
 | File | What |
 | --- | --- |
 | `drivers/clocksource/timer-rapuyama-e5.c` | IRQ 35 system tick |
-| `drivers/video/fbdev/rapuyama-e5-fb.c` | RFBI framebuffer (DISPC DMA push, CPU fallback), panel brightness, panel sleep on blank |
+| `drivers/video/fbdev/rapuyama-e5-fb.c` | RFBI framebuffer (DISPC DMA push, CPU fallback), panel brightness, panel sleep on blank, an overlay for the bottom half (`overlay`, `overlay_on` in sysfs, used by `e5-keyd`) |
 | `drivers/input/keyboard/rapuyama-e5-keypad.c` | Keyboard matrix |
 | `drivers/spi/spi-rapuyama.c` | SPI 2 controller for the WL1251 |
 | `drivers/video/backlight/rapuyama-e5-bl.c` | Gazoo light PWM (keyboard light) |
-| `drivers/power/supply/rapuyama-battery.c` | E5 entry: calibration, capacity table, low-battery power-off |
+| `drivers/power/supply/rapuyama-battery.c` | E5 entry: calibration, capacity table, current meter, capacity without the load drop, low-battery power-off |
 | `arch/arm/mach-rapuyama/secure_wdt.c` | PA_SWD bridge, E5 entry |
 | `arch/arm/mach-rapuyama/idle.c` | Shallow WFI idle, enabled for the E5 too |
 | `drivers/gpio/gpio-rapuyama.c`, `drivers/net/wireless/ti/wl1251/spi.c` | GPIO IRQ polarity fix, WL1251 IRQ edge from the DT |
 | `drivers/mmc/host/omap.c` | PIO FIFO interrupt level from the DT (`nokia,pio-fifo-words`, default the full FIFO as before); DMA with one word per request on the RapuYama host |
-| `drivers/dma/rapuyama-gdma.c` | General DMA controller (GDMA), slave transfers for the card slot |
+| `drivers/dma/rapuyama-gdma.c` | General DMA controller (GDMA), slave transfers for the card slot, clock off when idle |
 | `drivers/clk/clk-rapuyama.c` | Resource `0x3a`: the two GDMA clock bits (not a firmware resource id, the E6 doesn't use it) |
-| `drivers/watchdog/rapuyama_wdt.c` | `rapuyama_pmic_update()` for the light PWM |
+| `drivers/watchdog/rapuyama_wdt.c` | `rapuyama_pmic_update()` for the light PWM and the battery; the end key as `KEY_POWER` ("Nokia E5 power key", PMIC latch polled every 150 ms, `nokia,power-key` in the dt) |
 
 ## Build
 
@@ -179,7 +181,7 @@ On a card made before an update, copy the changed scripts by hand: `linux/initra
 | `font list`, `font set ter-112n` | Console font, kept in `/etc/e5-font` |
 | `echo 0 > /sys/class/backlight/gazoo-pwm0/brightness` | Keyboard light off (127 = full) |
 | `printf '\033[9;5]' > /dev/tty1` | Screen-off delay for this boot, in minutes (0 = never). The default is in `consoleblank=` in the dtb (seconds) |
-| `cat /sys/class/power_supply/battery/{capacity,voltage_now,temp,status}` | Battery |
+| `cat /sys/class/power_supply/battery/{capacity,voltage_now,current_now,temp,status}` | Battery (`current_now` in uA, negative = discharging) |
 | `browser`, `browser links`, `browser dillo <url>` | Graphical browser in X, see [Graphical browser](#graphical-browser) |
 
 ### Keyboard
