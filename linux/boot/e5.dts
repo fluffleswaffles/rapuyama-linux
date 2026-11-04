@@ -347,6 +347,9 @@
 		watchdog@20030700 {
 			compatible = "nokia,rapuyama-wdt";
 			reg = <0x20030700 0x40>, <0x200336c4 0x4>, <0x20033114 0x4>;
+			/* red end key: gazoo dev 1 reg 0x01 bit 0 latch, polled
+			 * (rapuyama_wdt.c), KEY_POWER on "Nokia E5 power key" */
+			nokia,power-key;
 		};
 
 		/* gazoo light pwm (rapuyama-e5-bl.c, E5 isasw hal_light_phy_gazoo):
