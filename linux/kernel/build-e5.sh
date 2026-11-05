@@ -2,8 +2,9 @@
 # E5-00 kernel + dtb: e6.config minus drm, sound, the E6 fbdevs, the E6 modem
 # keepalive (blind E6 pmic writes) and the E6 wlan chips; plus the E5 rfbi
 # fbdev + fbcon, keypad, g_cdc usb, the wl1251 on spi2 and the gazoo light
-# pwm. writes the E5 initramfs list into the output dir. own output dir, so
-# the E6 trees stay untouched. usage: ./build-e5.sh [config|build]
+# pwm; slim() drops the pi/armv7/E6/pc parts. writes the E5 initramfs list
+# into the output dir. own output dir, so the E6 trees stay untouched.
+# usage: ./build-e5.sh [config|build]
 # E5_WLAN_FW = dir with ti-connectivity/wl1251-{fw,nvs}.bin (see the E5
 # README); without them the kernel builds and boots, just without wlan
 set -euo pipefail
@@ -80,6 +81,47 @@ ca-certificates-bundle busybox busybox-binsh" "$HERE/../initramfs/alpine.sh" "$W
 	echo "file /usr/bin/wifi $I/e5-wifi.sh 755 0 0"
 	echo "file /usr/share/udhcpc/default.script $I/e5-dhcp.sh 755 0 0"
 }
+# slim E5 kernel (plan Phase 14): e6.config is a raspberry pi based,
+# multi-platform config. drop what the E5 can't use (pi, armv7, E6 and pc
+# hardware, nfs, debug extras), keep and add what the goals need (tailscale,
+# sshd firewall, cellular development, the new-card memory test)
+slim() {
+	local S="$KSRC/scripts/config --file $KOUT/.config"
+	# A: platform + cpu: only the armv6 rapuyama, no pi, no armv7
+	for o in ARCH_MULTI_V7 ARCH_BCM ARCH_BCM2835 RASPBERRYPI_FIRMWARE BCM2835_MBOX MAILBOX \
+		BCM_VIDEOCORE BCM2835_VCHIQ VCHIQ_CDEV CMA DMA_CMA; do $S -d "$o"; done
+	# A: E6 and pi hardware
+	for o in INPUT_TOUCHSCREEN KEYBOARD_RAPUYAMA KEYBOARD_GPIO_POLLED LEDS_E6_KEYBOARD NEW_LEDS \
+		I2C_BCM2835 I2C_BRCMSTB SPI_BCM2835 SPI_BCM2835AUX MMC_BCM2835 MMC_SDHCI MMC_SDHCI_IPROC \
+		PWM_BCM2835 PINCTRL_BCM2835 GPIO_RASPBERRYPI_EXP BCM2711_THERMAL BCM2835_THERMAL THERMAL HWMON \
+		SERIAL_8250 SERIAL_AMBA_PL011 PWRSEQ_EMMC; do $S -d "$o"; done
+	# A: usb host side (the E5 usb is gadget only), wired ethernet, ps/2, bluetooth, media
+	for o in USB HID SCSI ETHERNET PHYLIB SERIO INPUT_MOUSE KEYBOARD_ATKBD BT MEDIA_SUPPORT; do $S -d "$o"; done
+	for v in ATMEL MEDIATEK; do $S -d "WLAN_VENDOR_$v"; done
+	# A: nfs, ext2, unused initramfs decompressors (the initramfs is gzip)
+	for o in NFS_FS NFSD IP_PNP EXT2_FS RD_BZIP2 RD_LZMA RD_XZ RD_LZO RD_LZ4 RD_ZSTD; do $S -d "$o"; done
+	# A: debug extras + cpufreq (no E5 driver)
+	for o in KGDB KPROBES PROFILING PERF_EVENTS CPU_FREQ; do $S -d "$o"; done
+	# B: smaller log buffer (128 KB; the ramcon RAM log stays), lighter symbols
+	# (function names stay in oopses), no runtime debug switches
+	$S --set-val LOG_BUF_SHIFT 17
+	for o in KALLSYMS_ALL DYNAMIC_DEBUG SLUB_DEBUG SCHED_DEBUG IO_URING KEXEC IPV6_SIT GPIO_SYSFS; do $S -d "$o"; done
+	# B: cgroups: memcg (zswap writeback) + cpu (sched autogroup selects it)
+	for o in CGROUP_FREEZER CGROUP_DEVICE CGROUP_CPUACCT CGROUP_PERF; do $S -d "$o"; done
+	# group 1: tailscale (tun + policy routing) and a firewall (nftables)
+	for o in TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES IPV6_MULTIPLE_TABLES \
+		NETFILTER NF_CONNTRACK NF_NAT NF_TABLES NF_TABLES_INET NF_TABLES_IPV4 NF_TABLES_IPV6 \
+		NFT_CT NFT_NAT NFT_MASQ NFT_REJECT NFT_LIMIT NFT_LOG; do $S -e "$o"; done
+	# new-card memory test (plan Phase 11b): zram writeback + compressors,
+	# zswap + memcg, loop, mglru (off until enabled at runtime), psi
+	for o in ZSWAP MEMCG ZRAM_WRITEBACK ZRAM_TRACK_ENTRY_ACTIME ZRAM_BACKEND_LZ4 ZRAM_BACKEND_ZSTD \
+		CRYPTO_LZ4 CRYPTO_ZSTD BLK_DEV_LOOP LRU_GEN PSI; do $S -e "$o"; done
+	# with other zram backends on, lzo is no longer forced: keep it and
+	# lzo-rle as the default (as before); lz4/zstd stay selectable at runtime
+	$S -e ZRAM_BACKEND_LZO
+	$S -d ZRAM_DEF_COMP_LZ4
+	$S -e ZRAM_DEF_COMP_LZORLE
+}
 config() {
 	cp "$HERE/e6.config" "$KOUT/.config"
 	local S="$KSRC/scripts/config --file $KOUT/.config"
@@ -113,6 +155,7 @@ config() {
 	for o in BACKLIGHT_CLASS_DEVICE BACKLIGHT_RAPUYAMA_E5; do $S -e "$o"; done
 	# sd card dma: the general dma (gdma)
 	for o in DMADEVICES RAPUYAMA_GDMA; do $S -e "$o"; done
+	slim
 	initramfs_list
 	"${MAKE[@]}" olddefconfig
 }
