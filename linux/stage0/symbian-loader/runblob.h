@@ -59,13 +59,9 @@ class RRunBlob : public RBusLogicalChannel{
 			EControlHookCbus, EControlHookCbusRead, EControlHookCbusRemove,
 			EControlModemReset, EControlPeek,
 			EControlHookBeac8, EControlHookBeac8Read, EControlHookBeac8Remove,
-			EControlWatchService, EControlFactoryIdentity};
+			EControlWatchService, EControlSaveIsah};
 	#ifndef __KERNEL_MODE__
 		TInt Open(){return DoCreate(KRunBlobName, TVersion(1,0,0), KNullUnit, NULL, NULL);}
-		TInt FactoryIdentity(const TDesC8& aValue){
-			if(aValue.Length()!=15){return KErrArgument;}
-			return DoControl(EControlFactoryIdentity, (TAny*)aValue.Ptr());
-		}
 		TInt Run(TDes8& aBuf){return DoControl(EControlRunBlob, (TAny*)&aBuf);}
 
 		// builds an armv6 identity section mapping (virt==phys) in the page table and
@@ -146,6 +142,11 @@ class RRunBlob : public RBusLogicalChannel{
 		// sleep until just before symbian's next ~210 s reset service (tick
 		// 210000*k - 900 ms), record every thread's cpu time each 200 ms
 		TInt WatchService(TDes8& aBuf){return DoControl(EControlWatchService, (TAny*)&aBuf);}
+
+		// E5 (e5boot_ldd RB_E5_ISAH): write the version 2 handoff block at phys
+		// 0x1f0f1000 (cp15 regs, kernel L1, the L2 tables of the ISASW windows).
+		// aBuf gets 11 words: ttbr0, ttbr1, ttbcr, the 8 L1 descriptors
+		TInt SaveIsah(TDes8& aBuf){return DoControl(EControlSaveIsah, (TAny*)&aBuf);}
 
 		// patch karap's cbus-write fn 0x800b8494 to log every PMIC/CBUS write
 		// {dev,reg,val} into a ram ring (ring[0]=count, 16-byte slots at +4).

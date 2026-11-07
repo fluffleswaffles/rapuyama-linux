@@ -13,6 +13,12 @@
 #   ./build_app.sh all                                  -> both
 #   RB_DEFS=-DRB_IMAGE_BOOT ./build_app.sh e6bfix boot_app.cpp 0xe1000024
 #     -> out/e6bfix.sis: boots E:\Image in place (no decompressor)
+#   CAPTION="LinuxE5" ICON=../../../driver/sis/linuxe5.svg ./build_app.sh ...
+#     -> real menu caption + svg icon (driver/sis/mkappres.py, ensymble's
+#        rscfile/miffile like py2sis); any name length. without CAPTION the
+#        ptdump template is patched as before (6-char name, no icon)
+#   EXE_CAPS=all-tcb ./build_app.sh ...  -> exe without TCB (needed to load a
+#     rom dll that lacks TCB, e.g. wlanhwinit.dll). default all
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
@@ -24,7 +30,7 @@ if [ "$1" = all ]; then
 fi
 [ $# -eq 3 ] || { sed -n 2,14p "$0"; exit 1; }
 NAME="$1"; SRC="$2"; UID3="$3"
-[ ${#NAME} -eq 6 ] || { echo "name must be 6 chars (template patching)"; exit 1; }
+[ -n "$CAPTION" ] || [ ${#NAME} -eq 6 ] || { echo "name must be 6 chars (template patching)"; exit 1; }
 LUID=$(printf '0x%08x' $((UID3 + 1)))
 UHEX=$(printf '%08x' $((UID3)))
 LHEX=$(printf '%08x' $((LUID)))
@@ -34,14 +40,15 @@ EKA="$KH/kernel/eka"
 E2E="$ROOT/tools/bin/elf2e32_next"
 GCCE="$ROOT/tools/gcce/arm-2012.03/bin/arm-none-symbianelf"
 DRV="$ROOT/driver"
-STAGE="$DRV/stage"
+STAGE="${STAGE:-$DRV/stage}" # E5: STAGE=$DRV/stage-e5
+LDD_SRC="${LDD_SRC:-runblob_ldd.cpp}"
+ISC_LIB=("$DRV/import/iscapi.dso"); [ -z "$NO_ISC" ] || ISC_LIB=() # NO_ISC=1: no iscapi import (the E5 rom DOES have IscApi.dll v10.0, same ordinals; e5wmac uses it)
 [ -d "$STAGE" ] || "$DRV/mkstage.sh"
-OUT="${RB_BUILD_ROOT:-$HERE/build}/$NAME"
-SIS_OUT="${RB_SIS_OUT:-$ROOT/out}"
-mkdir -p "$OUT" "$SIS_OUT"
+OUT="$HERE/build/$NAME"
+mkdir -p "$OUT" "$ROOT/out"
 
 # rebuild the embedded blobs
-make -C "$HERE/.." all >/dev/null
+[ -n "$NO_BLOBS" ] || make -C "$HERE/.." all >/dev/null
 
 CXX="$GCCE-g++"; LD="$GCCE-ld"
 INC=(
@@ -68,7 +75,7 @@ LIBGCC="$("$CXX" -march=armv5t -print-libgcc-file-name)"
 LDFLAGS=(--target1-abs --no-undefined -nostdlib -shared -Ttext 0x8000 -Tdata 0x400000 --default-symver)
 
 echo ">> $NAME: compile"
-$CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -o "$OUT/ldd.o" "$HERE/runblob_ldd.cpp"
+$CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -o "$OUT/ldd.o" "$HERE/$LDD_SRC"
 $CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -x c++ -o "$OUT/d_entry_cia.o" "$EKA/kernel/arm/d_entry.cia"
 $CXX "${COMMON[@]}" -D__KERNEL_MODE__ -D__DLL__ -o "$OUT/d_entry.o" "$EKA/kernel/arm/d_entry.cpp"
 $CXX "${COMMON[@]}" -D_UNICODE -o "$OUT/app.o" "$HERE/$SRC"
@@ -85,11 +92,11 @@ $LD "${LDFLAGS[@]}" --entry _E32Dll -u _E32Dll \
     --definput="$DRV/ptdump.def" --dlldata --compressionmethod=none --capability=all
 $LD "${LDFLAGS[@]}" --entry _E32Startup -u _E32Startup \
     "$OUT/app.o" "$OUT/uc_exe.o" "$OUT/uc_exe_cia.o" \
-    "$DRV/import/EUSER.dso" "$DRV/import/EFSRV.dso" "$DRV/import/iscapi.dso" "$LIBGCC" -o "$OUT/app.elf"
+    "$DRV/import/EUSER.dso" "$DRV/import/EFSRV.dso" "${ISC_LIB[@]}" "$LIBGCC" -o "$OUT/app.elf"
 "$E2E" --elfinput="$OUT/app.elf" --output="$OUT/${NAME}_0x$UHEX.exe" \
     --targettype=EXE --uid1=0x1000007a --uid2=0x100039ce --uid3="$UID3" \
     --linkas="${NAME}_0x$UHEX{000a0000}[$UHEX].exe" --libpath="$DRV/import" \
-    --capability=all --compressionmethod=none
+    --capability="${EXE_CAPS:-all}" --compressionmethod=none
 
 echo ">> $NAME: sis"
 W="$OUT/sis"
@@ -97,6 +104,16 @@ rm -rf "$W"
 mkdir -p "$W/approot/sys/bin" "$W/approot/resource/apps" \
 	"$W/approot/private/10003a3f/import/apps"
 cp "$OUT/${NAME}_0x$UHEX.exe" "$OUT/$NAME.ldd" "$W/approot/sys/bin/"
+if [ -n "$CAPTION" ]; then
+	ARGS=(python /ens/mkappres.py /ensroot /w/approot "$NAME" "$UID3" "$CAPTION")
+	if [ -n "$ICON" ]; then
+		cp "$ICON" "$W/icon.svg"; ARGS+=(/w/icon.svg)
+	fi
+	podman run --rm -v "$ROOT/tools/src/ensymble:/ensroot:ro,Z" \
+		-v "$DRV/sis/mkappres.py:/ens/mkappres.py:ro,Z" -v "$W:/w:Z" \
+		docker.io/library/python:2.7 "${ARGS[@]}"
+	rm -f "$W/icon.svg"
+else
 # the ptdump reg/loc resources with the names + uid swapped. same string
 # lengths, so only the bytes change; the uid checksum in the header is redone
 python3 - "$DRV/sis/approot" "$W/approot" "$NAME" "$UID3" <<'EOF'
@@ -136,9 +153,10 @@ patch(src + "/private/10003a3f/import/apps/%s_reg.rsc" % old_exe,
 patch(src + "/resource/apps/%s_loc.r01" % old_exe,
       dst + "/resource/apps/%s_loc.r01" % new_exe, pairs)
 EOF
-cp "$DRV/sis/cert.pem" "$DRV/sis/key_trad.pem" "$W/"
+fi
+cp "${CERT:-$DRV/sis/cert.pem}" "$W/cert.pem"; cp "$DRV/sis/key_trad.pem" "$W/"
 podman run --rm -v "$ROOT/tools/src/ensymble:/ens:ro,Z" -v "$W:/w:Z" -w /w \
 	docker.io/library/python:2.7 python /ens/ensymble.py simplesis \
-	-u "$UID3" -c "$NAME" -a cert.pem -k key_trad.pem -p "" approot out.sis
-cp "$W/out.sis" "$SIS_OUT/$NAME.sis"
-ls -la "$SIS_OUT/$NAME.sis"
+	-u "$UID3" -c "${CAPTION:-$NAME}" -a cert.pem -k key_trad.pem -p "" approot out.sis
+cp "$W/out.sis" "$ROOT/out/$NAME.sis"
+ls -la "$ROOT/out/$NAME.sis"

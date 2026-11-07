@@ -1,0 +1,383 @@
+/dts-v1/;
+
+/* device tree for the nokia e5-00 (RM-632, fw 101.003), loader e5bot3.
+ * tested on the phone: boots to the usb shell + ram log, the E5 system
+ * tick (timer-rapuyama-e5.c, see the timer node: a different block from
+ * the E6), soc/pmic watchdogs, the PA_SWD bridge (e6.swd), e6.lowmem, cpu
+ * idle (e6.idle), the display as fbdev + fbcon with brightness and screen
+ * off, the keyboard and its light, the microSD slot (5 MB/s pio) with the
+ * alpine rootfs on its p2 (tools/sdroot.sh /dev/sdX e5), usb ethernet,
+ * wlan and the battery (read only). everything below was checked
+ * against the E5 ROM dump and the live phone (docs/devices/e5-00/
+ * hw-map.md); the E6 values that were NOT confirmed on the E5 are left out
+ * instead of copied:
+ *   - clock gate controller (cgc): the E5 power_resources gate table
+ *     0x06..0x2c equals the E6 one in clk-rapuyama.c (plan 7.17); only the
+ *     mmc uses it (+ the two critical resources the driver turns on)
+ *   - mmc@20032800 = the card slot (gdma, pio with fifo irq level 8
+ *     words without it)
+ *   - dma-controller@20040780 = general dma (gdma), the card slot's dma
+ *   - no i2c0 / touch / charger / modem link: E6 chips
+ *   - battery: read-only gazoo adc (vbat, ntc, charger present), E5 cal,
+ *     symbian's capacity curve, clean poweroff below 3.3 V
+ *   - no bt uart
+ *   - display: rfbi node only (rapuyama-e5-fb.c, cpu push); dispc and
+ *     vrfb are not touched. brightness = panel DCS 0x53/0x51 from the
+ *     same driver (/sys/class/backlight/panel); console blank = panel
+ *     sleep (consoleblank=60 below, any key wakes)
+ *   - keyboard: 8x8 gpio matrix, keypad node, polled
+ *     (rapuyama-e5-keypad.c, maps the gpio block itself)
+ *   - gpio node (gpio-rapuyama.c, egpio layout == E6, K0/W1): only the
+ *     wlan uses it (power gpio 100, irq gpio 73)
+ *   - wlan: TI WL1251 on spi2 (spi-rapuyama.c, polled), irq on gpio 73:
+ *     scan, wpa2 association, dhcp and internet work
+ * standalone on purpose (does not include e6.dts) so the E6 trees stay
+ * untouched. boot with the usb cable plugged in so symbian leaves the usb
+ * block powered
+ */
+
+/ {
+	compatible = "nokia,e5", "nokia,rapuyama";
+	model = "Nokia E5-00 (RapuYama)";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&intc>;
+
+	chosen {
+		/* clk_ignore_unused/pd_ignore_unused: nothing here owns the gates,
+		 * symbian's state must stay.
+		 * e6.lowmem: ram 0x11600000..loader block back (lowmem.c). =1 keeps
+		 * every page symbian's kernel L1 maps (+~27 MB, runs L1/L2
+		 * 2026-11-01); =2 keeps only the L2 tables, symbian's kernel core
+		 * (va c0000000..c9ffffff, fc000000+: the PA_SWD bridge runs kernel
+		 * code that reads it), device windows, the DSP-area page and the
+		 * bridge's pages: +24.7 MB more (MemTotal 182 -> 207 MB; lowwatch=2
+		 * run, 140 MB fill test, 20 min with X: 2026-11-03). first suspect
+		 * for random crashes / corruption: boot with e6.lowmem=1, then 0.
+		 * e6.swd: PA_SWD 0x1f bridge, E5 entry in secure_wdt.c (needs the
+		 * v2 isah block of e5bot3)
+		 * e6.root: btrfs rootfs on the card's p2 (tools/sdroot.sh ... e5);
+		 * no p2 = init.sh stays in the initramfs after a 10 s wait
+		 * e6.idle: symbian's shallow WFI between interrupts (idle.c; the
+		 * E5 power.dll has the same sequence) instead of nohlt = the cpu
+		 * spinning at full speed. fallback if it hangs: nohlt
+		 * consoleblank: screen off (panel sleep) 60 s after the last key */
+		bootargs = "earlycon=ramcon,0x1f000000 keep_bootcon console=tty0 console=ttyNULL fbcon=font:VGA8x8 consoleblank=60 loglevel=3 panic=10 e6.idle=1 clk_ignore_unused pd_ignore_unused cma=0 e6.usbsh e6.nogui e6.swd=1 e6.lowmem=2 e6.root=/dev/mmcblk0p2 g_cdc.host_addr=02:e5:00:00:00:01 g_cdc.dev_addr=02:e5:00:00:00:02";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu@0 {
+			device_type = "cpu";
+			/* MIDR 0x410fb764 read live: ARM1176 r0p4, same as the E6 */
+			compatible = "arm,arm1176jzf-s";
+			reg = <0>;
+		};
+	};
+
+	/* one 256 MB bank at 0x10000000 (bootstrap list {0x10000001, 0x10000000},
+	 * superpage iTotalRamSize 0x0f820000 + iTotalRomSize 0x7e0000 = 256 MB).
+	 * Linux starts at 0x11600000 like the E6 loader layout (2 MB aligned):
+	 * below that live, measured on the E5 (e5rom): the kernel L1 at
+	 * 0x10000000, the modem-side window symbian maps at 0x10480000 (3.7 MB,
+	 * role on the E5 unverified, on the E6 it was modem firmware), the
+	 * unpaged ROM copy 0x10900000..0x110da000 and paged ROM pages up to
+	 * ~0x11600000. costs 22 MB */
+	memory@11600000 {
+		device_type = "memory";
+		reg = <0x11600000 0x0ea00000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* ram log (earlycon=ramcon,0x1f000000): free in symbian's allocator
+		 * at e5rom time (Claim ok over 0x1e000000..0x1fb5ffff) */
+		ramcon@1f000000 {
+			reg = <0x1f000000 0x100000>;
+			no-map;
+		};
+
+		/* top of ram, symbian's own: 0x1fb60000..0x1fcdffff was in use at
+		 * e5rom time (unidentified), 0x1fd00000 is the kernel superpage,
+		 * 0x1fd50000 +2.5 MB and 0x1ffe0000 +64 KB are mapped by symbian
+		 * next to the mmio (c6800000, c6b00000, shared with something that is
+		 * not the arm on the E6). one reservation over all of it, 4.6 MB.
+		 * NOT no-map for the same reason as in e6.dts (a no-map hole at the
+		 * top of ram makes arm drop ram above it) */
+		symbian-top@1fb60000 {
+			reg = <0x1fb60000 0x004a0000>;
+		};
+	};
+
+	/* ULPI phy, symbian leaves it set up (cable plugged in) */
+	usb_phy: usb-phy {
+		compatible = "usb-nop-xceiv";
+		#phy-cells = <0>;
+	};
+
+	clocks {
+		/* NKern::FastCounterFrequency() = 32768 on the E5 too (live HAL
+		 * EFastCounterFrequency, ROM check 7.1) */
+		fc_clk: fc-clk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <32768>;
+		};
+		/* nominal parent of the cgc gates (E6: i2c_fclk 24 MHz); no E5
+		 * driver uses a gate's rate */
+		cgc_ref: cgc-ref {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <24000000>;
+		};
+		/* mmc functional clock: EPBUSMV rate getter 0x8013eb98 returns
+		 * 96000 kHz (plan 7.17) */
+		mmc_fclk: mmc-fclk {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <96000000>;
+		};
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* the 1 MB aperture symbian maps at c6e00000 -> 0x20500000 is the L220
+		 * outer cache: the E5 ekern does the same maintenance as the E6 at
+		 * c6e00770 / c6e007b0 / c6e007f0 (ROM 0x800a06d8..f0). the id register
+		 * (0x41000486 on the E6) has NOT been read on the E5 */
+		l2c: cache-controller@20500000 {
+			compatible = "arm,l220-cache";
+			reg = <0x20500000 0x1000>;
+			cache-unified;
+			cache-level = <2>;
+		};
+
+		/* mapped live (c6060000 -> 0x20400000 x4); the E5 karap dispatchers use
+		 * the same offsets (hw-map). the 5 secondary banks sit in
+		 * c6020000 -> 0x20020000 x48, so 0x20033400 is mapped too */
+		intc: interrupt-controller@20400000 {
+			compatible = "nokia,rapuyama-intc";
+			reg = <0x20400000 0x4000>, <0x20033400 0x140>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+		};
+
+		/* E5 system tick: IRQ 35, ROM ISR 0x8009d778. live reads (e5timr/e5tick):
+		 * 0x200401a4 is a DOWN counter at ~7.68 MHz (38.4 MHz / 5, measured
+		 * 7.66 MHz +-5 %) that reloads from 0x1e00 = 7680, i.e. a hardware
+		 * periodic 1 ms tick (every value ever read is <= 0x1e00). symbian arms it
+		 * by writing 0x1e00 to 0x200401a4 (EnbMsTick, ROM 0x8009e2a4) and the ISR
+		 * re-arms by polling 0x200401c4 until it reads 0, then writing 0x1e00 to
+		 * it. init ROM 0x8009d7cc left 0x20033600 +4=1 +8=3 and 0x20040180 +4=1
+		 * +8=4. NOT verified: the reload/ack semantics of 0x200401c4 (write
+		 * visibly acks the irq?), that the 7.68 MHz rate is exact (the 38.4/5
+		 * guess fits 7680 = 1 ms), irq 35 trigger type. there is no driver for
+		 * this binding is drivers/clocksource/timer-rapuyama-e5.c (the E6
+		 * timer-rapuyama.c, irq 242 / 0x200337a0, must NOT be pointed here).
+		 * second reg = the fast counter (clocksource), same as the E6 */
+		timer@20040180 {
+			compatible = "nokia,rapuyama-e5-timer";
+			reg = <0x20040180 0x80>, <0x20033350 0x8>;
+			interrupts = <35>;
+			clocks = <&fc_clk>;
+			clock-names = "fc";
+		};
+
+		/* musb core, same base as the E6 (hw-map: usb.dll 0x20038800 core,
+		 * 0x20038c00 wrapper; irq binds 183/215 at ROM 0x80126fd8/ff0).
+		 * no clocks property: symbian already runs the block with the cable in */
+		usb_otg: usb@20038800 {
+			compatible = "nokia,rapuyama-musb";
+			reg = <0x20038800 0x500>;
+			interrupts = <183>, <215>;
+			interrupt-names = "mc", "dma";
+			phys = <&usb_phy>;
+			dr_mode = "peripheral";
+		};
+
+		/* panel interface: OMAP2-style RFBI, MIPI DCS panel on an 8-bit bus,
+		 * RGB888 (D0..D2, plan 7.13-7.15). symbian's rfbi/dispc setup is kept
+		 * as is; the cpu path only writes CMD (+0x4c) / PARAM (+0x50) and polls
+		 * SYSSTATUS (+0x14). 2nd reg = DISPC (OMAP2 layout) for the dma path
+		 * (default on, rapuyama_e5_fb.dma=0 = cpu only; d_display.ldd
+		 * 0x80180498): gfx plane address,
+		 * size and go, rfbi CONTROL start/stop, FRAMEDONE polled. no irq (146
+		 * not used yet). clock = power resource 0x18 EHwClkViSSI (cgc gate
+		 * 0x17, 0x20033190 bit 5): the gfx dma needs it and symbian leaves it
+		 * off (phone test: dma timed out, worked by hand after setting it);
+		 * the driver switches it on only during a dma push. rfbi/dispc
+		 * registers themselves answer without it (cpu path) */
+		display@20025800 {
+			compatible = "nokia,rapuyama-e5-rfbi";
+			reg = <0x20025800 0x100>, <0x20024800 0x200>;
+			clocks = <&cgc 0x18>;
+		};
+
+		/* qwerty 8x8 matrix, polled (rapuyama-e5-keypad.c, ekeyb.dll scan):
+		 * gpio block (only the 8 column pins' out set/clr are written) and the
+		 * gpio irq block (raw row state, read only; same range as the intc's
+		 * second reg, the driver maps it without requesting it). no
+		 * learn mode: echo 1 > /sys/module/rapuyama_e5_keypad/parameters/learn */
+		keypad@20031900 {
+			compatible = "nokia,rapuyama-e5-keypad";
+			reg = <0x20031900 0x200>, <0x20033400 0x140>;
+			/* MATRIX_KEY(row,col,code) = row<<24 | col<<16 | code. positions from
+			 * ekeyb.dll: 64-byte scan table (c8009a68, idx row*8+col) checked
+			 * against its 5x20 physical-layout table (c8009aa8). codes are < 128
+			 * (busybox loadkmap) and only name the keys: the layers (sym, fn-arrow,
+			 * sticky ctrl/alt) are in the console keymap /etc/e5.kmap from
+			 * tools/e5-kmap.py. bottom row L->R: fn-arrow r0c0 (RIGHTCTRL), shift
+			 * r0c1, sym r0c2 (RIGHTALT), space r0c3+r0c6, @/ r0c7 (GRAVE), ?! r4c0
+			 * (SLASH), ctrl r4c1 (dead on the test phone). nav: lsk r5c2 (ESC),
+			 * rsk r5c4 (LEFTMETA), menu r4c6 (LEFTALT), mail r5c5 (CAPSLOCK), call
+			 * r5c6 (TAB), d-pad u r5c3 d r4c5 l r4c2 r r4c4, centre r4c3 (ENTER).
+			 * end/power is not in the matrix. r0c4/r0c5 (symbian 0xa2/0xa3)
+			 * unmapped, key unknown */
+			linux,keymap = <0x03000010 0x03010011 0x03020012 0x03030013 0x03040014 0x03050015 0x03060016 0x03070017 0x07000018 0x07010019 0x0200001e 0x0201001f 0x02020020 0x02030021 0x02040022 0x02050023 0x02060024 0x02070025 0x06000026 0x0601000e 0x0100002c 0x0101002d 0x0102002e 0x0103002f 0x01040030 0x01050031 0x01060032 0x01070033 0x05000034 0x0501001c 0x00000061 0x0001002a 0x00020064 0x00030039 0x00060039 0x00070029 0x04000035 0x0401001d 0x05020001 0x0504007d 0x04060038 0x0505003a 0x0506000f 0x05030067 0x0405006c 0x04020069 0x0404006a 0x0403001c>;
+		};
+
+		/* clock gates, clk-rapuyama.c. probe turns on the critical resources
+		 * 0x11 (gates 0x07, 0x12) and 0x1f (gate 0x22): set-bit writes only,
+		 * same regs/bits as the E5 firmware. nothing else is written until a
+		 * driver enables its clock.
+		 * second reg: gate 0x02 (res 0x0b EHwClkExtSysClk, the wl1251 ref
+		 * clock), a plain 1/0 reg (power_resources 0x800ab8f4/0x800ab970) */
+		cgc: clock-controller@20032f00 {
+			compatible = "nokia,rapuyama-cgc";
+			reg = <0x20032f00 0x300>, <0x20020804 0x4>;
+			clocks = <&cgc_ref>;
+			#clock-cells = <1>;
+		};
+
+		/* microSD, EPBUSMV.DLL (plan 7.17): one TI OMAP2420 style controller,
+		 * irq 173 (table 0x801449c0), power resource 0x23 (E5 name
+		 * EHwClkMemCard0) = gates 0x23 (cgc+0x1d0 bit 5) + 0x25 (cgc+0x280
+		 * bit 7). symbian gates both off when the card is idle (M1: off after
+		 * the handoff; setting them by hand made the controller readable,
+		 * card RCA 0xe624 still selected). card power: left on by symbian
+		 * (E: mounted before the handoff), no regulator found. the CD gpio
+		 * symbian names is gpio 0 = keypad column 0 -> broken-cd (polled).
+		 * dma: gdma request lines 0x0f (rx) / 0x10 (tx) = dma.dll peripheral
+		 * 17; without the gdma omap.c falls back to pio. 24 MHz = symbian's
+		 * cap */
+		mmc@20032800 {
+			compatible = "nokia,rapuyama-mmc", "ti,omap2420-mmc";
+			reg = <0x20032800 0x80>;
+			interrupts = <173>;
+			clocks = <&cgc 0x23>, <&mmc_fclk>;
+			clock-names = "ick", "fck";
+			bus-width = <4>;
+			broken-cd;
+			max-frequency = <24000000>;
+			/* pio irq at 8 of the 32 fifo words (default the full
+			 * fifo): the card refills while the irq drains, class 2
+			 * card: reads 5.9 -> 7.5 MB/s, less cpu per MB */
+			nokia,pio-fifo-words = <8>;
+			dmas = <&gdma 0x10>, <&gdma 0x0f>;
+			dma-names = "tx", "rx";
+		};
+
+		/* general dma, dma.dll (TRapDmac): channel N = 0x20040c00 +
+		 * 0x400 * N, irq = intc line N; channel 0 is left out like the
+		 * firmware does. clock = gate 0x28 (power resource 0x22) + cgc+0x180
+		 * bit 3, both off after the handoff (res 0x3a in clk-rapuyama.c).
+		 * the 2d engine at 0x20042800/0x20043000 (irqs 417..420) is not used */
+		gdma: dma-controller@20040780 {
+			compatible = "nokia,rapuyama-gdma";
+			reg = <0x20040780 0x1900>;
+			interrupts = <1>, <2>, <3>, <4>, <5>;
+			dma-channel-mask = <0x3e>;
+			clocks = <&cgc 0x3a>;
+			#dma-cells = <1>;
+		};
+
+		/* egpio.dll, same layout as the E6 (K0, W1: the wlan pdd's calls).
+		 * second reg = pin irq banks (also in the intc's second reg and
+		 * ioremapped by the keypad, nobody requests it twice: the intc and
+		 * the keypad don't request their regions). W2 after the handoff:
+		 * gpio 100 low (wlan off), gpio 73 reads high */
+		gpio: gpio@20031900 {
+			compatible = "nokia,rapuyama-gpio";
+			reg = <0x20031900 0x200>, <0x20033400 0x140>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+		};
+
+		/* spi2.dll (W1): the WL1251 bus, polled pio (spi-rapuyama.c), cs 0
+		 * (the wlan pdd's requests). clocks = what spi2 open asks for: res
+		 * 0x1c (gate 0x0c, cgc+0x1d0 bit 8) then res 0x0b (gate 0x02,
+		 * 0x20020804). irqs 191-193 and the 0x20020800 irq mux not used */
+		spi@20020600 {
+			compatible = "nokia,rapuyama-e5-spi";
+			reg = <0x20020600 0x70>;
+			clocks = <&cgc 0x1c>, <&cgc 0x0b>;
+			clock-names = "fck", "sys";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* pltwlanpdd: power gpio 100 (high = on, the firmware waits
+			 * 1 + 12 ticks around it), irq gpio 73 (wl1251_spi sets rising
+			 * edge itself). the firmware runs the bus at 48 MHz, 12 MHz
+			 * for the first runs. firmware + nvs from wlanhwinit.dll in
+			 * /lib/firmware/ti-connectivity (~/e5/wlan/README.txt) */
+			wifi@0 {
+				compatible = "ti,wl1251";
+				reg = <0>;
+				spi-max-frequency = <12000000>;
+				ti,power-gpio = <&gpio 100 0>;
+				interrupts-extended = <&gpio 73 1>;
+			};
+		};
+
+		/* pmic watchdog (cbus 0x20030700, dev 1 reg 0x17 = 0x30), soc counter
+		 * 0x200336c4 and the reset reg 0x20033114: all three confirmed in the
+		 * E5 ROM (power.dll 0x80116790, REBOOTDRIVER.LDD) and all mapped live
+		 * (c6020000 -> 0x20020000 x48). reg semantics are the E6's; on the
+		 * phone the kicks work (no failed kick in any run) */
+		watchdog@20030700 {
+			compatible = "nokia,rapuyama-wdt";
+			reg = <0x20030700 0x40>, <0x200336c4 0x4>, <0x20033114 0x4>;
+			/* red end key: gazoo dev 1 reg 0x01 bit 0 latch, polled
+			 * (rapuyama_wdt.c), KEY_POWER on "Nokia E5 power key" */
+			nokia,power-key;
+		};
+
+		/* gazoo light pwm (rapuyama-e5-bl.c, E5 isasw hal_light_phy_gazoo):
+		 * /sys/class/backlight/gazoo-pwm0 and -pwm1, 0..127. only the pwm
+		 * field is written. NOT the screen (pwm0 changed, the screen did
+		 * not): the screen is the panel DCS backlight in the display driver
+		 * (/sys/class/backlight/panel). pwm0 = keyboard light (checked on
+		 * the device), pwm1 lights nothing visible */
+		light-pwm0 {
+			compatible = "nokia,rapuyama-e5-light-pwm";
+			nokia,pwm-channel = <0>;
+		};
+
+		light-pwm1 {
+			compatible = "nokia,rapuyama-e5-light-pwm";
+			nokia,pwm-channel = <1>;
+		};
+
+		/* battery from the gazoo adc behind the cbus above (rapuyama-battery.c,
+		 * E5 calibration from the E5 isasw scaler). read only: no charger
+		 * node, linux does not program the bq2415x (charging stays in
+		 * symbian). capacity = symbian's em_batmon5 curve, poweroff when
+		 * the average stays below 3.3 V */
+		battery {
+			compatible = "nokia,rapuyama-e5-battery";
+
+			usb {
+			};
+		};
+	};
+};

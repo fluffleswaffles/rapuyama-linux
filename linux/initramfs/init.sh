@@ -23,12 +23,19 @@ fi
 # /run lives on the card there, a stale seatd.sock would keep seatd from starting
 mount -t tmpfs run /run
 
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin HOME=/root TERM=vt100 PS1='e6:\w# '
+# device name from the dtb (e5.dts: "nokia,e5"); prompt, hostname and log
+# prefix follow it. the e6.* cmdline options keep their names on both phones
+dev=e6
+grep -q 'nokia,e5' /proc/device-tree/compatible 2>/dev/null && dev=e5
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin HOME=/root TERM=vt100 PS1="$dev:\\w# "
 # busybox line editing only does utf-8 (cyrillic in weston-terminal) with this
 export LANG=C.UTF-8
-hostname e6
+hostname $dev
+# E5 sd rootfs: /usr first, so alpine's less, setfont ... win over the busybox
+# links /bin gets below
+[ "$dev" = e5 ] && [ -n "$E6_ROOT" ] && export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-log() { echo "e6: $*" > /dev/kmsg; }
+log() { echo "$dev: $*" > /dev/kmsg; }
 
 # the "alive" heartbeat is written by the kernel straight into ramcon now
 # (mach-rapuyama, every 10 s), so it no longer floods the console
@@ -44,14 +51,20 @@ fi
 # wrong with it = stay in the initramfs. -t btrfs: the emmc (symbian E:) is
 # never btrfs, so a swapped mmcblk number can't mount it
 root=$(sed -n 's/.*e6\.root=\([^ ]*\).*/\1/p' /proc/cmdline)
-if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
+wait_blk() {
 	n=0
-	while [ ! -b "$root" ] && [ "$n" -lt 10 ]; do
+	while [ ! -b "$1" ] && [ "$n" -lt "$2" ]; do
 		n=$((n + 1))
 		sleep 1
 	done
+}
+if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
+	# simple install = a card without p2: wait for the card itself, then
+	# only briefly for its partitions, not 10 s for a p2 that never comes
+	wait_blk "${root%p[0-9]*}" 10
+	wait_blk "$root" 2
 	mkdir -p /newroot
-	if mount -t btrfs -o noatime "$root" /newroot 2>/dev/kmsg; then
+	if [ -b "$root" ] && mount -t btrfs -o noatime "$root" /newroot 2>/dev/kmsg; then
 		if [ -x /newroot/init ]; then
 			log "switching to the rootfs on $root"
 			for d in dev proc sys tmp; do
@@ -69,11 +82,6 @@ if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
 fi
 
 # swap: compressed zram first (the card is slow), then /swapfile on the card
-if command -v modem-boot >/dev/null 2>&1; then
-	export MODEM_SMS_INBOX=/root/.local/share/yamashell/messages-incoming
-	modem-boot &
-fi
-
 if [ -e /sys/block/zram0 ]; then
 	echo 128M > /sys/block/zram0/disksize
 	mkswap /dev/zram0 > /dev/null && swapon -p 100 /dev/zram0
@@ -107,7 +115,7 @@ usb_state() {
 # phone keeps running (display console) and the shell appears once a pc
 # enumerates us
 usb_shell() {
-	# g_serial is built in, it binds as soon as the musb udc shows up
+	# g_serial (E5: g_cdc) is built in, it binds as soon as the musb udc shows up
 	n=0
 	while [ ! -c /dev/ttyGS0 ]; do
 		n=$((n + 1))
@@ -141,6 +149,89 @@ usb_shell() {
 	done
 }
 
+# E5: usb ethernet (g_cdc ecm = usb0), dhcp from the pc (NetworkManager
+# "shared" = dhcp + dns + nat). udhcpc keeps retrying in the background
+usb_net() {
+	n=0
+	while [ ! -e /sys/class/net/usb0 ] && [ "$n" -lt 20 ]; do
+		n=$((n + 1))
+		sleep 1
+	done
+	if [ ! -e /sys/class/net/usb0 ]; then
+		log "no usb0 after 20 s, no usb network"
+		return
+	fi
+	ifconfig lo 127.0.0.1 up
+	ifconfig usb0 up
+	log "usb0 up ($(cat /sys/class/net/usb0/address)), dhcp in the background"
+	udhcpc -i usb0 -b -S -t 5 -T 3 -A 10 -s /bin/e5-dhcp > /dev/null 2>&1
+}
+
+# E5 wlan files from the card: the public Image has no Nokia blobs built in,
+# so the wl1251 probe at boot failed (no nvs). LinuxE5 (the symbian loader)
+# copies the fw + default nvs out of this phone's rom and its wlan MAC to
+# E:\linux\ (= p1 of the card) on its first run. copy them into this root,
+# then bind wl1251 again. a dev Image with the blobs built in has wlan0 already
+e5_wlan_files() {
+	card=${root%p[0-9]*}p1
+	[ -n "$root" ] || card=/dev/mmcblk0p1
+	fwd=/lib/firmware/ti-connectivity
+	mkdir -p /tmp/card
+	mount -t vfat -o ro "$card" /tmp/card 2>/dev/null || { log "wlan: can't mount $card"; return; }
+	c=/tmp/card/linux
+	if [ ! -e /sys/class/net/wlan0 ] && [ -f "$c/wl1251-nvs.bin" ] && [ -f "$c/wl1251-fw.bin" ]; then
+		mkdir -p "$fwd"
+		for f in wl1251-fw.bin wl1251-nvs.bin; do
+			cmp -s "$c/$f" "$fwd/$f" || cp "$c/$f" "$fwd/$f" || log "wlan: copy $f failed"
+		done
+	fi
+	# the user's own /etc/e5-wlan-mac wins
+	[ -f "$c/e5-wlan-mac" ] && [ ! -f /etc/e5-wlan-mac ] && cp "$c/e5-wlan-mac" /etc/e5-wlan-mac
+	umount /tmp/card
+	[ -e /sys/class/net/wlan0 ] && return
+	[ -f "$fwd/wl1251-nvs.bin" ] || { log "wlan: no firmware (run LinuxE5 once with E:\\linux\\ on the card)"; return; }
+	for d in /sys/bus/spi/devices/*; do
+		grep -q ti,wl1251 "$d/of_node/compatible" 2>/dev/null && echo "${d##*/}" > /sys/bus/spi/drivers/wl1251/bind
+	done
+	n=0
+	while [ ! -e /sys/class/net/wlan0 ] && [ "$n" -lt 5 ]; do
+		n=$((n + 1))
+		sleep 1
+	done
+	[ -e /sys/class/net/wlan0 ] && log "wlan: wl1251 bound with the card's firmware" || log "wlan: wl1251 bind failed"
+}
+
+# saved wlan (sd rootfs only: wpa_supplicant + iw come from alpine).
+# wlan0 exists from the wl1251 probe, the firmware boots on ifup
+wlan_net() {
+	conf=/etc/wpa_supplicant/wpa_supplicant.conf
+	[ -f "$conf" ] && [ -x /sbin/wpa_supplicant ] && [ -e /sys/class/net/wlan0 ] || return
+	# the rom's default nvs has TI's placeholder mac (08:00:28:33:18:97, the
+	# same on every E5); /etc/e5-wlan-mac = this phone's own (symbian:
+	# *#62209526#), set while wlan0 is still down
+	if [ -r /etc/e5-wlan-mac ]; then
+		ip link set wlan0 address "$(cat /etc/e5-wlan-mac)" || log "wlan0: mac from /etc/e5-wlan-mac refused"
+	fi
+	ifconfig wlan0 up || { log "wlan0 up failed"; return; }
+	# E5 wl1251: power save misses ~11 beacons/min (0 with it off) and
+	# dropped the link once; off for v0.01 until the ps timing is fixed
+	if [ "$dev" = e5 ] && command -v iw >/dev/null; then
+		iw dev wlan0 set power_save off || log "wlan0: power_save off failed"
+	fi
+	# its "Successfully initialized" / rfkill lines would land on tty1
+	out=$(wpa_supplicant -B -i wlan0 -c "$conf" 2>&1) || { log "wpa_supplicant failed: $out"; return; }
+	log "wlan0 up ($(cat /sys/class/net/wlan0/address)), wpa_supplicant + dhcp in the background"
+	udhcpc -i wlan0 -b -S -t 5 -T 3 -A 10 -s /usr/share/udhcpc/default.script > /dev/null 2>&1
+	# no rtc: the clock starts at 1970 and tls (apk) rejects every cert
+	n=0
+	until ntpd -n -q -p pool.ntp.org > /dev/null 2>&1; do
+		n=$((n + 1))
+		[ "$n" -ge 60 ] && { log "ntp: no time after 5 min"; return; }
+		sleep 5
+	done
+	log "ntp: clock set, $(date)"
+}
+
 fb_test() {
 	n=0
 	while [ ! -c /dev/fb0 ] && [ "$n" -lt 10 ]; do
@@ -163,10 +254,47 @@ screen_shell() {
 		n=$((n + 1))
 		sleep 1
 	done
+	# e5 keypad layers (sym, fn-arrow, sticky ctrl/alt): tools/e5-kmap.py
+	if [ -r /etc/$dev.kmap ]; then
+		loadkmap < /etc/$dev.kmap && log "keymap /etc/$dev.kmap loaded"
+	fi
+	# e5: fn key picture + power key screen toggle (linux/initramfs/e5-keyd),
+	# once per boot; it logs to the kernel log itself
+	if [ "$dev" = e5 ] && command -v e5-keyd > /dev/null; then
+		e5-keyd < /dev/null > /dev/null 2>&1 &
+	fi
+	# E5 sd rootfs: console font saved by `font set` (/etc/e5-font)
+	if [ "$dev" = e5 ] && [ -x /usr/bin/font ] && [ -r /etc/e5-font ]; then
+		font apply 2>&1 | to_kmsg font
+	fi
+	# E5: screen brightness saved by `brightness <n>` (/etc/e5-brightness)
+	if [ "$dev" = e5 ] && [ -x /bin/brightness ] && [ -r /etc/e5-brightness ]; then
+		brightness apply 2>&1 | to_kmsg brightness
+	fi
+	# E5: screen-off delay saved by `blank <minutes>|off` (/etc/e5-blank)
+	if [ "$dev" = e5 ] && [ -x /bin/blank ] && [ -r /etc/e5-blank ]; then
+		blank apply 2>&1 | to_kmsg blank
+	fi
+	# E5: one unblank so the backlight core ties the panel and the key
+	# light (gazoo-pwm0) to fb0: the console blank (consoleblank=) turns
+	# both off, any key turns them on
+	[ "$dev" = e5 ] && echo 0 > /sys/class/graphics/fb0/blank 2>/dev/null
+	# E5 sd rootfs: through busybox login, which resets the SIGINT that
+	# this background job leaves ignored (else ^C does nothing)
+	e5sh=sh
+	[ "$dev" = e5 ] && grep -q '^root:' /etc/passwd 2>/dev/null && e5sh="login -f root"
 	log "shell on tty1 (screen + keypad)"
 	while true; do
 		clear > /dev/tty1
-		setsid cttyhack sh < /dev/tty1 > /dev/tty1 2>&1
+		# E5 simple install (still in the initramfs): what it is + helpers
+		[ "$dev" = e5 ] && [ -z "$E6_ROOT" ] && [ -r /etc/e5-welcome ] &&
+			cat /etc/e5-welcome > /dev/tty1
+		# E5: fbcon is a linux console (colours in htop/nano), not a vt100
+		if [ "$dev" = e5 ]; then
+			TERM=linux setsid cttyhack $e5sh < /dev/tty1 > /dev/tty1 2>&1
+		else
+			setsid cttyhack sh < /dev/tty1 > /dev/tty1 2>&1
+		fi
 		sleep 1
 	done
 }
@@ -221,6 +349,8 @@ gui() {
 
 if grep -q e6.usbsh /proc/cmdline; then
 	usb_shell &
+	[ "$dev" = e5 ] && [ -x /bin/e5-dhcp ] && usb_net &
+	[ "$dev" = e5 ] && { e5_wlan_files; wlan_net; } &
 	# after the test pattern, else the pattern lands on top of the shell.
 	# e6.nogui on the cmdline = straight to the screen shell
 	{
