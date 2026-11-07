@@ -19,31 +19,16 @@ state=/run/rapuyama-modem
 mkdir -p "$state"
 lock=$state/tone-$mode
 mkdir "$lock" 2>/dev/null || exit 0
-client=;object=0xad
-if test "$mode" = ring; then object=0xac;fi
-send(){ PHONET_LOCAL_OBJECT="$object" "$lib/phonet-client" --send 0b "$1"; }
-control(){
- response=$(send "$1")
- printf '%s\n' "$response" | grep -q "res 0b: 42 15 $2 00"
-}
+child=
 finish(){
  trap - 0 HUP INT TERM
- if test -n "$client"; then
-  send "14${client}04000000010308000000000000" >/dev/null 2>&1 || true
-  send "04${client}00" >/dev/null 2>&1 || true
- fi
+ if test -n "$child"; then kill "$child" 2>/dev/null || true;wait "$child" 2>/dev/null || true;fi
  rmdir "$lock" 2>/dev/null || true
 }
 trap finish 0
 trap 'exit 0' HUP INT TERM
-# keep one shared codec clock until modem-stop; a ring must not drop the clock while answering
-if test ! -d /sys/module/audio_clock; then
- if insmod "$lib/audio_clock.ko"; then : > "$state/audio-clock";else test -d /sys/module/audio_clock;fi
-fi
-reply=$(send 000100)
-client=$(printf '%s\n' "$reply" | sed -n 's/.*res 0b: 42 01 \([0-9a-f][0-9a-f]\) 00[[:space:]]*$/\1/p')
-test -n "$client" && test "$client" != 00
-control "14${client}0500000007030800000001000003080200000100000308070000010000030808000001000003080c000001000003080600000100000308050000210000" 05
+file=/usr/share/yamashell/sounds/notif-ponderous.ogg
+if test "$mode" = ring; then file=/usr/share/yamashell/sounds/ringtone-alarm-synth.ogg;fi
 while kill -0 "$owner" 2>/dev/null && test ! -e /tmp/isasw.exit; do
  if test "$mode" = ring; then
   read stamp id status incoming number < "$state/calls" || break
@@ -51,9 +36,9 @@ while kill -0 "$owner" 2>/dev/null && test ! -e /tmp/isasw.exit; do
   read uptime rest < /proc/uptime
   test "$stamp" -le "${uptime%.*}" && test "$(( ${uptime%.*}-stamp ))" -lt 8 || break
  fi
- control "14${client}040000000303080000000100000308010000fa00000308020000050000" 04
- sleep 0.25
- control "14${client}04000000010308000000000000" 04
+ /usr/bin/modem-play "$file" &
+ child=$!
+ wait "$child"
+ child=
  test "$mode" = ring || break
- sleep 0.75
 done

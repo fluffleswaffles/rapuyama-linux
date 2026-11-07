@@ -13,14 +13,15 @@ DL="$TOP/work/dl/alpine"
 APK="$DL/apkt/sbin/apk.static"
 MIRROR=https://dl-cdn.alpinelinux.org/alpine
 REL=v3.24
-PKGS="musl-dev linux-headers libgcc gcc mesa-dev wayland-dev libxkbcommon-dev freetype-dev libpng-dev libjpeg-turbo-dev elogind-dev"
+PKGS="musl-dev linux-headers libgcc gcc mesa-dev wayland-dev libxkbcommon-dev freetype-dev libpng-dev libjpeg-turbo-dev elogind-dev alsa-lib-dev libvorbis-dev"
 
 if [ -e "$OUT.done" ]; then
 	[ -f "$OUT/usr/include/wayland-server.h" ] && [ -f "$OUT/usr/include/xkbcommon/xkbcommon.h" ] &&
 		[ -f "$OUT/usr/include/freetype2/ft2build.h" ] && [ -f "$OUT/usr/include/jpeglib.h" ] && [ -f "$OUT/usr/include/png.h" ] &&
-		[ -f "$OUT/usr/include/elogind/systemd/sd-bus.h" ] && exit 0
+		[ -f "$OUT/usr/include/elogind/systemd/sd-bus.h" ] && [ -f "$OUT/usr/include/alsa/asoundlib.h" ] &&
+		[ -f "$OUT/usr/include/vorbis/vorbisfile.h" ] && exit 0
 	"$APK" --root "$OUT" --arch armhf --usermode --no-scripts --allow-untrusted \
-		--cache-dir "$DL/cache" --timeout 60 add wayland-dev libxkbcommon-dev freetype-dev libpng-dev libjpeg-turbo-dev elogind-dev
+		--cache-dir "$DL/cache" --timeout 60 add wayland-dev libxkbcommon-dev freetype-dev libpng-dev libjpeg-turbo-dev elogind-dev alsa-lib-dev libvorbis-dev
 	exit 0
 fi
 [ -x "$APK" ] || { echo "run alpine.sh first (it fetches apk.static)"; exit 1; }

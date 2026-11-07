@@ -4,6 +4,7 @@ set -eu
 umask 077
 state=/run/rapuyama-modem
 mkdir -p "$state"
+modem-audio stop || exit 1
 for file in "$state/sms-listener.pid" /tmp/isasw.pid; do
  test -r "$file" || continue
  read pid < "$file" || continue

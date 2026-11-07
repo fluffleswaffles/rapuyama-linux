@@ -39,6 +39,7 @@ case "$owner" in ''|*[!0-9]*) exit 1;;esac
 test "$owner" -gt 1
 kill -0 "$owner"
 echo "$owner" > "$state/owner.pid"
+modem-audio start >> /tmp/modem-startup.log 2>&1 || echo 'PCM audio unavailable; see startup log' >&2
 modem-incoming-ready >> /tmp/modem-startup.log 2>&1 || exit 1
 : "${MODEM_SMS_INBOX:=${XDG_DATA_HOME:-${HOME:-/root}/.local/share}/yamashell/messages-incoming}"
 export MODEM_SMS_INBOX

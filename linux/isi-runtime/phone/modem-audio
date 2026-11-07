@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+umask 077
+state=/run/rapuyama-audio
+lib=/usr/libexec/rapuyama-modem
+running(){
+ test -r "$state/pid" || return 1
+ read pid < "$state/pid"
+ case "$pid" in ''|*[!0-9]*) return 1;;esac
+ test "$pid" -gt 1 || return 1
+ kill -0 "$pid" 2>/dev/null || return 1
+ exe=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
+ case "$exe" in "$lib/modem-pcm"|"$lib/modem-pcm (deleted)") return 0;; *) return 1;;esac
+}
+healthy(){
+ running || return 1
+ test ! -e /tmp/isasw.exit || return 1
+ read owner < /tmp/isasw.pid
+ kill -0 "$owner" 2>/dev/null || return 1
+ if grep -Eq '^(SOCKET_HELD|ISI timeout|PCM stream failed|DSP control failed)' "$state/log"; then
+  tail -1 "$state/log" >&2
+  return 1
+ fi
+ grep -q '^AUDIO_READY ' "$state/log" || return 2
+}
+wait_ready(){
+ started=$1
+ for attempt in 1 2 3 4 5; do
+  if test -r "$state/pid" && test "$(cat "$state/pid")" = "$started"; then
+   if healthy; then return 0;else result=$?;test "$result" = 2 || return "$result";fi
+  fi
+  kill -0 "$started" 2>/dev/null || { cat "$state/log" >&2;return 1; }
+  sleep 1
+ done
+ echo 'audio startup is still pending; inspect /run/rapuyama-audio/log' >&2
+ return 1
+}
+case "${1:-start}" in
+ start)
+  test ! -e /tmp/isasw.exit
+  read owner < /tmp/isasw.pid
+  kill -0 "$owner"
+  if test -r "$state/pid"; then
+   read pid < "$state/pid"
+   if kill -0 "$pid" 2>/dev/null; then wait_ready "$pid";exit $?;fi
+  fi
+  mkdir -p "$state"
+  if test ! -d /sys/module/audio_clock; then
+   insmod "$lib/audio_clock.ko"
+   mkdir -p /run/rapuyama-modem
+   : > /run/rapuyama-modem/audio-clock
+  fi
+  if test ! -d /sys/module/snd_aloop; then insmod "$lib/snd-aloop.ko" id=E6Bridge pcm_substreams=1;fi
+  "$lib/modem-pcm" > "$state/log" 2>&1 < /dev/null &
+  pid=$!
+  wait_ready "$pid";;
+ stop)
+  test -r "$state/pid" || exit 0
+  read pid < "$state/pid"
+  case "$pid" in ''|*[!0-9]*) exit 1;;esac
+  test "$pid" -gt 1
+  exe=$(readlink "/proc/$pid/exe" 2>/dev/null || true)
+  case "$exe" in "$lib/modem-pcm"|"$lib/modem-pcm (deleted)") kill -TERM "$pid";; *) exit 1;;esac
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || exit 0;sleep 1;done
+  echo 'audio still owns its endpoint; do not force a restart' >&2
+  exit 1;;
+ status)
+  healthy
+  tail -1 "$state/log";;
+ *) echo 'usage: modem-audio start|stop|status' >&2;exit 2;;
+esac
