@@ -23,6 +23,15 @@ LinuxE5 starts from Symbian like an app and hands the phone over to Linux. Linux
 
 The photos show the [advanced setup](#advanced-alpine-on-the-memory-card) (Alpine on the card). Simple mode looks the same, without the browser.
 
+## New in v0.03-e5
+
+- **An installer for the advanced setup.** `install.sh` from the release prepares the whole card on a Linux PC: Symbian's E: plus an ext4 partition with Alpine, so changes are kept. See [Advanced: Alpine on the memory card](#advanced-alpine-on-the-memory-card).
+- **About 210 MB of RAM for Linux** (MemTotal 215 340 kB; v0.02-e5: 209 432 kB, about 6 MB less). The kernel no longer carries Raspberry Pi, E6 and PC drivers the E5 can't use, nor the memory and filesystem options that lost the tests below. The `Image` went from 21 MB to 15 MB.
+- **Faster memory card.** The card runs at 48 MHz in SD high speed mode instead of 24 MHz (Symbian's limit). Raw reads went from 10.5 to 13.3 MB/s, and a heavy swap workload got about 12 % faster. Cards without high speed stay at the old speed by themselves.
+- **Swap chosen by measurement.** Compressed RAM swap (zram, 192 MB) in front of the 1 GiB swapfile beat zswap, other zram sizes and zram writeback: about 20 % faster switching between memory-hungry programs and a quicker desktop-style workload. lzo-rle stays the compressor (lz4 tied, zstd was 1.7-2.6 times slower on this CPU).
+- **ext4 instead of btrfs** for the card's Linux partition: 14-35 % faster file operations and about a fifth of the card writes when programs `fsync` (btrfs wrote 37 times the data). btrfs' compression was slower here, because reading files is limited by the CPU, not the card.
+- **`wifi scan`**: pick a network by number, also when its name has characters the keyboard can't type (an iPhone's "Name’s iPhone"). Setting the clock gives up after 15 s instead of hanging.
+
 ## You need
 
 - A **Nokia E5-00 with firmware 101.003** (check with `*#0000#`).
@@ -62,22 +71,22 @@ The network and the installed packages are gone after a reboot, so run `wifi` ag
 | Packages | Alpine's `apk` (armhf). In simple mode the packages go into RAM |
 | USB | Serial shell and USB ethernet to a PC |
 | Battery | Level (Symbian's battery table, steady under load), voltage, current, temperature. Clean power-off when it runs low |
-| Memory | About 207 MB of the phone's 256 MB for Linux, plus 128 MB of compressed swap in RAM (zram) |
-| Memory card | Read and write with DMA (advanced setup) |
+| Memory | About 210 MB of the phone's 256 MB for Linux, plus compressed swap in RAM (zram: 192 MB in front of the card's 1 GiB swapfile in the advanced setup, the size of the RAM in simple mode) |
+| Memory card | Read and write with DMA at 48 MHz (SD high speed), about 13 MB/s raw reads (advanced setup) |
 | Web browser | `links -g` and Dillo in X, advanced setup only, see [Graphical browser](#graphical-browser) |
 
 ## What doesn't work
 
 - **Charging** under Linux. With the cable in, the battery reads "Not charging" and keeps draining. Charge in Symbian, then start Linux.
 - **Calls, SMS, mobile data** (the cellular modem is planned for a later version), **sound**, **camera**, **Bluetooth**, **suspend**.
-- **Saving anything in simple mode.** The advanced setup (Alpine on the card's own partition, changes are kept) has no installer yet; developers can make the card by hand, see [Advanced: Alpine on the memory card](#advanced-alpine-on-the-memory-card).
+- **Saving anything in simple mode.** Use the advanced setup for that (Alpine on the card's own partition, changes are kept), see [Advanced: Alpine on the memory card](#advanced-alpine-on-the-memory-card).
 - **The real clock.** There is no RTC: the time is wrong until `wifi` sets it over NTP, and TLS (so `apk`) fails until then.
 
 ## Using it
 
 | Command | What |
 | --- | --- |
-| `wifi 'name' 'password'` | Connect and save the network. `wifi` = status, `wifi off` / `wifi on`, `wifi forget` |
+| `wifi scan`, then `wifi 2 'password'` | List the networks in range, connect to number 2 and save it. Or `wifi 'name' 'password'`. `wifi` = status, `wifi off` / `wifi on`, `wifi forget` |
 | `apk add <package>` | Install from Alpine (needs `wifi` first) |
 | `brightness`, `brightness 40%`, `brightness up` | Screen brightness |
 | `blank 5`, `blank off` | Screen-off delay in minutes |
@@ -106,7 +115,7 @@ Front keys: left soft key = Esc, Home = Alt (for the next key), call key = Tab, 
 
 ### WLAN
 
-`wifi 'name' 'password'` saves the network in `/etc/wpa_supplicant/wpa_supplicant.conf` and connects: `wpa_supplicant`, DHCP, then NTP. In simple mode `/etc` is in RAM, so the network is forgotten at reboot; on the advanced setup it connects again at every boot.
+`wifi scan` lists the networks in range, strongest first. `wifi <number> 'password'` (or `wifi 'name' 'password'`) saves the network in `/etc/wpa_supplicant/wpa_supplicant.conf` and connects: `wpa_supplicant`, DHCP, then NTP (at most 15 s). The number takes the name exactly as scanned, so names with characters the keyboard can't type work too. In simple mode `/etc` is in RAM, so the network is forgotten at reboot; on the advanced setup it connects again at every boot.
 
 WLAN needs LinuxE5 to have run once with the memory card in: it copies the firmware and the MAC address (`E:\linux\e5-wlan-mac`) from the phone's ROM, and Linux loads them at boot. No Nokia files are in the release. An address in `/etc/e5-wlan-mac` on the advanced setup takes priority.
 
@@ -129,16 +138,29 @@ The phone then gets an address in `10.42.0.0/24`, and the PC is `10.42.0.1`.
 | "E:\Image missing." / "E:\e5.dtb missing." | Copy the release files to the root of the card (not into a folder) |
 | `wifi` says "no wlan0" | Start LinuxE5 once with the card in, it copies the WLAN firmware to `E:\linux\` (`dmesg \| grep wlan` shows why) |
 | `apk` fails with a TLS or certificate error | The clock is wrong: connect with `wifi` first (it sets the clock), or `wifi` again |
+| The network's name can't be typed (e.g. `’`) | `wifi scan`, then `wifi <number> 'password'` |
 | The screen is black but the phone is on | The screen is off: press any key |
 | The phone resets or freezes | Start `e5logs` in Symbian before taking the battery out (developers, see [Build](#build)), it saves the kernel log to `E:\klog.bin` |
 
 ## Advanced: Alpine on the memory card
 
-For developers until it has an installer. Alpine lives on a second partition of the card (btrfs), so changes are kept, and the graphical browser, the console fonts and a 1 GiB swapfile become available. The same `Image` and `e5.dtb` boot it: Linux uses the card's second partition when it finds one, and falls back to simple mode when it doesn't.
+Alpine lives on a second partition of the card (ext4), so changes are kept, and the graphical browser, the console fonts and a 1 GiB swapfile become available. The same `Image` and `e5.dtb` boot it: Linux uses the card's second partition when it finds one, and falls back to simple mode when it doesn't.
 
-`tools/sdroot.sh /dev/sdX e5` **erases the whole card** (back up E: first). It makes p1 FAT32 2 GiB (Symbian's E:, still mounted by Symbian) and p2 btrfs with Alpine (apk, nano, tmux, htop, python3, git, ssh) plus the E5 files. It needs a finished `linux/kernel/build-e5.sh` (for `build-e5/initramfs.list`). Then copy `Image` and `e5.dtb` to p1.
+You need a Linux PC with a card reader. `install.sh` **erases the whole card** (back up E: first):
 
-To update a card made before a change, mount p2 on a Linux PC (here at `/mnt/p2`) and copy the E5 files again; `sdroot.sh` copies a few more by hand (`font`, `wifi`, `browser`, the X config and the motd, see the end of the script):
+```sh
+tar xzf e5-advanced.tar.gz
+cd e5-advanced
+sudo ./install.sh /dev/sdX                 # the card, see lsblk; it asks before it erases
+```
+
+It checks the release files, refuses anything that isn't a removable card, then makes p1 FAT32 "E5CARD" (Symbian's E:, 2 GiB, `--fat-size 1G` for another size) with `Image`, `e5.dtb` and `LinuxE5.sis`, and p2 ext4 "e5root" on the rest with Alpine (apk, nano, tmux, htop, python3, git, ssh), the E5 commands and a 1 GiB `/swapfile`. Then put the card in the phone, install `E:\LinuxE5.sis` to C: and start LinuxE5 as in [Install](#install-simple-mode). The first boot has no network saved: `wifi scan`.
+
+Cheap cards are often fakes that report more space than they have, and lose data written past the real end. Check a new card on the PC with `sudo f3probe --destructive /dev/sdX` (package `f3`, erases the card): if it reports a smaller usable size, install with `--card-size` a bit below it (e.g. `--card-size 7400M` for a card that really holds 8 GB).
+
+**Update**: copy a new release's `Image` and `e5.dtb` to E: (`apk upgrade` updates Alpine). A new `install.sh` run starts from scratch.
+
+Developers: `tools/sdroot.sh /dev/sdX e5` makes the same card from a build tree (it needs a finished `linux/kernel/build-e5.sh` for `build-e5/initramfs.list`), and `tools/e5-release.sh` builds the release files including `e5-advanced.tar.gz`. To update a card made before a change, mount p2 on a Linux PC (here at `/mnt/p2`) and copy the E5 files again; `sdroot.sh` copies a few more by hand (`font`, `wifi`, `browser`, the X config and the motd, see the end of the script):
 
 ```sh
 grep '^file' linux/kernel/build-e5/initramfs.list | while read -r _ dst src mode _; do
@@ -234,16 +256,17 @@ The E5 has the same RapuYama SoC as the E6. It differs in the timer, display, ke
 | System tick | IRQ 35, 1 kHz (`timer-rapuyama-e5.c`) |
 | CPU idle | `e6.idle=1`: Symbian's shallow WFI between interrupts (`mach-rapuyama/idle.c`) |
 | Watchdogs | SoC/PMIC watchdog with the E6 driver; PA_SWD secure watchdog via the bridge's `nokia,e5` entry (`e6.swd=1`) |
-| Memory | `e6.lowmem=2` gives back the RAM below the loader block, keeping only what Symbian's leftovers still use: about 207 MB (`e6.lowmem=1`: about 178 MB) |
+| Memory | `e6.lowmem=2` gives back the RAM below the loader block, keeping only what Symbian's leftovers still use. With the trimmed kernel (`slim()` in `build-e5.sh`: no Pi/E6/PC drivers, no zswap/memcg/btrfs) that is about 210 MB (`e6.lowmem=1` leaves about 30 MB more to Symbian) |
 | Display | 320x240 fbdev + fbcon over RFBI (`rapuyama-e5-fb.c`). DISPC + RFBI DMA push as Symbian does it: a full frame in about 20 ms with the CPU free, instead of 36-57 ms of CPU byte writes. `rapuyama_e5_fb.dma=0` (command line or `/sys/module/rapuyama_e5_fb/parameters/dma`) goes back to the CPU path. Panel DCS backlight (`/sys/class/backlight/panel`), panel sleep on console blank, an overlay for the bottom half (used by `e5-keyd` for the fn picture) |
 | Keyboard | Polled 8x8 matrix (`rapuyama-e5-keypad.c`). The layers come from one table (`tools/e5_keys.py`) through `e5-kmap.py` and `e5-xkb.py` (`linux/initramfs/e5.kmap`, `e5.xkb`). `e5-keyd` draws the fn picture with the phone's own console fonts and toggles the screen on the end key |
 | End key | `KEY_POWER` from the Gazoo PMIC latch, polled every 150 ms (`rapuyama_wdt.c`, `nokia,power-key`) |
 | Keyboard light | Gazoo PMIC PWM 0, `/sys/class/backlight/gazoo-pwm0` (0..127) |
-| microSD | MMC controller `0x20032800`, IRQ 173, E6 `cgc` clock gates. DMA through the general DMA controller (`rapuyama-gdma.c`, reversed from `dma.dll`, clock off when idle): on a class 2 card about 8 MB/s read with 0.67 s of CPU per 32 MB (PIO: 1.72 s), 4 MB/s write. Without the GDMA node, PIO with the FIFO interrupt at 8 of 32 words |
+| microSD | MMC controller `0x20032800`, IRQ 173, E6 `cgc` clock gates. 48 MHz SD high speed (`cap-sd-highspeed` in `e5.dts`; Symbian stays at 24 MHz). DMA through the general DMA controller (`rapuyama-gdma.c`, reversed from `dma.dll`, clock off when idle), one 16-bit word per request as Symbian does (more per request hangs the transfer): about 13 MB/s raw reads (24 MHz: 10.5), the DMA path is the limit, not the card. Without the GDMA node, PIO with the FIFO interrupt at 8 of 32 words |
 | WLAN | TI WL1251 on SPI 2 (`spi-rapuyama.c`), firmware and MAC from `E:\linux\`, power save off |
 | Battery | Gazoo ADC with the E5's own calibration (`rapuyama-battery.c`). Capacity from Symbian's table, using the voltage plus the drop under load (current x 140 mOhm). `current_now` (5 s average) from the Gazoo current meter. Power-off when the average stays below 3.3 V (Symbian's limit) |
 | USB | `g_cdc`: serial shell plus CDC ECM `usb0` |
-| Swap | 128 MB zram; on the advanced setup also the 1 GiB `/swapfile` on the card |
+| Swap | zram (lzo-rle) in front of the card: 192 MB plus the 1 GiB `/swapfile` on the advanced setup, the size of the RAM without a card rootfs. Chosen by a measured comparison with zswap, other zram sizes, zram writeback and the lz4/zstd compressors |
+| Card filesystem | ext4 (`install.sh`, `tools/sdroot.sh e5`). btrfs was measured too: slower in every file test and about 37 times the data written per `fsync` (ext4: 6-8 times) |
 
 ### Files
 
@@ -257,7 +280,7 @@ The E5 has the same RapuYama SoC as the E6. It differs in the timer, display, ke
 | `linux/stage0/symbian-loader/boot_app.cpp`, `e5boot_ldd.cpp` | LinuxE5 and its LDD (`AllocBoot`, `LoadChunk`, `Boot`, `ReadPhys`, `SaveIsah`) |
 | `linux/stage0/symbian-loader/e5*_app.cpp`, `e5*_ldd.cpp` | Read-only probes used for the bring-up (ids, RAM map, ROM, timers, WLAN) |
 | `driver/mkstage-e5.sh`, `driver/sis/linuxe5.svg` | 9.3 header tree, LinuxE5 icon |
-| `tools/sdroot.sh`, `tools/e5-release.sh` | Card with Alpine, release files |
+| `tools/sdroot.sh`, `tools/e5-release.sh`, `tools/e5-install.sh` | Card with Alpine from a build tree, release files, the advanced installer (`install.sh` in `e5-advanced.tar.gz`) |
 | `tools/e5_keys.py`, `e5-kmap.py`, `e5-xkb.py`, `test_e5_keymaps.py` | Keyboard table, keymap generators, tests |
 | `tools/parse_isah.py`, `parse_klog.py`, `dram_dump_isasw.py` | Handoff block decoder, RAM log reader, ISASW dump helper |
 
