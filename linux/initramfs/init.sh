@@ -47,9 +47,9 @@ if [ -r /etc/e6-check.sh ] && [ -z "$E6_ROOT" ]; then
 	cp /etc/e6-check.sh /tmp/e6-check
 fi
 
-# e6.root=<dev> = btrfs rootfs on the sd card (tools/sdroot.sh). anything
-# wrong with it = stay in the initramfs. -t btrfs: the emmc (symbian E:) is
-# never btrfs, so a swapped mmcblk number can't mount it
+# e6.root=<dev> = btrfs or ext4 rootfs on the sd card (tools/sdroot.sh).
+# anything wrong with it = stay in the initramfs. explicit -t btrfs / ext4:
+# symbian's E: (vfat) is neither, so a swapped mmcblk number can't mount it
 root=$(sed -n 's/.*e6\.root=\([^ ]*\).*/\1/p' /proc/cmdline)
 wait_blk() {
 	n=0
@@ -64,7 +64,8 @@ if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
 	wait_blk "${root%p[0-9]*}" 10
 	wait_blk "$root" 2
 	mkdir -p /newroot
-	if [ -b "$root" ] && mount -t btrfs -o noatime "$root" /newroot 2>/dev/kmsg; then
+	if [ -b "$root" ] && { mount -t btrfs -o noatime "$root" /newroot ||
+	    mount -t ext4 -o noatime "$root" /newroot; } 2>/dev/kmsg; then
 		if [ -x /newroot/init ]; then
 			log "switching to the rootfs on $root"
 			for d in dev proc sys tmp; do
@@ -81,9 +82,18 @@ if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
 	log "no rootfs on $root, staying in the initramfs"
 fi
 
-# swap: compressed zram first (the card is slow), then /swapfile on the card
+# swap: compressed zram first (the card is slow), then /swapfile on the card.
+# E5 with a swapfile: zram 192M (new-card test 2026-11-06/08: beat zswap,
+# zram 128M/256M and writeback; lzo-rle beat lz4/zstd). E5 without one
+# (simple mode): zram the size of the ram, no mem_limit (out of memory = oom
+# kill, not a livelock). E6: 128M as before
 if [ -e /sys/block/zram0 ]; then
-	echo 128M > /sys/block/zram0/disksize
+	zsize=128M
+	if [ "$dev" = e5 ]; then
+		zsize=192M
+		[ -f /swapfile ] || zsize=$(awk '/^MemTotal/ {print $2}' /proc/meminfo)K
+	fi
+	echo $zsize > /sys/block/zram0/disksize
 	mkswap /dev/zram0 > /dev/null && swapon -p 100 /dev/zram0
 fi
 [ -f /swapfile ] && swapon -p 10 /swapfile 2>/dev/kmsg
