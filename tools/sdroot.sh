@@ -3,9 +3,12 @@
 # initramfs has (alpine + everything build-vc.sh adds), but unpruned.
 # needs a finished build-vc.sh (it reads build-vc/initramfs.list).
 #   sdroot.sh /dev/sdX   WIPES the whole card: p1 fat32 for symbian, p2 btrfs "e6root"
-#   sdroot.sh <dir>      fills an already mounted btrfs (or any dir)
+#   sdroot.sh <dir>      fills an already mounted rootfs (or any dir)
 #   ... e5               E5-00: slim alpine (console tools, no gui), the E5
-#                        initramfs files (linux/kernel/build-e5.sh) + `font`
+#                        initramfs files (linux/kernel/build-e5.sh) + `font`;
+#                        p2 is ext4 "e5root" (new-card test 2026-11-08)
+# SWAP_SIZE=0: no /swapfile (the release rootfs tarball: install.sh makes it)
+# SDROOT_NOSUDO=1: fill a dir of your own without sudo (tarball builds)
 # symbian has to mount p1: a card it can't mount gets its power cut, and
 # linux only finds the card when symbian left it powered
 set -euo pipefail
@@ -15,9 +18,10 @@ TOP="$HERE/.."
 LIST="$TOP/linux/kernel/build-vc/initramfs.list"
 ROOTFS="$TOP/work/rootfs-sd"
 FAT_SIZE=2GiB
-SWAP_SIZE=1GiB
+SWAP_SIZE=${SWAP_SIZE:-1GiB}
 FAT_LABEL=E6CARD
 ROOT_LABEL=e6root
+ROOT_FS=btrfs
 T="${1:?usage: sdroot.sh /dev/sdX | <dir> [e5]}"
 DEV="${2:-e6}"
 if [ "$DEV" = e5 ]; then
@@ -25,6 +29,7 @@ if [ "$DEV" = e5 ]; then
 	ROOTFS="$TOP/work/rootfs-sd-e5"
 	FAT_LABEL=E5CARD
 	ROOT_LABEL=e5root
+	ROOT_FS=ext4
 	# fbdev console only (no drm = no weston). networking later: the apk
 	# db stays whole, so `apk add` works once there is a network
 	export ALPINE_PKGS="alpine-baselayout apk-tools busybox musl alpine-keys
@@ -34,7 +39,7 @@ fi
 
 [ -f "$LIST" ] || { echo "no $LIST, run linux/kernel/build-$([ "$DEV" = e5 ] && echo e5 || echo vc).sh first"; exit 1; }
 SUDO=
-[ "$(id -u)" = 0 ] || SUDO=sudo
+[ "$(id -u)" = 0 ] || [ -n "${SDROOT_NOSUDO:-}" ] || SUDO=sudo
 
 if [ -b "$T" ]; then
 	name=$(basename "$(readlink -f "$T")")
@@ -62,7 +67,11 @@ if [ -b "$T" ]; then
 	p=
 	[[ "$name" =~ [0-9]$ ]] && p=p
 	$SUDO mkfs.vfat -F 32 -n "$FAT_LABEL" "/dev/$name${p}1"
-	$SUDO mkfs.btrfs -q -f -L "$ROOT_LABEL" "/dev/$name${p}2"
+	if [ "$ROOT_FS" = ext4 ]; then
+		$SUDO mkfs.ext4 -q -F -L "$ROOT_LABEL" "/dev/$name${p}2"
+	else
+		$SUDO mkfs.btrfs -q -f -L "$ROOT_LABEL" "/dev/$name${p}2"
+	fi
 	MNT=$(mktemp -d)
 	$SUDO mount -o noatime "/dev/$name${p}2" "$MNT"
 	trap '$SUDO umount "$MNT"; rmdir "$MNT"' EXIT
@@ -91,10 +100,10 @@ if [ "$DEV" = e5 ]; then
 fi
 $SUDO mkdir -p "$MNT/dev" "$MNT/proc" "$MNT/sys" "$MNT/run" "$MNT/root"
 $SUDO install -d -m 1777 "$MNT/tmp"
-# btrfs swap files must be nocow and fully allocated, init.sh swapon's it
-if [ ! -f "$MNT/swapfile" ]; then
+# swap files must be fully allocated (btrfs: also nocow), init.sh swapon's it
+if [ "$SWAP_SIZE" != 0 ] && [ ! -f "$MNT/swapfile" ]; then
 	$SUDO truncate -s 0 "$MNT/swapfile"
-	$SUDO chattr +C "$MNT/swapfile"
+	[ "$ROOT_FS" = btrfs ] && $SUDO chattr +C "$MNT/swapfile"
 	$SUDO fallocate -l "$SWAP_SIZE" "$MNT/swapfile"
 	$SUDO chmod 600 "$MNT/swapfile"
 	$SUDO mkswap "$MNT/swapfile" > /dev/null
