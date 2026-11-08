@@ -16,6 +16,10 @@ sha256 b341215df8732fc0d39054b6946efb30ba1eea806adfe8fe299290d6d7c0ac74
 ```
 
 ## Install
+
+The container build downloads and verifies GCCE
+automatically. The steps below are only needed for builds on the host.
+
 ```
 cd tools/gcce
 tar -xjf gcce-linux.tar.bz2 # -> arm-2012.03/

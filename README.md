@@ -57,6 +57,11 @@ This is a device-specific port, not a generic EKA2 compatibility layer. Some wor
 
 The basic boot, timer/IRQ path, initramfs userspace, USB serial shell, the VideoCore display with weston and GLES 2, keypad, touchscreen, MMC enumeration and the secure watchdog bridge have been exercised on the phone. Other devices and drivers remain experimental, their presence in the tree does not imply that they have been validated on hardware.
 
+## Build the Symbian loaders and probes
+
+Use the Symbian build container for GCCE,
+elf2e32_next and SIS packaging without installing the legacy tools on the host.
+
 ## Build the kernel
 
 On a Linux host, install an ARM GNU EABI cross-toolchain (`arm-linux-gnu-gcc` and binutils), then initialize the kernel submodule and build:

@@ -31,8 +31,8 @@ LHEX=$(printf '%08x' $((LUID)))
 
 KH="$ROOT/symbian/oss.FCL.sf.os.kernelhwsrv"
 EKA="$KH/kernel/eka"
-E2E="$ROOT/tools/bin/elf2e32_next"
-GCCE="$ROOT/tools/gcce/arm-2012.03/bin/arm-none-symbianelf"
+E2E="${E2E:-$ROOT/tools/bin/elf2e32_next}"
+GCCE="${GCCE:-$ROOT/tools/gcce/arm-2012.03/bin/arm-none-symbianelf}"
 DRV="$ROOT/driver"
 STAGE="$DRV/stage"
 [ -d "$STAGE" ] || "$DRV/mkstage.sh"
@@ -137,8 +137,7 @@ patch(src + "/resource/apps/%s_loc.r01" % old_exe,
       dst + "/resource/apps/%s_loc.r01" % new_exe, pairs)
 EOF
 cp "$DRV/sis/cert.pem" "$DRV/sis/key_trad.pem" "$W/"
-podman run --rm -v "$ROOT/tools/src/ensymble:/ens:ro,Z" -v "$W:/w:Z" -w /w \
-	docker.io/library/python:2.7 python /ens/ensymble.py simplesis \
-	-u "$UID3" -c "$NAME" -a cert.pem -k key_trad.pem -p "" approot out.sis
+(cd "$W" && bash "$ROOT/tools/ensymble.sh" simplesis \
+	-u "$UID3" -c "$NAME" -a cert.pem -k key_trad.pem -p "" approot out.sis)
 cp "$W/out.sis" "$SIS_OUT/$NAME.sis"
 ls -la "$SIS_OUT/$NAME.sis"

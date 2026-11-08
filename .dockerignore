@@ -1,0 +1,12 @@
+**
+!Dockerfile
+!tools/
+!tools/src/
+!tools/src/elf2e32_next/
+!tools/src/elf2e32_next/**
+!tools/src/ensymble/
+!tools/src/ensymble/**
+!tools/container/
+**/.git
+**/__pycache__
+**/*.pyc
