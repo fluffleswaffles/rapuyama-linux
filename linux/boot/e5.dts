@@ -266,8 +266,13 @@
 		 * (E: mounted before the handoff), no regulator found. the CD gpio
 		 * symbian names is gpio 0 = keypad column 0 -> broken-cd (polled).
 		 * dma: gdma request lines 0x0f (rx) / 0x10 (tx) = dma.dll peripheral
-		 * 17; without the gdma omap.c falls back to pio. 24 MHz = symbian's
-		 * cap */
+		 * 17; without the gdma omap.c falls back to pio. clock: symbian
+		 * caps the bus at 24 MHz (legacy timing); a high speed card runs
+		 * at 48 MHz (fclk 96 MHz / 2, SD high speed, cap-sd-highspeed):
+		 * reads 10.5 -> 13.3 MB/s, writes and swap workloads checked
+		 * (sha256, btrfs scrub, no mmc errors), ~12 % faster under heavy
+		 * swap. a card without high speed stays at 25 MHz by itself; to
+		 * force the old clock set max-frequency back to 24000000 */
 		mmc@20032800 {
 			compatible = "nokia,rapuyama-mmc", "ti,omap2420-mmc";
 			reg = <0x20032800 0x80>;
@@ -276,7 +281,8 @@
 			clock-names = "ick", "fck";
 			bus-width = <4>;
 			broken-cd;
-			max-frequency = <24000000>;
+			max-frequency = <48000000>;
+			cap-sd-highspeed;
 			/* pio irq at 8 of the 32 fifo words (default the full
 			 * fifo): the card refills while the irq drains, class 2
 			 * card: reads 5.9 -> 7.5 MB/s, less cpu per MB */
