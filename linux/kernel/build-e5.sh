@@ -106,21 +106,21 @@ slim() {
 	# (function names stay in oopses), no runtime debug switches
 	$S --set-val LOG_BUF_SHIFT 17
 	for o in KALLSYMS_ALL DYNAMIC_DEBUG SLUB_DEBUG SCHED_DEBUG IO_URING KEXEC IPV6_SIT GPIO_SYSFS; do $S -d "$o"; done
-	# B: cgroups: memcg (zswap writeback) + cpu (sched autogroup selects it)
+	# B: cgroups: only cpu (sched autogroup selects it); memcg went with zswap
 	for o in CGROUP_FREEZER CGROUP_DEVICE CGROUP_CPUACCT CGROUP_PERF; do $S -d "$o"; done
 	# group 1: tailscale (tun + policy routing) and a firewall (nftables)
 	for o in TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES IPV6_MULTIPLE_TABLES \
 		NETFILTER NF_CONNTRACK NF_NAT NF_TABLES NF_TABLES_INET NF_TABLES_IPV4 NF_TABLES_IPV6 \
 		NFT_CT NFT_NAT NFT_MASQ NFT_REJECT NFT_LIMIT NFT_LOG; do $S -e "$o"; done
-	# new-card memory test (plan Phase 11b): zram writeback + compressors,
-	# zswap + memcg, loop, mglru (off until enabled at runtime), psi
+	# new-card test results (2026-11-06/08): swap = zram (lzo-rle) + a
+	# swapfile, root = ext4. out: zswap + memcg, zram writeback, the lz4/zstd
+	# backends (slower than lzo-rle on the arm11) and btrfs (slower, ~5x the
+	# card writes on fsync); kept: loop, mglru (off until enabled at runtime),
+	# psi (memory stall numbers)
 	for o in ZSWAP MEMCG ZRAM_WRITEBACK ZRAM_TRACK_ENTRY_ACTIME ZRAM_BACKEND_LZ4 ZRAM_BACKEND_ZSTD \
-		CRYPTO_LZ4 CRYPTO_ZSTD BLK_DEV_LOOP LRU_GEN PSI; do $S -e "$o"; done
-	# with other zram backends on, lzo is no longer forced: keep it and
-	# lzo-rle as the default (as before); lz4/zstd stay selectable at runtime
-	$S -e ZRAM_BACKEND_LZO
+		CRYPTO_LZ4 CRYPTO_ZSTD BTRFS_FS; do $S -d "$o"; done
+	for o in EXT4_FS BLK_DEV_LOOP LRU_GEN PSI ZRAM_BACKEND_LZO ZRAM_DEF_COMP_LZORLE; do $S -e "$o"; done
 	$S -d ZRAM_DEF_COMP_LZ4
-	$S -e ZRAM_DEF_COMP_LZORLE
 }
 config() {
 	cp "$HERE/e6.config" "$KOUT/.config"
