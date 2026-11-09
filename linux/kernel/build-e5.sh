@@ -112,6 +112,9 @@ slim() {
 	for o in TUN IP_ADVANCED_ROUTER IP_MULTIPLE_TABLES IPV6_MULTIPLE_TABLES \
 		NETFILTER NF_CONNTRACK NF_NAT NF_TABLES NF_TABLES_INET NF_TABLES_IPV4 NF_TABLES_IPV6 \
 		NFT_CT NFT_NAT NFT_MASQ NFT_REJECT NFT_LIMIT NFT_LOG; do $S -e "$o"; done
+	# tailscale's connmark rules (ct mark): without it tailscaled warns
+	# "enabling connmark rules ... operation not supported" (phone, 2026-11-09)
+	$S -e NF_CONNTRACK_MARK
 	# new-card test results (2026-11-06/08): swap = zram (lzo-rle) + a
 	# swapfile, root = ext4. out: zswap + memcg, zram writeback, the lz4/zstd
 	# backends (slower than lzo-rle on the arm11) and btrfs (slower, ~5x the
