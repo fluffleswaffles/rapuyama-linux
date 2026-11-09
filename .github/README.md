@@ -160,7 +160,7 @@ Cheap cards are often fakes that report more space than they have, and lose data
 
 **Update**: copy a new release's `Image` and `e5.dtb` to E: (`apk upgrade` updates Alpine). A new `install.sh` run starts from scratch.
 
-Developers: `tools/sdroot.sh /dev/sdX e5` makes the same card from a build tree (it needs a finished `linux/kernel/build-e5.sh` for `build-e5/initramfs.list`), and `tools/e5-release.sh` builds the release files including `e5-advanced.tar.gz`. To update a card made before a change, mount p2 on a Linux PC (here at `/mnt/p2`) and copy the E5 files again; `sdroot.sh` copies a few more by hand (`font`, `wifi`, `browser`, the X config and the motd, see the end of the script):
+Developers: `tools/sdroot.sh /dev/sdX e5` makes the same card from a build tree (it needs a finished `linux/kernel/build-e5.sh` for `build-e5/initramfs.list`), and `tools/e5-release.sh` builds the release files including `e5-advanced.tar.gz`. To update a card made before a change, mount p2 on a Linux PC (here at `/mnt/p2`) and copy the E5 files again; `sdroot.sh` copies a few more by hand (`font`, `wifi`, `ssh-server`, `browser`, the X config and the motd, see the end of the script):
 
 ```sh
 grep '^file' linux/kernel/build-e5/initramfs.list | while read -r _ dst src mode _; do
@@ -186,6 +186,22 @@ apk add xorg-server xf86-video-fbdev xf86-input-evdev xinit font-misc-misc dillo
 | sym, fn | As in the console (see [Keyboard](#keyboard)) |
 
 `links -g` works from the keyboard alone. Dillo needs pointer mode to follow links. Alpine's NetSurf framebuffer build and `links` without X can't draw on the E5 screen.
+
+### SSH server
+
+Log in to the phone from a PC (commands, `scp`, `sftp`) over WLAN. It is off at boot and runs only when you start it. With WLAN up, once:
+
+```sh
+apk add openssh-server nftables
+```
+
+| Command | What |
+| --- | --- |
+| `ssh-server on` | Start it and show the phone's addresses. The first time it asks for a root password (if root has none) and makes the host keys on the phone |
+| `ssh-server off` | Stop it (open sessions stay until they end) |
+| `ssh-server` | On or off |
+
+On the PC: `ssh root@<address>`, `scp file root@<address>:`. Login is root with its password only (no keys); `passwd` changes it. While it runs, a firewall lets in only replies to the phone's own connections and new connections to port 22, at most 6 a minute per address; SSH ends a login after 3 wrong passwords. It uses its own settings (`/etc/ssh/e5-sshd.conf`, written by `ssh-server on`), not Alpine's `sshd_config`. Connecting takes about 2 s; sshd uses about 1.4 MB of RAM.
 
 ## Build
 
@@ -275,7 +291,7 @@ The E5 has the same RapuYama SoC as the E6. It differs in the timer, display, ke
 | `linux/boot/e5.dts` | Device tree, self-contained (does not include `e6.dts`). The bootargs are documented in it |
 | `linux/kernel/build-e5.sh` | Kernel + dtb + E5 initramfs list |
 | `linux/initramfs/init.sh` | Shared with the E6; the E5 parts are keyed on `nokia,e5` in the dtb |
-| `linux/initramfs/e5-*.sh`, `e5.kmap`, `e5.xkb`, `e5-welcome`, `e5-motd`, `e5-xorg.conf` | The `brightness`, `font`, `blank`, `wifi` and `browser` commands, DHCP, keymaps, welcome texts, X config |
+| `linux/initramfs/e5-*.sh`, `e5.kmap`, `e5.xkb`, `e5-welcome`, `e5-motd`, `e5-xorg.conf` | The `brightness`, `font`, `blank`, `wifi`, `ssh-server` and `browser` commands, DHCP, keymaps, welcome texts, X config |
 | `linux/initramfs/e5-keyd/` | `e5-keyd` (static C, host tests in `test_core.c`, `build.sh`) |
 | `linux/stage0/symbian-loader/boot_app.cpp`, `e5boot_ldd.cpp` | LinuxE5 and its LDD (`AllocBoot`, `LoadChunk`, `Boot`, `ReadPhys`, `SaveIsah`) |
 | `linux/stage0/symbian-loader/e5*_app.cpp`, `e5*_ldd.cpp` | Read-only probes used for the bring-up (ids, RAM map, ROM, timers, WLAN) |

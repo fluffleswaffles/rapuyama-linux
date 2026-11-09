@@ -90,6 +90,9 @@ done < "$LIST"
 if [ "$DEV" = e5 ]; then
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-font.sh" "$MNT/usr/bin/font"
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-wifi.sh" "$MNT/usr/bin/wifi"
+	# ssh server on demand: the script only, openssh-server + nftables are an
+	# apk add away; host keys are made on the phone (ssh-server on)
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-ssh.sh" "$MNT/usr/bin/ssh-server"
 	# optional graphical browser: the launcher + X config only, X itself is
 	# an apk add away (see the README, "Graphical browser")
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-browser.sh" "$MNT/usr/bin/browser"
