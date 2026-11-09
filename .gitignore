@@ -32,3 +32,4 @@ build/
 out/
 /driver/stage-e5/
 /driver/build-e5/
+linux/kernel/local.mk
