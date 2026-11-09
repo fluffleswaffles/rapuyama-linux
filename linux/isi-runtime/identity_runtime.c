@@ -28,8 +28,8 @@ static uint32_t read_identity(void *request,uint32_t *response){
 	if(!loaded || input<0xc670202c || input>0xc6708000-4 || output<0xc670202c || output>0xc6708000-12){return 0;}
 	memcpy(response+1,identity,sizeof(identity));*response=1;return 1;
 }
-int isi_identity_attach(void){
-	if(!loaded){return 0;}
+int isi_identity_attach(int required){
+	if(!loaded){return required ? -1 : 0;}
 	void *entry=(void *)0xc6262894;
 	static const unsigned char expected[]={0x70,0xb5,0x06,0x46,0x95,0x4d,0x94,0x48,0x0c,0x46,0xa8,0x60};
 	if(memcmp(entry,expected,sizeof(expected))){return -1;}

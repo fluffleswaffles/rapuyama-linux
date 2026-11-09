@@ -57,6 +57,8 @@ This is a device-specific port, not a generic EKA2 compatibility layer. Some wor
 
 The basic boot, timer/IRQ path, initramfs userspace, USB serial shell, the VideoCore display with weston and GLES 2, keypad, touchscreen, MMC enumeration and the secure watchdog bridge have been exercised on the phone. Other devices and drivers remain experimental, their presence in the tree does not imply that they have been validated on hardware.
 
+Ideas for future development, including running Symbian, Java ME and older Android applications on Linux, are in [future ideas](docs/future-ideas.md).
+
 ## Build the Symbian loaders and probes
 
 Use the Symbian build container for GCCE,
@@ -158,7 +160,7 @@ GLES 2 userspace (`libvcgl`, `khrntest`, `vctri`) is built by `linux/vc-khrn/bui
 - Pushing pixels is slow: the ViSSI bus does ~7 MB/s, so weston (pixman) gets ~9-16 fps in RGB565 and the VideoCore ignores partial write rects. Fast UI has to be rendered on the VideoCore (GLES 2). `libvcgl` has one config (RGB565, no depth/stencil), one buffer per window and no VC-to-host bulk transfers yet (no glReadPixels, info logs). Blanking/backlight control are not implemented. The display comes up a few seconds into boot, so use the USB shell or the RAM log for early messages.
 - Storage: the SD card and the internal eMMC work. The card can hold a btrfs rootfs (`tools/sdroot.sh`, `e6.root=`, see [the boot guide](linux/boot/README.md#root-filesystem-on-the-sd-card-22102026)), with zram + a swapfile. The internal eMMC is Symbian's `E:` drive - never write to it.
 - RAM: Linux gets ~175 MB of the 256 MB (`e6.lowmem=1`, the rest is Symbian's kernel, the modem and reserved areas), see [the boot guide](linux/boot/README.md#ram-below-the-kernel-22102026).
-- The PA_SWD bridge is opt-in (`e6.swd=1`) and validated only with the E6 firmware context (e6bfix / e6calb loaders). Modem, radio, audio and power key are not supported.
+- The PA_SWD bridge is opt-in (`e6.swd=1`) and validated only with the E6 firmware context (e6bfix / e6calb loaders). The normal build does not enable modem/radio/audio support; the experimental ISI runtime has separate requirements and limitations ([current status](docs/modem-runtime-status.md)).
 - Treat register addresses and undocumented peripheral behavior as hypotheses unless the notes explicitly say they were checked on live hardware.
 - A successful boot does not imply that every peripheral or power-management path is implemented.
 - The boot handoff is one-way. A failed run may require the phone's watchdog reset to recover.

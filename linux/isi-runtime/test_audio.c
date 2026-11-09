@@ -18,7 +18,8 @@
 static unsigned char response[256], stale[8];
 static size_t response_size;
 static unsigned response_resource, read_cursor, opcodes[256], ops, publications, enabled_once;
-static int active, stale_ready, stale_seen, hardware_prefill;
+static int active, stale_ready, stale_seen, omit35;
+static unsigned step;
 static unsigned char *test_ring;
 
 int peer_kill(pid_t pid, int sig)
@@ -87,26 +88,14 @@ ssize_t peer_sendto(int fd, const void *buffer, size_t count, int flags, const s
             break;
         case 0x51:
             response[1] = 0x52;
-            active = p[13];
-            if (active)
-            {
-                assert(publications == 6);
-                enabled_once++;
-            }
+            assert(p[13] == 0);
+            active = 0;
             break;
         case 0x34:
         {
-            const unsigned expected[] = {19200, 30720, 38400, 46080, 53760, 61440, 3840};
-            const unsigned hardware_positions[] = {19200, 36480, 57600, 17280, 46080, 13440, 49920};
-            if (publications < 7)
-                assert(be32(p + 4) == (hardware_prefill ? hardware_positions : expected)[publications]);
-            if (hardware_prefill)
-            {
-                unsigned advance = publications < 6 ? (5 + publications * 2) * 1920 : 32640;
-                read_cursor = (read_cursor + advance) % RING;
-            }
-            else if (!publications || active)
-                read_cursor = (read_cursor + 3840) % RING;
+            assert(be32(p + 4) == (PREFILL + publications * step) % RING);
+            assert(p[9] == 5);
+            read_cursor = (read_cursor + step) % RING;
             if (!publications)
             {
                 memset(stale, 255, sizeof(stale));
@@ -115,6 +104,11 @@ ssize_t peer_sendto(int fd, const void *buffer, size_t count, int flags, const s
                 stale_ready = 1;
             }
             publications++;
+            if (omit35 && publications == 8)
+            {
+                response_size = 0;
+                return (ssize_t)count;
+            }
             response[1] = 0x35;
             response_size = 8;
             response[4] = (unsigned char)(read_cursor >> 24);
@@ -184,7 +178,7 @@ int level_get(int which)
 snd_pcm_sframes_t peer_pcm_readi(snd_pcm_t *pcm, void *buffer, snd_pcm_uframes_t count)
 {
     (void)pcm;
-    assert(count <= input_left && enabled_once && (!hardware_prefill || publications >= 8));
+    assert(count <= input_left && !enabled_once && publications >= 8);
     int16_t *out = buffer;
     for (unsigned i = 0; i < count; i++)
     {
@@ -212,9 +206,10 @@ int peer_ctl_boolean(const snd_ctl_elem_value_t *v, unsigned n)
     (void)n;
     return input_left != 0;
 }
-static void run_session(int hardware)
+static void run_session(unsigned advance, int missing)
 {
-    hardware_prefill = hardware;
+    step = advance;
+    omit35 = missing;
     read_cursor = ops = publications = enabled_once = 0;
     active = stale_ready = stale_seen = 0;
     struct session s = {.fd = 7, .owner = 165};
@@ -232,17 +227,25 @@ static void run_session(int hardware)
     s.channel = 1;
     assert(!dsp_control(&s, route_open, sizeof(route_open), 0x40, 2));
     assert(!audio_start(&s));
-    assert(!play(&s, ring, &in));
-    assert(in.frames == 48000 && in.eof && input_left == 0);
-    assert(enabled_once == 1 && stale_seen);
+    int result = play(&s, ring, &in);
+    if (missing)
+        assert(result == -1 && publications == 8);
+    else
+    {
+        assert(!result && publications > 8);
+        assert(in.frames == 48000 && in.eof && input_left == 0);
+    }
+    assert(enabled_once == 0 && stale_seen);
     assert(!cleanup(&s));
     assert(!s.opened && !s.channel && !s.app && !active);
+    assert(!memcmp(opcodes + ops - 5, (unsigned[]){0x51, 0x32, 0x3f, 0x3d, 4}, 5 * sizeof(unsigned)));
     free(ring);
 }
 int main(void)
 {
-    run_session(0);
-    run_session(1);
-    puts("PASS initial PCM before route, stalled and hardware prefill, continuous source, EOF and ordered close");
+    run_session(9600, 0);
+    run_session(3840, 0);
+    run_session(9600, 1);
+    puts("PASS mode0 ALSA source, fixed depth/field5, wrap, stale35, missing35 rejection, EOF and ordered close; peer is modeled, not DSP readiness proof");
     return 0;
 }

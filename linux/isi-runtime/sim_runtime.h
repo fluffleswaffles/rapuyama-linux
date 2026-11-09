@@ -4,6 +4,7 @@
 
 #include <signal.h>
 
+void isi_sim_clock_init(void);
 int isi_sim_active(void);
 int isi_sim_open(const char *device,int embedded);
 int isi_sim_embedded(void);

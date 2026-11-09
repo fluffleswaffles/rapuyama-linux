@@ -49,11 +49,12 @@ static uint64_t clock_epoch;
 static uint32_t clock_base;
 
 static void counter(uint64_t time){
-	if(!clock_epoch){clock_epoch=time;clock_base=*(uint32_t *)0xc6826f78;}
+	if(!clock_epoch){clock_epoch=time;clock_base=*(uint32_t *)(uintptr_t)*(uint32_t *)0xc62bb954;}
 	uint64_t elapsed=time-clock_epoch;
 	*(volatile uint32_t *)0xc603334c=(uint32_t)(elapsed*384/10);
 	*(volatile uint32_t *)0xc6033350=clock_base+(uint32_t)(elapsed*32768/1000000);
 }
+void isi_sim_clock_init(void){counter(now_us());}
 static void delay(uint32_t microseconds){
 	if(microseconds>1000000){fatal("invalid delay");}
 	uint64_t end=now_us()+microseconds;
@@ -302,7 +303,17 @@ static void trace_event(uint32_t what){
 }
 
 static void gazoo_service(void){
-	uint32_t pending=pmic_read(2,1,15)&~pmic_read(2,3,15)&0x3800;
+	static uint64_t failed_since;
+	struct isi_sim_pmic status={.device=2,.reg=1},mask={.device=2,.reg=3};
+	if(pmic_io(&status) || pmic_io(&mask)){
+		if(errno!=ETIMEDOUT){fatal("Gazoo pending read");}
+		uint64_t now=now_us();
+		if(!failed_since){failed_since=now;fprintf(stderr,"Gazoo pending read timed out; deferring SIM IRQ poll\n");}
+		if(now-failed_since>=100000){fatal("Gazoo pending read timeout persisted");}
+		return;
+	}
+	if(failed_since){fprintf(stderr,"Gazoo pending read recovered\n");failed_since=0;}
+	uint32_t pending=status.value&~mask.value&0x3800;
 	for(unsigned int index=16;index<=18;index++){
 		if(!(pending&(0x2000>>(index-16)))){continue;}
 		trace_event(0x100|index);

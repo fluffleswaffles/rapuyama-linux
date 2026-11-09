@@ -26,8 +26,10 @@
 #include "trace_runtime.h"
 #include "os_timer_runtime.h"
 #include "identity_runtime.h"
+#include "devlock_runtime.h"
+#include "simlock_runtime.h"
 #include "fault_diagnostics.h"
-static int os_timer_test,os_timer_live;
+static int os_timer_test,os_timer_live,secure_required;
 
 /* linux/rapuyama_mdi.h */
 struct rapuyama_mdi_status{
@@ -109,7 +111,7 @@ static void image(const char *dir,uint32_t address,size_t size,int executable){
 	if(n<0){perror("read");exit(1);}
 	if(off!=size){fprintf(stderr,"incomplete image: %s\n",path);exit(1);}
 	close(fd);
-	if(executable){if(address==0xc6200000){traps();if(isi_sim_active()){isi_sim_patches();}if(isi_identity_attach()){fprintf(stderr,"unsupported identity reader\n");exit(2);}}__builtin___clear_cache((char *)address,(char *)(address+size));if(mprotect((void *)address,size,PROT_READ|PROT_EXEC)){perror("mprotect");exit(1);}}
+	if(executable){if(address==0xc6200000){traps();if(isi_sim_active()){isi_sim_patches();}if(isi_identity_attach(secure_required)){fprintf(stderr,"unsupported identity reader\n");exit(2);}if(isi_devlock_attach(secure_required)){fprintf(stderr,"unsupported device-lock reader\n");exit(2);}if(isi_simlock_attach(secure_required)){fprintf(stderr,"unsupported SIM-lock checker\n");exit(2);}}__builtin___clear_cache((char *)address,(char *)(address+size));if(mprotect((void *)address,size,PROT_READ|PROT_EXEC)){perror("mprotect");exit(1);}}
 }
 
 static void ramdrives_private(void){
@@ -457,8 +459,9 @@ int main(int argc,char **argv){
 	if(sigaltstack(&alternate,NULL)){perror("signal stack");return 1;}
 	struct sigaction sa={.sa_sigaction=failure,.sa_flags=SA_SIGINFO|SA_ONSTACK};sigemptyset(&sa.sa_mask);
 	sigaction(SIGSEGV,&sa,NULL);sigaction(SIGILL,&sa,NULL);sigaction(SIGBUS,&sa,NULL);if(isi_sim_active()){sigaction(SIGALRM,&sa,NULL);}alarm(15);
+	secure_required=link && isi_sim_embedded();
 	image(argv[1],0xc6200000,0x40c000,1);image(argv[1],0xc6800000,0x44d000,0);image(argv[1],0xc6700000,0x8000,0);
-	region(0xc6033000,0x1000);region(0xc6060000,0x1000);region(0xc6f00000,0x200000);
+	region(0xc6033000,0x1000);isi_sim_clock_init();region(0xc6060000,0x1000);region(0xc6f00000,0x200000);
 	if(isi_sim_active()){image(argv[1],0xc60f0000,0x1000,1);if(isi_sim_map()){perror("SIM register page");return 1;}}
 	if(os_timer_test || synthetic || transmit || call_test || sim_backend_test || link){region(0xc6018000,0x4000);region(0xc6040000,0x1000);region(0x90c00000,0xbf000);}
 	if(identity_test){region(0x30000000,0x1000);}

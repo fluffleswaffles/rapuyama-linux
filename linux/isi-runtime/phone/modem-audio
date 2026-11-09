@@ -14,6 +14,10 @@ running(){
 }
 healthy(){
  running || return 1
+ if test "$(cat /sys/module/snd_aloop/parameters/coherent_buffers 2>/dev/null)" != Y; then
+  echo 'audio loopback lacks coherent buffers; stop audio and reload the verified module' >&2
+  return 1
+ fi
  test ! -e /tmp/isasw.exit || return 1
  read owner < /tmp/isasw.pid
  kill -0 "$owner" 2>/dev/null || return 1
@@ -50,7 +54,11 @@ case "${1:-start}" in
    mkdir -p /run/rapuyama-modem
    : > /run/rapuyama-modem/audio-clock
   fi
-  if test ! -d /sys/module/snd_aloop; then insmod "$lib/snd-aloop.ko" id=E6Bridge pcm_substreams=1;fi
+  if test ! -d /sys/module/snd_aloop; then insmod "$lib/snd-aloop.ko" id=E6Bridge pcm_substreams=1 coherent_buffers=1;fi
+  if test "$(cat /sys/module/snd_aloop/parameters/coherent_buffers 2>/dev/null)" != Y; then
+   echo 'audio loopback lacks coherent buffers; do not start a noisy backend' >&2
+   exit 1
+  fi
   "$lib/modem-pcm" > "$state/log" 2>&1 < /dev/null &
   pid=$!
   wait_ready "$pid";;

@@ -24,6 +24,10 @@
 #define PREFILL 19200u
 
 #define PREFETCH_FRAMES ((5 + 7 + 9 + 11 + 13 + 15 + 34 + 17) * 240u)
+
+#ifndef CAPTURE_FRAMES
+#define CAPTURE_FRAMES (4 * ((PREFETCH_FRAMES + 959) / 960) * 960)
+#endif
 #define STATE "/run/rapuyama-audio"
 
 static volatile sig_atomic_t stopped;
@@ -89,20 +93,18 @@ static void selftest(void)
 	fill(ring, 4, data, sizeof(data), 6, 8);
 	assert(ring[4] == 7 && ring[5] == 8 && ring[6] == 0 && ring[11] == 0 && ring[12] == 0xaa);
 	free(ring);
-	unsigned frames = 10, written = 19200, consumed = 3840;
-	const unsigned targets[] = {14, 18, 22, 26, 30, 34};
-	for (unsigned i = 0; i < 6; i++)
+	unsigned written = PREFILL, consumed = 0;
+	for (unsigned i = 0; i < 80; i++)
 	{
-		frames += 4;
-		if (frames > 34)
-			frames = 34;
-		assert(frames == targets[i]);
-		unsigned need = frames * 1920 - (written - consumed);
-		assert(need == (i ? 7680 : 11520));
+		publish(p, 1, written % RING, 5);
+		assert(be32(p + 4) == written % RING && p[9] == 5);
+		consumed += 9600;
+		unsigned need = PREFILL - (written - consumed);
+		assert(need == 9600);
 		written += need;
+		assert(written - consumed == PREFILL);
 	}
-	assert(written % RING == 3840 && written - consumed == RING);
-	puts("PASS original initial34, strict35 parser, ring wrap, EOF, prefill ramp and final full-ring position");
+	puts("PASS original mode0 fixed depth/field5, strict35 parser, ring wrap and EOF padding");
 }
 
 static const unsigned char route_open[] = {0x3f, 0x00, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00, 0x01, 0x00, 0x01, 0x00, 0x07, 0x00, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
@@ -408,8 +410,7 @@ static int fill_live(unsigned char *ring, unsigned pos, unsigned count, struct s
 }
 static int play(struct session *s, unsigned char *ring, struct source *in)
 {
-	unsigned writepos = PREFILL, lastread = 0, frames = 10, stalls = 0;
-	int enabled = 0;
+	unsigned writepos = PREFILL, lastread = 0, stalls = 0;
 	uint64_t written = PREFILL, consumed = 0;
 	double start = now();
 	while (!stopped && alive(s))
@@ -417,7 +418,7 @@ static int play(struct session *s, unsigned char *ring, struct source *in)
 		if (speech_active())
 			return 0;
 		unsigned char packet[14], reply[256];
-		publish(packet, 0, writepos, frames / 2);
+		publish(packet, 0, writepos, 5);
 		s->published = 1;
 		int n = exchange(s, 0xf3, packet + 1, 13, 0x35, reply);
 		unsigned readpos;
@@ -428,25 +429,13 @@ static int play(struct session *s, unsigned char *ring, struct source *in)
 			return -1;
 		consumed += advance;
 		lastread = readpos;
-		if (enabled && in->eof && consumed >= in->end)
+		if (in->eof && consumed >= in->end)
 		{
 			usleep(100000);
 			printf("PCM_COMPLETE consumed=%" PRIu64 " seconds=%.3f\n", consumed, now() - start);
 			return 0;
 		}
-		if (frames < 34)
-		{
-			frames += 4;
-			if (frames > 34)
-				frames = 34;
-		}
-		if (frames == 34 && !enabled)
-		{
-			if (pcm_enable(s, 1))
-				return -1;
-			enabled = 1;
-		}
-		unsigned queued = (unsigned)(written - consumed), target = frames * 1920;
+		unsigned queued = (unsigned)(written - consumed), target = PREFILL;
 		if (queued > target)
 			return -1;
 		unsigned need = target - queued;
@@ -591,7 +580,7 @@ int main(int argc, char **argv)
 		(r = snd_pcm_hw_params_set_channels(in.pcm, hw, 2)) < 0 ||
 		(r = snd_pcm_hw_params_set_rate(in.pcm, hw, 48000, 0)) < 0 ||
 		(r = snd_pcm_hw_params_set_period_size(in.pcm, hw, 960, 0)) < 0 ||
-		(r = snd_pcm_hw_params_set_buffer_size(in.pcm, hw, 24000)) < 0 ||
+		(r = snd_pcm_hw_params_set_buffer_size(in.pcm, hw, CAPTURE_FRAMES)) < 0 ||
 		(r = snd_pcm_hw_params(in.pcm, hw)) < 0 ||
 		(r = snd_pcm_sw_params_current(in.pcm, sw)) < 0 ||
 		(r = snd_pcm_sw_params_set_avail_min(in.pcm, sw, 240)) < 0 ||
@@ -618,7 +607,7 @@ int main(int argc, char **argv)
 	fprintf(f, "%d\n", getpid());
 	if (fclose(f))
 		fail("pid write");
-	printf("AUDIO_READY buffer=%08lx owner=%d\n", physical, s.owner);
+	printf("AUDIO_READY buffer=%08lx owner=%d mode=0 capture=%u\n", physical, s.owner, (unsigned)CAPTURE_FRAMES);
 	int result = 0;
 	while (!stopped && alive(&s))
 	{
