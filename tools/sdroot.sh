@@ -93,6 +93,9 @@ if [ "$DEV" = e5 ]; then
 	# ssh server on demand: the script only, openssh-server + nftables are an
 	# apk add away; host keys are made on the phone (ssh-server on)
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-ssh.sh" "$MNT/usr/bin/ssh-server"
+	# tailscale on demand: the script only (apk add tailscale), the login is
+	# made on the phone (tailnet on)
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-tailnet.sh" "$MNT/usr/bin/tailnet"
 	# optional graphical browser: the launcher + X config only, X itself is
 	# an apk add away (see the README, "Graphical browser")
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-browser.sh" "$MNT/usr/bin/browser"

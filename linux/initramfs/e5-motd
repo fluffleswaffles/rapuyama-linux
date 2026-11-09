@@ -5,6 +5,7 @@
  wifi                      status
  apk add <package>         install
  ssh-server on | off       ssh in from a pc
+ tailnet on | off          tailscale
  brightness 50% | up | down
  blank <minutes> | off     screen off
  font list | font set <name>
