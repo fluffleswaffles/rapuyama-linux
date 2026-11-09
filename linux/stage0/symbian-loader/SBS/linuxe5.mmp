@@ -1,0 +1,32 @@
+
+TARGET		linuxe5.exe
+TARGETTYPE	exe
+UID      	0x100039CE 0xe1000064
+
+MACRO		RB_E5 RB_E5_ISAH RB_IMAGE_BOOT
+//MACRO		RB_NAME=linuxboot
+
+SOURCEPATH	..
+SOURCE		boot_app.cpp
+SYSTEMINCLUDE   ..
+SYSTEMINCLUDE	/epoc32/include 
+SYSTEMINCLUDE   ../../../../symbian/FCL.sf.incubator.modemadaptation/connectivitylayer/isce/iscapi_dll/inc
+
+SOURCEPATH	.
+START RESOURCE	linuxe5_loc.rss
+HEADER
+TARGETPATH 	/resource/apps
+LANG		SC
+END // RESOURCE
+
+
+SOURCEPATH	.
+START RESOURCE	linuxe5_reg.rss
+TARGETPATH 	\private\10003a3f\import\apps
+END // RESOURCE
+
+
+
+LIBRARY 	euser.lib efsrv.lib iscapi.lib
+
+// EOF

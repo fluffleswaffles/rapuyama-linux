@@ -1,0 +1,15 @@
+
+#include <appinfo.rh>
+#include <linuxe5_loc.rsg>
+
+UID2 KUidAppRegistrationResourceFile
+UID3 0xe1000064
+
+RESOURCE APP_REGISTRATION_INFO
+{
+    app_file = "LinuxE5";
+    embeddability=KAppNotEmbeddable;
+    newfile=KAppDoesNotSupportNewFile;
+    localisable_resource_file = "\\resource\\apps\\linuxe5_loc";
+    localisable_resource_id   = R_LINUXE5_LOC;
+}

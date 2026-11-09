@@ -1,0 +1,14 @@
+
+#include <appinfo.rh>
+RESOURCE LOCALISABLE_APP_INFO R_LINUXE5_LOC
+    {
+    short_caption = "LinuxE5";
+    caption_and_icon = CAPTION_AND_ICON_INFO
+        {
+        caption = "LinuxE5";
+        number_of_icons = 1;
+        icon_file = "\\resource\\apps\\linuxe5.mif";
+        };
+    }
+
+

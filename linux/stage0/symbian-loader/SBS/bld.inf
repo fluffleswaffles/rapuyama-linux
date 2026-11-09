@@ -1,0 +1,11 @@
+
+PRJ_PLATFORMS
+GCCE
+
+PRJ_MMPFILES
+
+runblobldd.mmp BUILD_AS_ARM
+linuxe5.mmp BUILD_AS_ARM
+readklog.mmp BUILD_AS_ARM
+gnumakefile icons.mk
+// EOF

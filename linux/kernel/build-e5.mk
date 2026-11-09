@@ -1,5 +1,5 @@
 # Nokia E5-00 kernel + dtb + initramfs (busybox + Alpine userspace).
-# this Makefile is based on kapina's script (linux/kernel/build-e5.sh)
+# this Makefile is based on build-e5.sh by Kapina
 #
 #   make help            what can be built and which variables exist
 #   make                 kernel Image + e5.dtb in $(KOUT)
@@ -110,6 +110,12 @@ endif
 APK_FLAGS     ?= $(if $(filter yes,$(APK_USERMODE)),--usermode) --no-scripts --allow-untrusted --timeout 60
 APK_FLAGS_EXTRA ?=
 APK_ALL_FLAGS = $(APK_FLAGS) $(APK_FLAGS_EXTRA)
+# OFFLINE=1: no network for apk: it works from its cache in $(DL)/cache (filled by an
+# earlier online run) and does not refresh the index. Not part of the rootfs stamp, so
+# switching it never forces a rebuild. (apk.static itself is only fetched if missing.)
+OFFLINE       ?= 0
+APK_NET       = $(if $(filter 1,$(OFFLINE)),--no-network)
+APK_UPDATE    = $(if $(filter 1,$(OFFLINE)),,-U)
 
 ROOTFS        ?= $(WORK)/rootfs-e5-simple
 # alpine's busybox is in the apk db but its files stay out of the initramfs
@@ -138,7 +144,7 @@ KEYD_BIN   ?= $(OUT)/e5-keyd/e5-keyd
 KEYD_TEST  ?= 1
 HOST_CC    ?= clang
 KEYD_CC    ?= clang
-KEYD_LD    ?= $(shell command -v $(CROSS_COMPILE)ld 2>/dev/null)
+KEYD_LD    ?= $(or $(shell command -v $(CROSS_COMPILE)ld 2>/dev/null),$(shell command -v ld.lld 2>/dev/null))
 SYSROOT    ?= $(WORK)/sysroot-alpine
 SYSROOT_PKGS ?= musl-dev linux-headers libgcc gcc
 
@@ -162,7 +168,9 @@ INITRAMFS_FILES ?= \
 	/bin/e5-dhcp|$(INITD)/e5-dhcp.sh|755 \
 	/bin/brightness|$(INITD)/e5-brightness.sh|755 \
 	/bin/blank|$(INITD)/e5-blank.sh|755 \
+	/etc/sdtools.sh|$(INITD)/sdtools.sh|644 \
 	/etc/e5-welcome|$(INITD)/e5-welcome|644
+
 # after the rootfs part (these live in directories that come with it)
 INITRAMFS_FILES_ROOTFS ?= \
 	/usr/bin/wifi|$(INITD)/e5-wifi.sh|755 \
@@ -200,8 +208,8 @@ vstamp = mkdir -p $(@D); printf '%s\n' '$(call q,$(1))' | cmp -s - $@ || printf 
 need_cross = @[ -n "$(CROSS_COMPILE)" ] && command -v $(CROSS_COMPILE)gcc >/dev/null || { \
 	echo "no ARM cross compiler: install one or run  make CROSS_COMPILE=<prefix>-" >&2; exit 1; }
 
-.PHONY: all kernel dtb rootfs initramfs-list busybox config menuconfig \
-        clean clean-rootfs distclean help vars FORCE
+.PHONY: all kernel dtb rootfs keyd initramfs-list busybox config menuconfig \
+        clean clean-rootfs clean-sysroot distclean help vars FORCE
 FORCE:
 
 all: kernel dtb
@@ -237,7 +245,7 @@ $(OUT)/e5.dtb: $(DTS)
 # ----------------------------------------------------------------- initramfs
 # the asm /sbin/init fallback, built with the same cross compiler (only when
 # INIT_BIN is the default; point it at a ready made binary to skip this)
-ifeq ($(INIT_BIN),$(INITD)/init)
+ifeq ($(INIT_BIN),$(OUT)/init)
 $(INIT_BIN): $(INITD)/init.S
 	$(need_cross)
 	mkdir -p $(@D)
@@ -299,8 +307,8 @@ $(ROOTFS).done: $(APK_DEP) $(ROOTFS).args
 	mkdir -p $(ROOTFS)/etc/apk $(DL)/cache
 	printf '%s/%s/main\n%s/%s/community\n' '$(ALPINE_MIRROR)' '$(ALPINE_REL)' \
 		'$(ALPINE_MIRROR)' '$(ALPINE_REL)' > $(ROOTFS)/etc/apk/repositories
-	$(call retry,$(APK) --root $(ROOTFS) --arch $(ALPINE_ARCH) --initdb $(APK_ALL_FLAGS) \
-		--cache-dir $(DL)/cache -U add $(ALPINE_PKGS) > $(DL)/apk.log 2>&1) \
+	$(call retry,$(APK) --root $(ROOTFS) --arch $(ALPINE_ARCH) --initdb $(APK_ALL_FLAGS) $(APK_NET) \
+		--cache-dir $(DL)/cache $(APK_UPDATE) add $(ALPINE_PKGS) > $(DL)/apk.log 2>&1) \
 		|| { tail $(DL)/apk.log; exit 1; }
 	touch $@
 
@@ -314,28 +322,31 @@ $(SYSROOT).done: $(APK_DEP)
 	mkdir -p $(SYSROOT)/etc/apk $(DL)/cache
 	printf '%s/%s/main\n%s/%s/community\n' '$(ALPINE_MIRROR)' '$(ALPINE_REL)' \
 		'$(ALPINE_MIRROR)' '$(ALPINE_REL)' > $(SYSROOT)/etc/apk/repositories
-	$(call retry,$(APK) --root $(SYSROOT) --arch $(ALPINE_ARCH) --initdb $(APK_ALL_FLAGS) \
-		--cache-dir $(DL)/cache -U add $(SYSROOT_PKGS) > $(DL)/apk-sysroot.log 2>&1) \
+	$(call retry,$(APK) --root $(SYSROOT) --arch $(ALPINE_ARCH) --initdb $(APK_ALL_FLAGS) $(APK_NET) \
+		--cache-dir $(DL)/cache $(APK_UPDATE) add $(SYSROOT_PKGS) > $(DL)/apk-sysroot.log 2>&1) \
 		|| { tail $(DL)/apk-sysroot.log; exit 1; }
 	touch $@
 
+keyd: $(KEYD_BIN)
 $(KEYD_BIN): $(wildcard $(KEYD_DIR)/*.c $(KEYD_DIR)/*.h) $(SYSROOT).done
+	@[ -n "$(KEYD_LD)" ] || { echo "e5-keyd: no ARM linker: $(CROSS_COMPILE)ld and ld.lld not found, set KEYD_LD=/path/to/ld" >&2; exit 1; }
 	mkdir -p $(@D)
 ifeq ($(KEYD_TEST),1)
 	$(HOST_CC) -std=gnu11 -O1 -Wall -Wextra -Werror -fsanitize=address,undefined \
 		-o $(@D)/test_core $(KEYD_DIR)/core.c $(KEYD_DIR)/test_core.c
 	$(@D)/test_core
 endif
-	$(KEYD_CC) --target=armv6-alpine-linux-musleabihf -march=armv6kz -mfloat-abi=hard \
-		-mfpu=vfp --sysroot=$(SYSROOT) --ld-path=$(KEYD_LD) -static-libgcc -static -s \
-		-std=gnu11 -Os -Wall -Wextra -Werror -o $@ $(KEYD_DIR)/main.c $(KEYD_DIR)/core.c
+	$(KEYD_CC) -o $@ $(KEYD_DIR)/main.c $(KEYD_DIR)/core.c
 
 # ------------------------------------------------------------------- housekeeping
 clean:
 	rm -rf $(OUT)
 clean-rootfs:
-	rm -rf $(ROOTFS) $(ROOTFS).done $(ROOTFS).pruned $(ROOTFS).args $(SYSROOT) $(SYSROOT).done
-distclean: clean clean-rootfs
+	rm -rf $(ROOTFS) $(ROOTFS).done $(ROOTFS).pruned $(ROOTFS).args
+# the sysroot is only for e5-keyd; kept apart so clean-rootfs does not force its download
+clean-sysroot:
+	rm -rf $(SYSROOT) $(SYSROOT).done
+distclean: clean clean-rootfs clean-sysroot
 	rm -rf $(DL)/alpine $(DL)/cache $(DL)/apk*.log
 
 vars:
@@ -349,16 +360,18 @@ vars:
 	@echo "ALPINE        = $(ALPINE_MIRROR) $(ALPINE_REL) $(ALPINE_ARCH), apk-tools for $(HOST_ARCH)"
 	@echo "APK           = $(APK)"
 	@echo "APK_FLAGS     = $(APK_ALL_FLAGS)   (usermode=$(APK_USERMODE))"
-	@echo "KEYD          = $(KEYD)   (HOST_CC=$(HOST_CC) KEYD_CC=$(KEYD_CC))"
+	@echo "KEYD          = $(KEYD)   (HOST_CC=$(HOST_CC) KEYD_CC=$(KEYD_CC): $$(command -v $(KEYD_CC) || echo NOT FOUND))"
+	@echo "KEYD_LD       = $(KEYD_LD)   KEYD_BIN = $(KEYD_BIN)"
+	@echo "OFFLINE       = $(OFFLINE)"
 
 help:
-	@echo 'targets: all kernel dtb rootfs initramfs-list busybox config menuconfig'
-	@echo '         clean clean-rootfs distclean vars help'
+	@echo 'targets: all kernel dtb rootfs keyd initramfs-list busybox config menuconfig'
+	@echo '         clean clean-rootfs clean-sysroot distclean vars help'
 	@echo 'toolchain : CROSS_COMPILE DTC PYTHON HOST_CC KEYD_CC APK'
 	@echo 'paths     : KSRC KOUT DTS KCONFIG_BASE WORK DL ROOTFS BUSYBOX'
 	@echo 'kernel    : KCFG_ENABLE_EXTRA KCFG_DISABLE_EXTRA KCFG_RAW E5_WLAN_FW'
 	@echo 'userspace : ALPINE_PKGS ALPINE_REL ALPINE_MIRROR PRUNE PRUNE_ROOTS KEYD'
-	@echo 'apk       : APK APK_USERMODE=auto|yes|no APK_FLAGS APK_FLAGS_EXTRA'
+	@echo 'apk       : APK APK_USERMODE=auto|yes|no APK_FLAGS APK_FLAGS_EXTRA OFFLINE=1'
 	@echo 'initramfs : INITRAMFS_FILES_EXTRA INITRAMFS_DIRS_EXTRA INITRAMFS_APPEND INIT_SH KMAP XKB'
 	@echo 'examples  : make CROSS_COMPILE=arm-linux-gnueabi- -j8'
 	@echo '            make ALPINE_PKGS="musl busybox nano" PRUNE=no rootfs'

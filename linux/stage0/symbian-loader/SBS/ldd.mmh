@@ -1,0 +1,14 @@
+
+#include "/root/symbian-sdks/PDK_2.0.3/epoc32/include/kernel/kern_ext.mmh"
+
+//APP_LAYER_SYSTEMINCLUDE
+
+SYSTEMINCLUDE	/root/symbian-sdks/PDK_2.0.3/epoc32/include/kernel
+SYSTEMINCLUDE	/root/symbian-sdks/PDK_2.0.3/epoc32/include/nkern
+SYSTEMINCLUDE	/root/symbian-sdks/PDK_2.0.3/epoc32/include/nkern/arm
+SYSTEMINCLUDE	/root/symbian-sdks/PDK_2.0.3/epoc32/include/memmodel/epoc
+SYSTEMINCLUDE  /root/symbian-sdks/PDK_2.0.3/epoc32/include
+
+// tramp_boot.hdr
+SYSTEMINCLUDE  ../../ 
+

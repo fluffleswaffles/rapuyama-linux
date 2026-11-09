@@ -1,0 +1,17 @@
+
+#include "ldd.mmh"
+
+TARGET		runblob.ldd
+TARGETTYPE	ldd
+uid		0x100000af
+CAPABILITY ALL
+USERINCLUDE	.
+SOURCEPATH	..
+SOURCE		e5boot_ldd.cpp
+//MACRO		RB_NAME=e5linuxboot\"
+//LIBRARY		ekern.lib
+// EOF
+
+
+
+

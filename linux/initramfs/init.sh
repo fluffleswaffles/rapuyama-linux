@@ -8,6 +8,7 @@
 #
 # without it: the sign of life, sleep 30 s then a warm reboot (soc reset):
 # unlike a power off it keeps the ram, so ramread.sis can pull the whole log
+export ENV=/etc/sdtools.sh # SD helpers as shell functions.
 /bin/busybox --install -s /bin
 /bin/busybox --install -s /sbin
 mkdir -p /proc /sys /dev /tmp /root /run

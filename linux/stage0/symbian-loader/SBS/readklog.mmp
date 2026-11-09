@@ -1,0 +1,16 @@
+
+TARGET		readklog.exe
+TARGETTYPE	exe
+UID      	0x100039CE 0xe1000005
+
+MACRO		RB_E5 RB_IMAGE_BOOT
+//MACRO		RB_NAME=linuxboot
+
+SOURCEPATH	..
+SOURCE		ramread_app.cpp
+SYSTEMINCLUDE   ..
+SYSTEMINCLUDE	/epoc32/include 
+
+LIBRARY 	euser.lib efsrv.lib
+
+// EOF
