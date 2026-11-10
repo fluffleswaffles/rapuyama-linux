@@ -30,8 +30,8 @@ Thumb functions have bit 0 set.
 | current task id | (used) | c62bdd01 | c63bdbc9 | masked bytes |
 | send to task(id,p) | (used) | c62bdd1d | c63bdbe5 | E5 task 33 code |
 | irq_register (prio 2) | c62daea0 | c62db700 | c63d83e8 | 49 callers (E6 46), binds via c63ebf44 with r2=2; MDI regs use it. (c63d835c = prio-6 twin, 3 callers) |
-| irq_enable | c62daefa | c62db75a | c63d8461 | masked bytes |
-| irq_disable | c62daf16 | c62db776 | c63d8481 | next to enable, same body |
+| irq_enable | c62daefa | c62db75a | c63d8442 | CORRECTED: writes INTC +0xc, 47 callers (E6 44); E6 MDI setup calls it after registering |
+| irq_disable | c62daf16 | c62db776 | c63d8460 | CORRECTED: writes INTC +0x10, 52 callers (E6 53), same place in the SIM cold reset (c63d8480 = an unrelated 1-caller twin) |
 | crit exit hw (-> bx lr) | c62dae84 | c62db6e4 | c63d83cc | masked; E5 writes INTC +0x18? see note |
 | crit enter hw (-> bx lr) | c62dae92 | c62db6f2 | c63d83da | masked; order matches irq_register |
 | get CPSR (-> mov r0,#0x13) | c65a6de4 | c65a6104 | c6658ce4 | exact bytes (ARM stub block E5 = E6 + 0xb2be0) |
@@ -179,3 +179,10 @@ Found on the way: the E5 snapshot has 2 deallocated DSP allocation tags pending 
 panics (hal_mdi_send_deallocated_blocks, c63c9436 -> ring dump c63c9d30 -> reset 0xd) on duplicates. So the DSP
 window must hold the REAL contents: the test loads pa 0x10140000 (low dump) + pa 0x1fc90000 (top dump) into
 va cb500000/cb580000; live mode maps the real DSP memory. E5 MDI state layout = E6's shifted by 4 bytes.
+
+## SIM runtime (2026-11-10, qemu): upstream SIM self-tests PASS on the E5 firmware
+linux/e5-cell/sim: --sim-selftest (STATUS 90 00 + 7-phase T=0 APDU) and --sim-reset-selftest (ATR 3b 05 HELLO,
+periodic callbacks, timer cancel) pass against the simulated card. E5 differences found: SIM HAL context layout is
+IDENTICAL to the E6 (init c638cfc0 = E6 c628aab8); SIM tx/rx buffers have their data at +4 after the count (E6 +0x20);
+irq_enable/irq_disable were swapped in the first map (now c63d8442/c63d8460). E5 SIM IRQ callbacks per number:
+b3 c60f07db, b4 c60f0361, b6 c60f03d9 (from the init's irq_register calls).

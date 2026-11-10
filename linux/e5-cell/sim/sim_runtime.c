@@ -1,5 +1,6 @@
 /* E5 port of upstream linux/isi-runtime/sim_runtime.c (GPL-2.0-only): E6 addresses replaced with
- * E5 fw 101.003 ones (docs/devices/e5-00/cellular-map.md). Not yet checked line by line. */
+ * E5 fw 101.003 ones (docs/devices/e5-00/cellular-map.md). E5 SIM buffers: data at +4 after the
+ * count (E6 +0x20); irq enable/disable = c63d8442/c63d8460. Not yet checked line by line. */
 // SPDX-License-Identifier: GPL-2.0-only
 #define _GNU_SOURCE
 #include <sys/mman.h>
@@ -255,7 +256,7 @@ void isi_sim_patches(void){
 	patch(0xc63ec534,(uintptr_t)adc_read);
 	patch(0xc63ec6b0,(uintptr_t)pmic_read);patch(0xc63ec64a,(uintptr_t)pmic_write);
 	patch(0xc63ebf44,(uintptr_t)sim_irq_bind);
-	patch(0xc63d83e8,(uintptr_t)irq_register);patch(0xc63d8460,(uintptr_t)irq_enable);patch(0xc63d8480,(uintptr_t)irq_disable);
+	patch(0xc63d83e8,(uintptr_t)irq_register);patch(0xc63d8442,(uintptr_t)irq_enable);patch(0xc63d8460,(uintptr_t)irq_disable);	/* E5: enable writes INTC +0xc, disable +0x10 */
 	patch(0xc63d7ace,(uintptr_t)delay);
 	patch(0xc63d6ec0,(uintptr_t)sim_timer_create);patch(0xc63d6fba,(uintptr_t)sim_timer_cancel);patch(0xc63d7084,(uintptr_t)sim_timer_remaining);
 	if(!embedded_mode){patch(0xc638bfa0,(uintptr_t)owner_complete);patch(0xc638c270,(uintptr_t)transaction_complete);}
@@ -425,7 +426,7 @@ static void wait_transaction(uint32_t context,int reset){
 static int exchange(uint32_t context,uint32_t tx,uint32_t rx,const unsigned char *command,unsigned int length,unsigned int expected){
 	const uint32_t initial_handlers[]={0xc638d254,0xc638d250,0xc638d240,0xc638d244,0xc638d24c,0xc638d248};
 	if(device==-2){peer.tx_count=0;peer.rx_count=0;peer.pending=0;peer.tx_event=0;peer.tx_length=length;}
-	memcpy((void *)(tx+0x20),command,length);*(uint32_t *)tx=length;*(uint32_t *)rx=0;
+	memcpy((void *)(tx+4),command,length);*(uint32_t *)tx=length;*(uint32_t *)rx=0;
 	*(unsigned char *)(sim_transaction+0x1c)=8;*(uint32_t *)(context+0x30)=1;
 	completion_event=0;fsm_event=0;
 	*(uint32_t *)(context+0x40)=length;*(uint32_t *)(context+0x44)=expected;*(uint32_t *)(context+0x4c)=expected==1 ? 1 : 2;
@@ -454,7 +455,7 @@ static int apdu_selftest(uint32_t context,uint32_t tx,uint32_t rx){
 		else{if(i==1 || i==6){peer.rx[0]=commands[i][1];}peer.rx[counts[i]-2]=0x90;}
 		unsigned char expected[262];memcpy(expected,peer.rx,counts[i]);
 		int count=exchange(context,tx,rx,commands[i],lengths[i],counts[i]);
-		if(count!=(int)counts[i] || peer.tx_count!=lengths[i] || memcmp(peer.tx,commands[i],lengths[i]) || memcmp((void *)(rx+0x20),expected,counts[i]) || peer.rx_count!=counts[i]){return 1;}
+		if(count!=(int)counts[i] || peer.tx_count!=lengths[i] || memcmp(peer.tx,commands[i],lengths[i]) || memcmp((void *)(rx+4),expected,counts[i]) || peer.rx_count!=counts[i]){return 1;}
 	}
 	puts("SIM APDU selftest: seven consecutive T=0 phases, INS acknowledgement and short body passed");return 0;
 }
@@ -476,11 +477,11 @@ static int apdus(uint32_t context,uint32_t tx,uint32_t rx,const char *list){
 			unsigned int expected=outgoing ? 1 : (command[4] ? command[4] : 256U)+3;
 			int count=exchange(context,tx,rx,command,outgoing ? 5 : length,expected);
 			if(outgoing && count==1){
-				if(*(unsigned char *)(rx+0x20)!=command[1]){fatal("unsupported T=0 procedure byte");}
+				if(*(unsigned char *)(rx+4)!=command[1]){fatal("unsupported T=0 procedure byte");}
 				count=exchange(context,tx,rx,command+5,length-5,2);
 			}
 			if(count<2){fprintf(stderr,"SIM APDU incomplete: state=%u\n",word(context+0x30));return 1;}
-			const unsigned char *reply=(const unsigned char *)(rx+0x20);
+			const unsigned char *reply=(const unsigned char *)(rx+4);
 			printf("SIM live APDU");
 			for(unsigned int i=0;i<length;i++){printf(" %02x",command[i]);}
 			printf(" ->");
@@ -510,7 +511,7 @@ int isi_sim_run(int reset,int cycle){
 
 	*(unsigned char *)(transaction+0x1c)=8;*(uint32_t *)(context+0x30)=1;
 	const unsigned char command[]={0x80,0xf2,0,0,0};
-	memcpy((void *)(tx+0x20),command,sizeof(command));*(uint32_t *)tx=sizeof(command);
+	memcpy((void *)(tx+4),command,sizeof(command));*(uint32_t *)tx=sizeof(command);
 	*(uint32_t *)(context+0x40)=sizeof(command);*(uint32_t *)(context+0x44)=259;*(uint32_t *)(context+0x4c)=2;
 	const uint32_t initial_handlers[]={0xc638d254,0xc638d250,0xc638d240,0xc638d244,0xc638d24c,0xc638d248};
 	for(unsigned int i=0;i<6;i++){irq_register(0xb1+i,word(initial_handlers[i]));}
@@ -540,17 +541,17 @@ int isi_sim_run(int reset,int cycle){
 	uint32_t count=word(rx);
 	if(word(context+0x30) || count<2 || count>262){hardware_snapshot("incomplete");isi_sim_report();fprintf(stderr,"SIM transaction incomplete: state=%u bytes=%u\n",word(context+0x30),count);return 1;}
 	printf("SIM %s %s:",device>=0 ? "live" : "selftest",reset ? "ATR" : "STATUS");
-	for(unsigned int i=0;i<count;i++){printf(" %02x",*(unsigned char *)(rx+0x20+i));}puts("");
+	for(unsigned int i=0;i<count;i++){printf(" %02x",*(unsigned char *)(rx+4+i));}puts("");
 	if(reset && device==-2){
-		if(peer.tx_count || count!=peer.rx_length || memcmp((void *)(rx+0x20),peer.rx,count) || completion_event!=1 || fsm_event!=11 || timer_fires!=2){return 1;}
+		if(peer.tx_count || count!=peer.rx_length || memcmp((void *)(rx+4),peer.rx,count) || completion_event!=1 || fsm_event!=11 || timer_fires!=2){return 1;}
 		for(unsigned int i=0;i<32;i++){if(timers[i].deadline){return 1;}}
 		puts("SIM reset selftest: two periodic callbacks, ATR completion and timer cancellation passed");
 		if(cycle){
 			if(peer.voltage_count!=2 || peer.voltage_values[0]!=0 || peer.voltage_values[1]!=2 || peer.pmic[0][0x1e]!=2){return 1;}
 			puts("SIM cycle selftest: original voltage setter off/restore sequence passed");
 		}
-	}else if(!reset && device==-2 && (peer.tx_count!=5 || memcmp(peer.tx,command,5) || count!=2 || memcmp((void *)(rx+0x20),peer.rx,2))){return 1;}
-	if(reset && device>=0 && (count>33 || (*(unsigned char *)(rx+0x20)!=0x3b && *(unsigned char *)(rx+0x20)!=0x3f) || completion_event!=1)){return 1;}
+	}else if(!reset && device==-2 && (peer.tx_count!=5 || memcmp(peer.tx,command,5) || count!=2 || memcmp((void *)(rx+4),peer.rx,2))){return 1;}
+	if(reset && device>=0 && (count>33 || (*(unsigned char *)(rx+4)!=0x3b && *(unsigned char *)(rx+4)!=0x3f) || completion_event!=1)){return 1;}
 	if(device==-2 && !reset && apdu_selftest(context,tx,rx)){return 1;}
 	const char *list=getenv("SIM_APDU");
 	if(!reset && device>=0 && list && apdus(context,tx,rx,list)){return 1;}
