@@ -11,6 +11,8 @@
  *   e5rt <dir> --replay d0 d1 d2 d3  one DSP descriptor from the dump (needs low-11200000.bin)
  *   e5rt <dir> --mdi /dev/rapuyama-mdi [--probe dev:res] [--seconds n, 0 = forever]
  *                [--backend /dev/rapuyama-isi]   live: real MDI rings, Phonet backend
+ *                (E5RT_OS_CLOCK=1: firmware OS timers on the Linux clock)
+ *   e5rt <dir> --os-timer-selftest | --os-timer-live-selftest   upstream OS timer tests
  * One live start per Linux boot (the DSP ring state moves on). */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -25,6 +27,7 @@
 #include <sys/ioctl.h>
 #include <linux/ioctl.h>
 #include "sim_runtime.h"
+#include "os_timer_runtime.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -493,6 +496,7 @@ static int ramdrives(void)
 }
 
 static int serve(unsigned seconds);
+static unsigned os_fired;	/* firmware timers expired on the Linux clock (E5RT_OS_CLOCK=1) */
 /* offline: RAM drives from the low-memory dump (pa 0x11200000) */
 static void ramdrives_from_dump(const char *dir)
 {
@@ -549,6 +553,7 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 			return 1;
 		alarm(2);
 		sbif_service();
+		os_fired += isi_os_timer_service();
 		schedule();
 		if (mdi_pump() || drain())
 			return 1;
@@ -557,6 +562,7 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 	if (ioctl(mdi, RAPUYAMA_MDI_STATUS, &st))
 		return 1;
 	printf("mdi status ap=%08x dsp=%08x rx=%u tx=%u event=%u\n", st.ap, st.dsp, st.rx_interrupts, st.tx_interrupts, st.event_interrupts);
+	printf("os timers fired %u\n", os_fired);
 	return 0;
 }
 
@@ -572,6 +578,7 @@ static int serve(unsigned seconds)
 			return 1;
 		alarm(2);
 		sbif_service();
+		os_fired += isi_os_timer_service();
 		schedule();
 		if (mdi_pump())
 			return 1;
@@ -601,18 +608,23 @@ static int serve(unsigned seconds)
 			return 1;
 		alarm(0);
 	}
+	printf("os timers fired %u\n", os_fired);
 	return 0;
 }
 
 int main(int argc, char **argv)
 {
 	int link = argc >= 4 && !strcmp(argv[2], "--mdi");
+	int os_test = argc == 3 && !strcmp(argv[2], "--os-timer-selftest") ? 1 :
+		      argc == 3 && !strcmp(argv[2], "--os-timer-live-selftest") ? 2 : 0;
+	const char *os_clock = getenv("E5RT_OS_CLOCK");
+	int os_live = link && os_clock && !strcmp(os_clock, "1");
 	/* upstream's SIM modes: simulated card (selftests) or the bridge (--sim-probe/--sim-reset <dev>) */
 	int sim_mode = argc == 3 && !strcmp(argv[2], "--sim-selftest") ? 1 :
 		       argc == 3 && !strcmp(argv[2], "--sim-reset-selftest") ? 2 :
 		       argc == 4 && !strcmp(argv[2], "--sim-probe") ? 3 :
 		       argc == 4 && !strcmp(argv[2], "--sim-reset") ? 4 : 0;
-	if (argc != 2 && !link && !sim_mode && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
+	if (argc != 2 && !link && !sim_mode && !os_test && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
 		fprintf(stderr, "usage: e5rt <images dir> [--dsp-selftest | --dsp-tx-selftest | --mdi <dev> [--probe dev:res] [--seconds n, 0 = forever] [--backend /dev/rapuyama-isi]]\n");
 		return 2;
 	}
@@ -654,6 +666,8 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	patches();
+	if (os_test || os_live)
+		isi_os_timer_patches();
 	if (isi_sim_active()) {
 		/* E5 SIM patch window: va c60f0000 = pa 0x100ec000 (Symbian page tables), executable */
 		region(0xc60f0000u, 0x1000);
@@ -691,8 +705,12 @@ int main(int argc, char **argv)
 				packet_device = argv[i + 1];
 		}
 		alarm(0);
+		if (os_live)
+			isi_os_timer_attach();
 		return live(argv[3], probe_dev, probe_res, seconds, packet_device);
 	}
+	if (os_test)
+		return os_test == 2 ? isi_os_timer_live_selftest() : isi_os_timer_selftest();
 	if (sim_mode)
 		return isi_sim_run(sim_mode == 2 || sim_mode == 4, 0);	/* 2/4 = reset (ATR), 1/3 = STATUS + SIM_APDU */
 	if (argc == 7 && !strcmp(argv[2], "--replay")) {

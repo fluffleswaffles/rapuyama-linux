@@ -199,3 +199,18 @@ EF_DIR 2F00 record 1 (Le 00 -> 6c 24, retried with 24): `61 19 4f 0c <USIM AID a
 Select the ADF by that AID (00 a4 04 0c) -> 90 00, select EF_IMSI 6F07 -> 90 00, READ BINARY 9 -> 08 + 15-digit IMSI
 (odd parity nibble 9) + 90 00; EF_AD 6FAD -> 00 00 00 02 (2-digit MNC). The PIN is off, so no VERIFY was needed.
 The IMSI stays in the phone log only.
+
+## OS timers (2026-11-10, qemu): upstream timer runtime ported (linux/e5-cell/sim/os_timer_runtime.c)
+Same semantics as the E6 (microseconds in/out, 8192 Hz pool ticks, elapsed() in 5 ms units with the same
+32.768/5.0 constants), same 28-byte OS timer entries (+0x10 owner task, +0x11 flags, +0x12 state 1 idle/2 running/3 expired).
+| role | E6 (ours) | E5 |
+|---|---|---|
+| OS timer table / ids | c681fd48, < 0x114 | c6832e8c, < 0xed |
+| copied pool | ptr c6821e58, header at -8, 279 x 20 B {us, ticks, cb, arg, u16 next} | header c683496c {count, free, head, tail}, 240 x 16 B at +8 {ticks, cb, arg, u16 next} |
+| create return | delay<<32 \| handle | handle only |
+| Linux-owned energy timers | task 29 (223, 236, 241-244) | task 28 (182, 183, 201, 203, 204) |
+| watchdogs stopped at attach | 212 (task 27), 266 (task 38) | 172 (task 26); no task-38 twin |
+| selftest timer / energy test timer | 62 (task 2) / 223 | 29 (task 2, same flag pattern 29..56 = E6 62..90) / 183 |
+Snapshot: 13 OS timers running, 4 pool entries (3 OS-timer callbacks c63ba1eb, args 0xe8/0/0xac + c63ba575).
+qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock, 4 adopted) and
+--os-timer-live-selftest (attach: copied 4, energy 5, watchdog 1; real-time expiry) pass. Not ported: the SMS timeout selftest.

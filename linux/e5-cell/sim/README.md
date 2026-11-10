@@ -14,4 +14,6 @@ State (qemu-arm, simulated card): BOTH upstream SIM self-tests PASS (2026-11-10)
 `--sim-reset-selftest` reads a wrong ATR and `--sim-selftest` stalls. Likely cause:
 upstream reads the SIM HAL context at E6 offsets (+0x30 state, +0xb8 voltage setter,
 rx/tx buffers, +0x50/+0x74/+0x78); the E5 context init (c638cfc0) has its own layout.
-Next: diff the E6 and E5 context initialisers and move the offsets. Not for the phone yet.
+OS timers: `os_timer_runtime.c` (upstream port, E5 table/pool/owners), modes `--os-timer-selftest`,
+`--os-timer-live-selftest`, and `E5RT_OS_CLOCK=1` with `--mdi` for live timers.
+Build: `clang ... -I. -o e5rt e5rt-sim.c sim_runtime.c os_timer_runtime.c`.
