@@ -505,8 +505,13 @@ static int drain(void)
 			printf(" %02x", r[j]);
 		printf("\n");
 		if (backend >= 0 && write(backend, r, size) != (ssize_t)size) {
-			fprintf(stderr, "backend write failed: %s\n", strerror(errno));
-			return 1;
+			static unsigned dropped;	/* phonet0 down (nobody up yet) or full: drop, like a radio link */
+			if (errno != ENETDOWN && errno != ENOBUFS && errno != EAGAIN) {
+				fprintf(stderr, "backend write failed: %s\n", strerror(errno));
+				return 1;
+			}
+			if (!dropped++ || !(dropped % 100))
+				fprintf(stderr, "backend: %u host frame(s) dropped (%s)\n", dropped, strerror(errno));
 		}
 		release(r);
 	}
