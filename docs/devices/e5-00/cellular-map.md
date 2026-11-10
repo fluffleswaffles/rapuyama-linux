@@ -235,3 +235,7 @@ qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock
   data item size query c636a9e6 (E6 c6263ada; reader c6362f60, caller c6363064), reached ~10 s after start
   (item 00000001): answered with the service's own failure status -1 -> firmware item-unavailable path.
 - qemu --os-soak 120 with both: no hang, 30 timer expiries, host indications res 0x47 and 0x48.
+- Phone xo2 (fresh boot, live link + SIM backend + timers, no IMEI file): selftests pass on the phone; attach ok
+  (5 copied timers), 6 MDI tx descriptors, 15 SBIF sector writes, then reset 0xa at c6354a04: sub-block parser
+  c635492c (from the message dispatcher c6354a42 on 16-bit codes), type-1 sub-block with u16 +6 == 0. Not seen
+  offline (soak), so the input is live (DSP or real SIM). The reset trap now dumps r4-r7 (r7 = message).

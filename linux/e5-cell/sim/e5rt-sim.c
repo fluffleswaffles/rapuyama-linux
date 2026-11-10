@@ -118,9 +118,25 @@ static void firmware_assert(uint32_t expression, uint32_t file, uint32_t line)
 	_exit(120);
 }
 
-static void firmware_reset(uint32_t reason)
+uint32_t e5rt_reset_regs[4];	/* r4-r7 of the firmware caller (reset_entry) */
+void e5rt_firmware_reset(uint32_t reason, uint32_t unused1, uint32_t unused2, uint32_t unused3, uint32_t caller);
+/* the thumb trap enters here in ARM state: keep r4-r7, pass the firmware lr as 5th argument */
+__attribute__((naked)) static void reset_entry(void)
 {
-	fprintf(stderr, "firmware reset requested: %08x (called from %08lx)\n", reason, (unsigned long)(uintptr_t)__builtin_return_address(0));
+	__asm__ volatile("ldr r3, =e5rt_reset_regs\n\tstm r3, {r4-r7}\n\tpush {lr}\n\tbl e5rt_firmware_reset\n\t.ltorg\n");
+}
+void e5rt_firmware_reset(uint32_t reason, uint32_t unused1, uint32_t unused2, uint32_t unused3, uint32_t caller)
+{
+	(void)unused1; (void)unused2; (void)unused3;
+	fprintf(stderr, "firmware reset requested: %08x (called from %08x)\n", reason, caller);
+	for (unsigned r = 0; r < 4; r++) {	/* what the caller was working on (e.g. the parsed message) */
+		uint32_t v = e5rt_reset_regs[r];
+		fprintf(stderr, "r%u=%08x", r + 4, v);
+		if (v >= DATA + 16 && v + 112 <= DATA + DATA_SIZE)
+			for (unsigned i = 0; i < 112; i++)
+				fprintf(stderr, "%s%02x", i % 16 ? " " : "\n  ", ((unsigned char *)(uintptr_t)(v - 16))[i]);
+		fprintf(stderr, "\n");
+	}
 	_exit(121);
 }
 
@@ -163,7 +179,7 @@ static void patches(void)
 	word(0xc6658ce8, 0xe12fff1e);
 	word(0xc6658da4, 0xe12fff1e);	/* cache barrier -> bx lr */
 	trap(FW_ASSERT, (void (*)())firmware_assert);
-	trap(FW_RESET, (void (*)())firmware_reset);
+	trap(FW_RESET, reset_entry);
 	trap(0xc63c9d30, (void (*)())ring_panic);	/* MDI ring dump + reset 0xd (diagnostic) */
 }
 
