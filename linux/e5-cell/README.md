@@ -17,7 +17,7 @@ firmware addresses are user addresses, Phonet + `rapuyama_isi` + the MDI driver
 
 Status (2026-11-10): self-tests pass in qemu-arm; on the phone the runtime
 attaches to the real MDI rings, the DSP answers, and a Linux Phonet socket gets
-the firmware's ISI version 18.0 through phonet0. Not done: SIM, OS timers,
+the firmware's ISI version 18.0 through phonet0. SIM works on the real card (ATR, ICCID, USIM IMSI). Not done: OS timers,
 identity, registration, packet data.
 
 On the phone (one runtime start per boot):

@@ -193,3 +193,9 @@ USIM ATR (3b 9f 96 80 1f ..., T=0, 22 bytes); SIM receive interrupt 0xb4 (INTC 1
 power-up stays inside the bridge allowlist.
 Command traffic too: --sim-probe with SIM_APDU (select MF, select EF ICCID, READ BINARY 10) -> 90 00 / 90 00 /
 10 bytes + 90 00 (a valid ICCID), through the E5 firmware's own T=0 driver and the bridge.
+
+## IMSI read (2026-11-10, phone, xn5, same e5rt-sim build as the ICCID read)
+EF_DIR 2F00 record 1 (Le 00 -> 6c 24, retried with 24): `61 19 4f 0c <USIM AID a0 00 00 00 87 10 02 ...> 50 ..` (12-byte AID).
+Select the ADF by that AID (00 a4 04 0c) -> 90 00, select EF_IMSI 6F07 -> 90 00, READ BINARY 9 -> 08 + 15-digit IMSI
+(odd parity nibble 9) + 90 00; EF_AD 6FAD -> 00 00 00 02 (2-digit MNC). The PIN is off, so no VERIFY was needed.
+The IMSI stays in the phone log only.
