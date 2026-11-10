@@ -646,7 +646,7 @@ int main(int argc, char **argv)
 	region(DSP_BUF, 0x100000);	/* DSP buffer window (cb500000..cb5fffff) */
 	/* its snapshot contents (probe e5l2pt): the firmware reads the DSP's allocation tags
 	 * from these buffers, e.g. for tags still waiting to be returned */
-	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")))
+	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")) && !sim_mode)
 		fill(argv[1], "low-10000000.bin", 0x140000, DSP_BUF, 0x80000);	/* pa 10140000 (live: the driver fills it) */
 	fill(argv[1], "1fb60000.bin", 0x130000, DSP_BUF + 0x80000, 0x50000);	/* pa 1fc90000 */
 	if (sim_mode && isi_sim_open(sim_mode >= 3 ? argv[3] : NULL, 0)) {
