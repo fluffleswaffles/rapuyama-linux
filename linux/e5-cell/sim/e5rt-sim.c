@@ -16,6 +16,7 @@
  *   e5rt <dir> --sim-backend-selftest   embedded SIM backend against the simulated card
  *   E5RT_IMEI_FILE=<file with the 15-digit IMEI>: the firmware's identity reader answers from it
  *   e5rt <dir> --identity-selftest      (needs E5RT_IMEI_FILE, use a test IMEI)
+ *   e5rt <dir> --kasumi-selftest        software UMTS f8 (ETSI vector) instead of the crypto hardware
  *   e5rt <dir> --os-soak <seconds>      offline: simulated embedded SIM + OS timers on the real clock +
  *                                       scheduler, no MDI (needs low-11200000.bin for the RAM drives)
  *   e5rt <dir> --os-timer-selftest | --os-timer-live-selftest   upstream OS timer tests
@@ -36,6 +37,7 @@
 #include "sim_runtime.h"
 #include "os_timer_runtime.h"
 #include "identity_runtime.h"
+#include "kasumi_runtime.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -688,6 +690,7 @@ int main(int argc, char **argv)
 	int os_live = link && os_clock && !strcmp(os_clock, "1");
 	const char *sim_device = link ? getenv("E5RT_SIM_DEVICE") : NULL;
 	int identity_test = argc == 3 && !strcmp(argv[2], "--identity-selftest");
+	int kasumi_test = argc == 3 && !strcmp(argv[2], "--kasumi-selftest");
 	if (isi_identity_load(getenv("E5RT_IMEI_FILE"))) {
 		fprintf(stderr, "invalid E5RT_IMEI_FILE (15 digits, Luhn)\n");
 		return 2;
@@ -705,7 +708,7 @@ int main(int argc, char **argv)
 		       argc == 3 && !strcmp(argv[2], "--sim-reset-selftest") ? 2 :
 		       argc == 4 && !strcmp(argv[2], "--sim-probe") ? 3 :
 		       argc == 4 && !strcmp(argv[2], "--sim-reset") ? 4 : 0;
-	if (argc != 2 && !link && !sim_mode && !os_test && !sim_backend_test && !identity_test && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
+	if (argc != 2 && !link && !sim_mode && !os_test && !sim_backend_test && !identity_test && !kasumi_test && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
 		fprintf(stderr, "usage: e5rt <images dir> [--dsp-selftest | --dsp-tx-selftest | --mdi <dev> [--probe dev:res] [--seconds n, 0 = forever] [--backend /dev/rapuyama-isi]]\n");
 		return 2;
 	}
@@ -739,7 +742,7 @@ int main(int argc, char **argv)
 	region(DSP_BUF, 0x100000);	/* DSP buffer window (cb500000..cb5fffff) */
 	/* its snapshot contents (probe e5l2pt): the firmware reads the DSP's allocation tags
 	 * from these buffers, e.g. for tags still waiting to be returned */
-	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")) && !sim_mode && !os_test && !sim_backend_test && !identity_test)
+	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")) && !sim_mode && !os_test && !sim_backend_test && !identity_test && !kasumi_test)
 		fill(argv[1], "low-10000000.bin", 0x140000, DSP_BUF, 0x80000);	/* pa 10140000 (live: the driver fills it) */
 	fill(argv[1], "1fb60000.bin", 0x130000, DSP_BUF + 0x80000, 0x50000);	/* pa 1fc90000 */
 	if (sim_mode && isi_sim_open(sim_mode >= 3 ? argv[3] : NULL, 0)) {
@@ -753,6 +756,8 @@ int main(int argc, char **argv)
 	patches();
 	if (os_test || os_live || soak)
 		isi_os_timer_patches();
+	if (link || soak || kasumi_test)
+		isi_kasumi_patches();	/* no crypto accelerator in e5rt: software KASUMI */
 	if (isi_identity_attach()) {
 		fprintf(stderr, "unsupported identity reader\n");
 		return 2;
@@ -802,6 +807,8 @@ int main(int argc, char **argv)
 	}
 	if (identity_test)
 		return isi_identity_selftest();
+	if (kasumi_test)
+		return isi_kasumi_selftest();
 	if (soak) {
 		ramdrives_from_dump(argv[1]);
 		sbif_attach();

@@ -269,3 +269,11 @@ Live runtime (SIM backend, OS timers, IMEI file, DSP patch) ran the full 240 s. 
 - NET_RAT (0x36) -> 0x37, sub-block 0x2c value 0x02 = UMTS;
 - NET_RSSI_GET (0x0b 00 02) -> 0x0c, sub-block 0x04: signal 100 %.
 The E5 registers by itself once the SIM, timers and IMEI are in place (no request from Linux).
+
+## Packet data, first attempts (2026-11-10, phone xg1..xg2)
+- GPDS (legacy resource 0x31) server at 00:35, ISI 17.26; GPDS_STATUS_RESP answered.
+- GPDS_ATTACH_REQ made the firmware run UMTS integrity: f9 wrapper c66554c7 took the hardware path (bits <
+  0x13be: semaphore 3 + crypto c6024c00) and spun on the semaphore. KASUMI (kasumi_runtime.c): NOP the blo at
+  c6655508 (f9) and c6655426 (traced wrapper c66553d5, < 0x1400), redirect the f8 batch c6655aac (E5 layout:
+  count byte, 12-byte records {data, bits, COUNT-C} from +4) to C f8 on the firmware's key schedule c6655d0f /
+  cipher c6655c9b. qemu: ETSI f8 test set 1 passes through the E5 batch entry.
