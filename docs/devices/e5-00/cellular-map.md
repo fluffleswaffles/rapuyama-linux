@@ -186,3 +186,8 @@ periodic callbacks, timer cancel) pass against the simulated card. E5 difference
 IDENTICAL to the E6 (init c638cfc0 = E6 c628aab8); SIM tx/rx buffers have their data at +4 after the count (E6 +0x20);
 irq_enable/irq_disable were swapped in the first map (now c63d8442/c63d8460). E5 SIM IRQ callbacks per number:
 b3 c60f07db, b4 c60f0361, b6 c60f03d9 (from the init's irq_register calls).
+
+## Real SIM card (2026-11-10, phone, cellular kernel + rapuyama_sim.ko)
+e5rt-sim --sim-reset /dev/rapuyama-sim: the E5 firmware's original cold reset through the bridge returns a valid
+USIM ATR (3b 9f 96 80 1f ..., T=0, 22 bytes); SIM receive interrupt 0xb4 (INTC 180) fires, the firmware's PMIC
+power-up stays inside the bridge allowlist.
