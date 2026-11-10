@@ -191,3 +191,5 @@ b3 c60f07db, b4 c60f0361, b6 c60f03d9 (from the init's irq_register calls).
 e5rt-sim --sim-reset /dev/rapuyama-sim: the E5 firmware's original cold reset through the bridge returns a valid
 USIM ATR (3b 9f 96 80 1f ..., T=0, 22 bytes); SIM receive interrupt 0xb4 (INTC 180) fires, the firmware's PMIC
 power-up stays inside the bridge allowlist.
+Command traffic too: --sim-probe with SIM_APDU (select MF, select EF ICCID, READ BINARY 10) -> 90 00 / 90 00 /
+10 bytes + 90 00 (a valid ICCID), through the E5 firmware's own T=0 driver and the bridge.
