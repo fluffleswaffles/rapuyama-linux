@@ -11,7 +11,11 @@
  *   e5rt <dir> --replay d0 d1 d2 d3  one DSP descriptor from the dump (needs low-11200000.bin)
  *   e5rt <dir> --mdi /dev/rapuyama-mdi [--probe dev:res] [--seconds n, 0 = forever]
  *                [--backend /dev/rapuyama-isi]   live: real MDI rings, Phonet backend
- *                (E5RT_OS_CLOCK=1: firmware OS timers on the Linux clock)
+ *                (E5RT_SIM_DEVICE=/dev/rapuyama-sim: embedded SIM backend, PMIC/ADC/IRQs via the bridge;
+ *                 E5RT_OS_CLOCK=1: firmware OS timers on the Linux clock, needs the SIM backend)
+ *   e5rt <dir> --sim-backend-selftest   embedded SIM backend against the simulated card
+ *   e5rt <dir> --os-soak <seconds>      offline: simulated embedded SIM + OS timers on the real clock +
+ *                                       scheduler, no MDI (needs low-11200000.bin for the RAM drives)
  *   e5rt <dir> --os-timer-selftest | --os-timer-live-selftest   upstream OS timer tests
  * One live start per Linux boot (the DSP ring state moves on). */
 #define _GNU_SOURCE
@@ -24,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <poll.h>
+#include <time.h>
 #include <sys/ioctl.h>
 #include <linux/ioctl.h>
 #include "sim_runtime.h"
@@ -496,6 +501,12 @@ static int ramdrives(void)
 }
 
 static int serve(unsigned seconds);
+static uint64_t monotonic_ms(void)
+{
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return (uint64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
 static unsigned os_fired;	/* firmware timers expired on the Linux clock (E5RT_OS_CLOCK=1) */
 /* offline: RAM drives from the low-memory dump (pa 0x11200000) */
 static void ramdrives_from_dump(const char *dir)
@@ -547,12 +558,13 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 		printf("backend %s attached, serving %s\n", packet_device, seconds ? "a while" : "until killed");
 		return serve(seconds);
 	}
-	for (unsigned round = 0; round < seconds * 10; round++) {
-		struct pollfd w = {.fd = mdi, .events = POLLIN | POLLPRI};
-		if (poll(&w, 1, 100) < 0 && errno != EINTR)
+	for (uint64_t end = monotonic_ms() + seconds * 1000ull; monotonic_ms() < end;) {
+		struct pollfd w[2] = {{.fd = mdi, .events = POLLIN | POLLPRI}, {.fd = isi_sim_fd(), .events = POLLIN}};
+		if (poll(w, isi_sim_embedded() ? 2 : 1, isi_sim_embedded() ? (int)isi_sim_timeout() : 100) < 0 && errno != EINTR)
 			return 1;
 		alarm(2);
 		sbif_service();
+		isi_sim_service();
 		os_fired += isi_os_timer_service();
 		schedule();
 		if (mdi_pump() || drain())
@@ -572,12 +584,13 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 static int serve(unsigned seconds)
 {
 	static unsigned char frame[65541];
-	for (unsigned round = 0; !seconds || round < seconds * 10; round++) {
-		struct pollfd w[2] = {{.fd = mdi, .events = POLLIN | POLLPRI}, {.fd = backend, .events = POLLIN}};
-		if (poll(w, 2, 100) < 0 && errno != EINTR)
+	for (uint64_t end = monotonic_ms() + seconds * 1000ull; !seconds || monotonic_ms() < end;) {
+		struct pollfd w[3] = {{.fd = mdi, .events = POLLIN | POLLPRI}, {.fd = backend, .events = POLLIN}, {.fd = isi_sim_fd(), .events = POLLIN}};
+		if (poll(w, isi_sim_embedded() ? 3 : 2, isi_sim_embedded() ? (int)isi_sim_timeout() : 100) < 0 && errno != EINTR)
 			return 1;
 		alarm(2);
 		sbif_service();
+		isi_sim_service();
 		os_fired += isi_os_timer_service();
 		schedule();
 		if (mdi_pump())
@@ -619,12 +632,21 @@ int main(int argc, char **argv)
 		      argc == 3 && !strcmp(argv[2], "--os-timer-live-selftest") ? 2 : 0;
 	const char *os_clock = getenv("E5RT_OS_CLOCK");
 	int os_live = link && os_clock && !strcmp(os_clock, "1");
+	const char *sim_device = link ? getenv("E5RT_SIM_DEVICE") : NULL;
+	int soak = argc == 4 && !strcmp(argv[2], "--os-soak");
+	int sim_backend_test = (argc == 3 && !strcmp(argv[2], "--sim-backend-selftest")) || soak;
+	if (sim_device && !*sim_device)
+		sim_device = NULL;
+	if (os_live && !sim_device) {
+		fprintf(stderr, "E5RT_OS_CLOCK=1 needs E5RT_SIM_DEVICE (firmware PMIC access spins on the hardware semaphore otherwise)\n");
+		return 2;
+	}
 	/* upstream's SIM modes: simulated card (selftests) or the bridge (--sim-probe/--sim-reset <dev>) */
 	int sim_mode = argc == 3 && !strcmp(argv[2], "--sim-selftest") ? 1 :
 		       argc == 3 && !strcmp(argv[2], "--sim-reset-selftest") ? 2 :
 		       argc == 4 && !strcmp(argv[2], "--sim-probe") ? 3 :
 		       argc == 4 && !strcmp(argv[2], "--sim-reset") ? 4 : 0;
-	if (argc != 2 && !link && !sim_mode && !os_test && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
+	if (argc != 2 && !link && !sim_mode && !os_test && !sim_backend_test && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
 		fprintf(stderr, "usage: e5rt <images dir> [--dsp-selftest | --dsp-tx-selftest | --mdi <dev> [--probe dev:res] [--seconds n, 0 = forever] [--backend /dev/rapuyama-isi]]\n");
 		return 2;
 	}
@@ -649,7 +671,7 @@ int main(int argc, char **argv)
 	region(0xc6018000, 0x4000);	/* SRAM, MDI rings */
 	region(0xc6024000, 0x2000);	/* crypto */
 	region(0xc6033000, 0x1000);	/* timers */
-	if (!sim_mode)
+	if (!sim_mode && !sim_device && !sim_backend_test)
 		region(0xc6038000, 0x1000);	/* SIM (sim modes: isi_sim_map traps it) */
 	region(0xc6040000, 0x1000);	/* doorbells */
 	region(0xc6060000, 0x1000);	/* INTC */
@@ -658,15 +680,19 @@ int main(int argc, char **argv)
 	region(DSP_BUF, 0x100000);	/* DSP buffer window (cb500000..cb5fffff) */
 	/* its snapshot contents (probe e5l2pt): the firmware reads the DSP's allocation tags
 	 * from these buffers, e.g. for tags still waiting to be returned */
-	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")) && !sim_mode)
+	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")) && !sim_mode && !os_test && !sim_backend_test)
 		fill(argv[1], "low-10000000.bin", 0x140000, DSP_BUF, 0x80000);	/* pa 10140000 (live: the driver fills it) */
 	fill(argv[1], "1fb60000.bin", 0x130000, DSP_BUF + 0x80000, 0x50000);	/* pa 1fc90000 */
 	if (sim_mode && isi_sim_open(sim_mode >= 3 ? argv[3] : NULL, 0)) {
 		perror("SIM bridge");
 		return 1;
 	}
+	if ((sim_device || sim_backend_test) && isi_sim_open(sim_device, 1)) {
+		perror("SIM backend");
+		return 1;
+	}
 	patches();
-	if (os_test || os_live)
+	if (os_test || os_live || soak)
 		isi_os_timer_patches();
 	if (isi_sim_active()) {
 		/* E5 SIM patch window: va c60f0000 = pa 0x100ec000 (Symbian page tables), executable */
@@ -705,9 +731,39 @@ int main(int argc, char **argv)
 				packet_device = argv[i + 1];
 		}
 		alarm(0);
+		if (isi_sim_embedded())
+			isi_sim_attach();
 		if (os_live)
 			isi_os_timer_attach();
 		return live(argv[3], probe_dev, probe_res, seconds, packet_device);
+	}
+	if (soak) {
+		ramdrives_from_dump(argv[1]);
+		sbif_attach();
+		isi_sim_attach();
+		isi_os_timer_offline();
+		isi_os_timer_attach();
+		alarm(0);
+		uint64_t end = monotonic_ms() + atoi(argv[3]) * 1000ull;
+		unsigned rounds = 0;
+		while (monotonic_ms() < end) {
+			poll(NULL, 0, isi_sim_timeout());
+			alarm(2);
+			sbif_service();
+			isi_sim_service();
+			os_fired += isi_os_timer_service();
+			schedule();
+			if (drain())
+				return 1;
+			alarm(0);
+			rounds++;
+		}
+		printf("os soak: %u rounds, os timers fired %u, no hang\n", rounds, os_fired);
+		return 0;
+	}
+	if (sim_backend_test) {
+		isi_sim_attach();
+		return isi_sim_backend_selftest();
 	}
 	if (os_test)
 		return os_test == 2 ? isi_os_timer_live_selftest() : isi_os_timer_selftest();

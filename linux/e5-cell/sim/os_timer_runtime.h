@@ -6,6 +6,7 @@ void isi_os_timer_patches(void);
 int isi_os_timer_selftest(void);
 void isi_os_timer_attach(void);
 unsigned int isi_os_timer_service(void);
+void isi_os_timer_offline(void);
 int isi_os_timer_live_selftest(void);
 
 #endif

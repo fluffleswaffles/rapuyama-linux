@@ -6,12 +6,15 @@
  *    an extra microsecond word at +0); ticks are 8192 Hz on both
  *  - timer create returns the handle only (E6: delay<<32 | handle)
  *  - OS timer table c6832e8c, 237 ids (E6 c681fd48, 276), same 28-byte entries
- *  - Linux-owned energy timers belong to task 28 (E6 29); the watchdog stopped at attach is
- *    id 172 of task 26 (E6 212 of task 27); the E5 has no twin of the E6's task 38 (id 266)
+ *  - Linux-owned energy timers belong to task 28 (E6 29); the watchdogs stopped at attach are
+ *    id 172 of task 26 (E6 212 of task 27) and id 219 of task 34 (E6 266 of task 38: a 1 s
+ *    supervision of a DSP request, c63c8951 sends 0x12 to dev 0x7c, a 0x12/0xda reply stops it,
+ *    expiry = reset 9)
  *  - selftest timer 29 of task 2 (E6 62), energy timer 183 (E6 223)
  * The SMS timeout selftest is not ported (its SMS addresses are not mapped yet). */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
@@ -33,6 +36,8 @@
 #define ENERGY_TASK 28u
 #define WATCHDOG_ID 172u
 #define WATCHDOG_TASK 26u
+#define DSP_WATCHDOG_ID 219u
+#define DSP_WATCHDOG_TASK 34u
 #define TEST_ID 29u
 #define ENERGY_ID 183u
 #define BX_LR_CALLBACK 0xc63b9d17u	/* the c6033340 helper, patched to bx lr */
@@ -40,7 +45,8 @@
 struct os_timer{uint64_t deadline,serial;uint32_t callback,arg;int active;};
 static struct os_timer timers[POOL];
 static uint64_t now,baseline,sequence;
-static int live_clock;
+static int live_clock,trace,offline;
+void isi_os_timer_offline(void){offline=1;}
 static void sync_clock(void);
 static _Noreturn void invalid(const char *reason){fprintf(stderr,"os timer: %s\n",reason);_exit(123);}
 
@@ -176,15 +182,16 @@ int isi_os_timer_selftest(void){
 
 void isi_os_timer_attach(void){
 	for(unsigned i=0;i<POOL;i++){if(timers[i].active){invalid("attach with active adapter timers");}}
+	const char *t=getenv("E5RT_OS_TRACE");trace=t && !strcmp(t,"1");
 	live_clock=1;sync_clock();baseline=now;unsigned copied=adopt();
 	uint32_t config=*(uint32_t *)(uintptr_t)(SCHEDULER+0x20);
-	if(config<CODE_LO || config>CODE_HI-48*16 || *(uint32_t *)(uintptr_t)(config+ENERGY_TASK*16)!=0xc6329389 || *(uint32_t *)(uintptr_t)(config+WATCHDOG_TASK*16)!=0xc63ca065){invalid("unsupported task ownership");}
+	if(config<CODE_LO || config>CODE_HI-48*16 || *(uint32_t *)(uintptr_t)(config+ENERGY_TASK*16)!=0xc6329389 || *(uint32_t *)(uintptr_t)(config+WATCHDOG_TASK*16)!=0xc63ca065 || *(uint32_t *)(uintptr_t)(config+DSP_WATCHDOG_TASK*16)!=0xc63c8b75){invalid("unsupported task ownership");}
 	uint32_t (*stop)(uint32_t)=(void *)OS_STOP;unsigned energy=0,watchdogs=0;
 	for(unsigned i=0;i<IDS;i++){
 		const unsigned char *entry=os_entry(i);
 		if(entry[18]!=2){continue;}
 		if(entry[16]==ENERGY_TASK){stop(i);energy++;}
-		else if(i==WATCHDOG_ID && entry[16]==WATCHDOG_TASK){stop(i);watchdogs++;}
+		else if((i==WATCHDOG_ID && entry[16]==WATCHDOG_TASK) || (i==DSP_WATCHDOG_ID && entry[16]==DSP_WATCHDOG_TASK)){stop(i);watchdogs++;}
 	}
 	printf("os timers attached: copied=%u linux energy=%u watchdogs=%u\n",copied,energy,watchdogs);
 }
@@ -195,11 +202,14 @@ unsigned int isi_os_timer_service(void){
 		const unsigned char *entry=os_entry(i);
 		if(entry[16]==ENERGY_TASK && entry[18]==2){((uint32_t (*)(uint32_t))OS_STOP)(i);}
 	}
+	/* offline (no DSP to answer task 34's request): its 1 s supervision would reset the firmware */
+	if(offline && os_entry(DSP_WATCHDOG_ID)[18]==2){((uint32_t (*)(uint32_t))OS_STOP)(DSP_WATCHDOG_ID);}
 	unsigned fired=0;
 	for(int selected;fired<64;fired++){
 		sync_clock();
 		if((selected=earliest_due(now))<0){break;}
 		struct os_timer timer=timers[selected];timers[selected].active=0;
+		if(trace){fprintf(stderr,"os timer fire: slot %d callback %08x arg %x at +%llu ms\n",selected,timer.callback,timer.arg,(unsigned long long)(now-baseline)/1000);}
 		((void (*)(uint32_t))(uintptr_t)timer.callback)(timer.arg);
 	}
 	return fired;

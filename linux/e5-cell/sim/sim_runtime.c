@@ -172,7 +172,8 @@ static int reg_io(struct isi_sim_reg *request){
 
 static int pmic_io(struct isi_sim_pmic *request){
 	if(device>=0){return ioctl(device,ISI_SIM_PMIC,request);}
-	if(!((request->device==2 && (request->reg==3 || ((reset_mode || embedded_mode) && request->reg==1))) || (request->device==1 && (request->reg==0x1c || request->reg==0x1d || (cycle_mode && request->reg==0x1e))))){errno=EPERM;return -1;}
+	/* embedded: reads are unrestricted, like the bridge (rapuyama_sim.c allowlists writes only) */
+	if(!(embedded_mode && !request->write && request->device>=1 && request->device<=2 && request->reg<0x20) && !((request->device==2 && (request->reg==3 || ((reset_mode || embedded_mode) && request->reg==1))) || (request->device==1 && (request->reg==0x1c || request->reg==0x1d || (cycle_mode && request->reg==0x1e))))){errno=EPERM;return -1;}
 	if(request->write){
 		if(request->device==1 && request->reg==0x1e){
 			if(peer.voltage_count==4){errno=EMSGSIZE;return -1;}
@@ -375,19 +376,13 @@ int isi_sim_backend_selftest(void){
 	}
 	puts("SIM host IRQ selftest: original wrapper bind/rebind/unbind passed for three captured callbacks");
 
-	const unsigned char packet[]={0,1,0xd3,0xa2,0x12,0,0x7c,0xed,0,0x0e,0x3b,0x14,0,6,0,1,0,0x7d,0,3,6,4,0x80,2};
-	memcpy((void *)0x90c755f0,packet,sizeof(packet));
-	volatile uint32_t *ap=(void *)0xc601bce0,*dsp=(void *)0xc601bdf0;
-	*ap=0;*dsp=0;
-	volatile uint32_t *slot=dsp+1;slot[0]=0x0001d3a2;slot[1]=0x00000e00;slot[2]=0x16000000;slot[3]=0x001b55f0;*dsp=1;
-	void (*interrupt)(void)=(void *)0xc63c8f6d,(*schedule)(void)=(void *)0xc63bca37;
-	interrupt();schedule();isi_sim_service();schedule();
-
+	/* E5: upstream replays an E6-captured DSP SIM packet here (E6 buffer 0x90c755f0, descriptor 0x001b55f0);
+	 * no E5 capture yet, so only the wake MMIO check below */
 	uint32_t before=access_count;
 	((void (*)(uint32_t))0xc638cf17)(embedded_context);
 	if(access_count!=before+2 || last_pc!=0xc638cf36 || last_access.offset!=4 || !last_access.write){fatal("embedded SIM wake MMIO coverage");}
 	if(!(peer.regs[1]&1) || peer.tx_count){fprintf(stderr,"SIM backend selftest: missing clock request\n");return 1;}
-	puts("SIM backend selftest: captured ED/06 consumed; exact original SIM wake MMIO read/write passed with upper callbacks intact");return 0;
+	puts("SIM backend selftest: exact original SIM wake MMIO read/write passed with upper callbacks intact (no DSP packet replay on the E5)");return 0;
 }
 static void wait_transaction(uint32_t context,int reset){
 

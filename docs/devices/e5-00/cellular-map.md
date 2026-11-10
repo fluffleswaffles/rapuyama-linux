@@ -209,8 +209,20 @@ Same semantics as the E6 (microseconds in/out, 8192 Hz pool ticks, elapsed() in 
 | copied pool | ptr c6821e58, header at -8, 279 x 20 B {us, ticks, cb, arg, u16 next} | header c683496c {count, free, head, tail}, 240 x 16 B at +8 {ticks, cb, arg, u16 next} |
 | create return | delay<<32 \| handle | handle only |
 | Linux-owned energy timers | task 29 (223, 236, 241-244) | task 28 (182, 183, 201, 203, 204) |
-| watchdogs stopped at attach | 212 (task 27), 266 (task 38) | 172 (task 26); no task-38 twin |
+| watchdogs stopped at attach | 212 (task 27), 266 (task 38) | 172 (task 26), 219 (task 34 = twin of E6 task 38, see below) |
 | selftest timer / energy test timer | 62 (task 2) / 223 | 29 (task 2, same flag pattern 29..56 = E6 62..90) / 183 |
 Snapshot: 13 OS timers running, 4 pool entries (3 OS-timer callbacks c63ba1eb, args 0xe8/0/0xac + c63ba575).
 qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock, 4 adopted) and
 --os-timer-live-selftest (attach: copied 4, energy 5, watchdog 1; real-time expiry) pass. Not ported: the SMS timeout selftest.
+
+### OS timers live (2026-11-10)
+- Phone xo1 (timers without the SIM backend): attach ok, first pings answered, then the firmware spun in the
+  hardware semaphore wait c63d851e (c6040200+4) under PMIC read c63ec6b0 -> e5rt alarm. Like upstream, live OS
+  timers need the embedded SIM backend (PMIC/ADC/IRQ redirected to the bridge): E5RT_SIM_DEVICE=/dev/rapuyama-sim.
+- Task 34 (code c63c8b75) = E6 task 38: c63c8951 starts timer 219 (200 ticks = 1 s) and sends a request 0x12 to
+  dev 0x7c (DSP); the 0x12/0xda reply stops 219 (c63c8a3a). Any timer event in task 34 = reset 9 (c63c8b8a).
+  Stopped at attach when running; the offline soak (no DSP) stops it every round.
+- qemu --os-soak (simulated embedded SIM + live timers + scheduler, no MDI): the 5.2 s housekeeping timer
+  c63ba575 feeds the PMIC watchdog (1.17 = 0x20, delegated to Linux), the firmware sends a resource 0x47
+  indication to the host, then ~10 s in it faults at the secure fault decode site c63ebfd4 from the identity
+  reader (lr c63693d5): the identity (IMEI) runtime is next.
