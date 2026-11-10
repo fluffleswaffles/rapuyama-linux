@@ -239,3 +239,7 @@ qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock
   (5 copied timers), 6 MDI tx descriptors, 15 SBIF sector writes, then reset 0xa at c6354a04: sub-block parser
   c635492c (from the message dispatcher c6354a42 on 16-bit codes), type-1 sub-block with u16 +6 == 0. Not seen
   offline (soak), so the input is live (DSP or real SIM). The reset trap now dumps r4-r7 (r7 = message).
+- Phone xo3 (fresh boot, started at 56 s uptime, no IMEI file): 90 s live with SIM backend + OS timers, ISI pings
+  answered at 3/45/85 s, 21 timer expiries, task 34's DSP request 0x12/0xda answered by the DSP (mdi tx da007c12 ->
+  rx da7c0012, twice), SIM IRQs 180-182 once each, secure item 1 "unavailable", clean exit. xo2 had started at 19 s
+  uptime: DSP startup traffic -> 15 SBIF writes + reset 0xa. Start the live runtime >= 60 s after boot.
