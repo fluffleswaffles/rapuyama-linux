@@ -16,4 +16,6 @@ upstream reads the SIM HAL context at E6 offsets (+0x30 state, +0xb8 voltage set
 rx/tx buffers, +0x50/+0x74/+0x78); the E5 context init (c638cfc0) has its own layout.
 OS timers: `os_timer_runtime.c` (upstream port, E5 table/pool/owners), modes `--os-timer-selftest`,
 `--os-timer-live-selftest`, and `E5RT_OS_CLOCK=1` with `--mdi` for live timers.
-Build: `clang ... -I. -o e5rt e5rt-sim.c sim_runtime.c os_timer_runtime.c`.
+Identity: `identity_runtime.c` (E5RT_IMEI_FILE, `--identity-selftest`; secure module 0x12 answered "unavailable").
+Offline soak: `--os-soak <s>`. Live: `E5RT_SIM_DEVICE=/dev/rapuyama-sim E5RT_OS_CLOCK=1 [E5RT_IMEI_FILE=..] e5rt <dir> --mdi ...`.
+Build: `clang ... -I. -o e5rt e5rt-sim.c sim_runtime.c os_timer_runtime.c identity_runtime.c`.

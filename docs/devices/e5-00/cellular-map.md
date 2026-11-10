@@ -226,3 +226,12 @@ qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock
   c63ba575 feeds the PMIC watchdog (1.17 = 0x20, delegated to Linux), the firmware sends a resource 0x47
   indication to the host, then ~10 s in it faults at the secure fault decode site c63ebfd4 from the identity
   reader (lr c63693d5): the identity (IMEI) runtime is next.
+
+## Identity + secure services (2026-11-10, qemu)
+- identity_runtime.c: upstream's IMEI provider (E5RT_IMEI_FILE) on the E5 reader c636a06e (E6 c6262894, same code),
+  buffers in the secure pool c6b0002c..c6b08000 (E6 c670202c..c6708000, checker c636b51c). Selftest calls the E5 reader.
+- The secure API (helper c63693b0, title table c666c074.., module id at +14) calls through a function table into
+  c8008900 (not reachable from e5rt): fault at c63ebfd4. Module 0x1b = identity (redirected); module 0x12 =
+  data item size query c636a9e6 (E6 c6263ada; reader c6362f60, caller c6363064), reached ~10 s after start
+  (item 00000001): answered with the service's own failure status -1 -> firmware item-unavailable path.
+- qemu --os-soak 120 with both: no hang, 30 timer expiries, host indications res 0x47 and 0x48.

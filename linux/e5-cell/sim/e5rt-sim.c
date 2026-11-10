@@ -14,6 +14,8 @@
  *                (E5RT_SIM_DEVICE=/dev/rapuyama-sim: embedded SIM backend, PMIC/ADC/IRQs via the bridge;
  *                 E5RT_OS_CLOCK=1: firmware OS timers on the Linux clock, needs the SIM backend)
  *   e5rt <dir> --sim-backend-selftest   embedded SIM backend against the simulated card
+ *   E5RT_IMEI_FILE=<file with the 15-digit IMEI>: the firmware's identity reader answers from it
+ *   e5rt <dir> --identity-selftest      (needs E5RT_IMEI_FILE, use a test IMEI)
  *   e5rt <dir> --os-soak <seconds>      offline: simulated embedded SIM + OS timers on the real clock +
  *                                       scheduler, no MDI (needs low-11200000.bin for the RAM drives)
  *   e5rt <dir> --os-timer-selftest | --os-timer-live-selftest   upstream OS timer tests
@@ -33,6 +35,7 @@
 #include <linux/ioctl.h>
 #include "sim_runtime.h"
 #include "os_timer_runtime.h"
+#include "identity_runtime.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -170,11 +173,19 @@ static void failure(int sig, siginfo_t *info, void *context)
 	if (sig == SIGSEGV && isi_sim_fault(info, context))
 		return;	/* a trapped SIM register access, forwarded to the bridge */
 	ucontext_t *uc = context;
-	char text[160];
+	char text[200];
 	int n = snprintf(text, sizeof(text), "signal %d at %08lx pc %08lx lr %08lx sp %08lx\n", sig,
 			 (unsigned long)(uintptr_t)info->si_addr, (unsigned long)uc->uc_mcontext.arm_pc,
 			 (unsigned long)uc->uc_mcontext.arm_lr, (unsigned long)uc->uc_mcontext.arm_sp);
 	write(2, text, n);
+	uint32_t sp = uc->uc_mcontext.arm_sp;
+	if (sp >= DATA && sp + 64 <= DATA + DATA_SIZE && !(sp & 3)) {	/* return addresses for the diagnosis */
+		n = snprintf(text, sizeof(text), "stack:");
+		for (unsigned i = 0; i < 16; i++)
+			n += snprintf(text + n, sizeof(text) - n, " %08x", ((uint32_t *)(uintptr_t)sp)[i]);
+		text[n++] = '\n';
+		write(2, text, n);
+	}
 	_exit(122);
 }
 
@@ -633,6 +644,11 @@ int main(int argc, char **argv)
 	const char *os_clock = getenv("E5RT_OS_CLOCK");
 	int os_live = link && os_clock && !strcmp(os_clock, "1");
 	const char *sim_device = link ? getenv("E5RT_SIM_DEVICE") : NULL;
+	int identity_test = argc == 3 && !strcmp(argv[2], "--identity-selftest");
+	if (isi_identity_load(getenv("E5RT_IMEI_FILE"))) {
+		fprintf(stderr, "invalid E5RT_IMEI_FILE (15 digits, Luhn)\n");
+		return 2;
+	}
 	int soak = argc == 4 && !strcmp(argv[2], "--os-soak");
 	int sim_backend_test = (argc == 3 && !strcmp(argv[2], "--sim-backend-selftest")) || soak;
 	if (sim_device && !*sim_device)
@@ -646,7 +662,7 @@ int main(int argc, char **argv)
 		       argc == 3 && !strcmp(argv[2], "--sim-reset-selftest") ? 2 :
 		       argc == 4 && !strcmp(argv[2], "--sim-probe") ? 3 :
 		       argc == 4 && !strcmp(argv[2], "--sim-reset") ? 4 : 0;
-	if (argc != 2 && !link && !sim_mode && !os_test && !sim_backend_test && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
+	if (argc != 2 && !link && !sim_mode && !os_test && !sim_backend_test && !identity_test && !(argc == 7 && !strcmp(argv[2], "--replay")) && !(argc == 3 && (!strcmp(argv[2], "--dsp-selftest") || !strcmp(argv[2], "--dsp-tx-selftest")))) {
 		fprintf(stderr, "usage: e5rt <images dir> [--dsp-selftest | --dsp-tx-selftest | --mdi <dev> [--probe dev:res] [--seconds n, 0 = forever] [--backend /dev/rapuyama-isi]]\n");
 		return 2;
 	}
@@ -680,7 +696,7 @@ int main(int argc, char **argv)
 	region(DSP_BUF, 0x100000);	/* DSP buffer window (cb500000..cb5fffff) */
 	/* its snapshot contents (probe e5l2pt): the firmware reads the DSP's allocation tags
 	 * from these buffers, e.g. for tags still waiting to be returned */
-	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")) && !sim_mode && !os_test && !sim_backend_test)
+	if (!(argc >= 4 && !strcmp(argv[2], "--mdi")) && !sim_mode && !os_test && !sim_backend_test && !identity_test)
 		fill(argv[1], "low-10000000.bin", 0x140000, DSP_BUF, 0x80000);	/* pa 10140000 (live: the driver fills it) */
 	fill(argv[1], "1fb60000.bin", 0x130000, DSP_BUF + 0x80000, 0x50000);	/* pa 1fc90000 */
 	if (sim_mode && isi_sim_open(sim_mode >= 3 ? argv[3] : NULL, 0)) {
@@ -694,6 +710,10 @@ int main(int argc, char **argv)
 	patches();
 	if (os_test || os_live || soak)
 		isi_os_timer_patches();
+	if (isi_identity_attach()) {
+		fprintf(stderr, "unsupported identity reader\n");
+		return 2;
+	}
 	if (isi_sim_active()) {
 		/* E5 SIM patch window: va c60f0000 = pa 0x100ec000 (Symbian page tables), executable */
 		region(0xc60f0000u, 0x1000);
@@ -737,6 +757,8 @@ int main(int argc, char **argv)
 			isi_os_timer_attach();
 		return live(argv[3], probe_dev, probe_res, seconds, packet_device);
 	}
+	if (identity_test)
+		return isi_identity_selftest();
 	if (soak) {
 		ramdrives_from_dump(argv[1]);
 		sbif_attach();
