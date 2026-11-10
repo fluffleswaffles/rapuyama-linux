@@ -255,3 +255,8 @@ qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock
 - Phone xo5 (start at 60 s, IMEI): reset 0xa ~5 s in. Dump: DSP frame `12 00 7c 38 ea 00 15 00` (to res 0x38,
   234 B), body tid 00 msg 0x15, 1 sub-block type 1 len 0xe4 with u16 +6 == 0 -> parser c635492c resets after
   handling it. No E6 twin of this parser. Development patch: NOP the reset call at c6354a04 (bytes checked).
+- Phone xo6 (NOP patch active): ~5 s in, the bridge's PMIC read 2.03 failed with ETIMEDOUT (cbus busy). The
+  firmware takes HW semaphore 0 around every cbus transfer (pa 0x20040204: read >= 1 grants, write ~0 releases;
+  c63d8514/c63d852c, used by PMIC read c63ec6b0); Linux's rapuyama_wdt cbus code did not -> collisions with the
+  now active modem side. Kernel e5-cell: rapuyama_wdt takes it (optional 4th reg, only in e5-cell.dts), falls
+  back + counts on timeout. Image-cell3 64c801e8, e5-cell3.dtb 8e2de1ff (install: smoke/xk4).
