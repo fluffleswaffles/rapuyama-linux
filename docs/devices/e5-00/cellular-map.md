@@ -252,3 +252,6 @@ qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock
   secure item 1 six times, then reset 6 from the task switch c6658af4: a task stack guard (table c6672564, word
   must be 0xaaaaaaaa) was overwritten. Task unknown (the trap now names it). An fprintf inside the secure-item hook
   does not break a guard offline; hooks no longer print on task stacks anyway (deferred to the main loop).
+- Phone xo5 (start at 60 s, IMEI): reset 0xa ~5 s in. Dump: DSP frame `12 00 7c 38 ea 00 15 00` (to res 0x38,
+  234 B), body tid 00 msg 0x15, 1 sub-block type 1 len 0xe4 with u16 +6 == 0 -> parser c635492c resets after
+  handling it. No E6 twin of this parser. Development patch: NOP the reset call at c6354a04 (bytes checked).

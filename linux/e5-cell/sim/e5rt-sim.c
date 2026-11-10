@@ -192,6 +192,15 @@ static void patches(void)
 	trap(FW_ASSERT, (void (*)())firmware_assert);
 	trap(FW_RESET, reset_entry);
 	trap(0xc63c9d30, (void (*)())ring_panic);	/* MDI ring dump + reset 0xd (diagnostic) */
+	/* DSP measurement frames (res 0x38 msg 0x15, from dev 0x7c) with a type-1 sub-block whose u16 at +6
+	 * is 0 make the sub-block parser c635492c call reset 0xa after it has already handled the block
+	 * (phone xo2/xo5: the DSP keeps the radio session it had under Symbian). Development patch: NOP the
+	 * reset call, the parser continues with the next sub-block (no E6 twin, upstream never met it) */
+	static const unsigned char reset_a[] = {0x0a, 0x20, 0x83, 0xf0, 0xee, 0xf8};	/* movs r0,#0xa; bl c63d7be4 at c6354a02 */
+	if (!memcmp((void *)0xc6354a02u, reset_a, sizeof(reset_a))) {
+		thumb16(0xc6354a04, 0x46c0);
+		thumb16(0xc6354a06, 0x46c0);
+	}
 }
 
 static char altstack[65536];
