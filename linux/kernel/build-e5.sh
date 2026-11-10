@@ -167,6 +167,7 @@ config() {
 		# firmware VAs 0xc6000000..0xcbffffff must be user addresses
 		$S -d VMSPLIT_3G -e VMSPLIT_3G25
 		for o in PHONET RAPUYAMA_ISI SOC_RAPUYAMA_MDI; do $S -e "$o"; done
+		$S -m RAPUYAMA_SIM_BRIDGE	# module: reload while developing
 	fi
 	initramfs_list
 	"${MAKE[@]}" olddefconfig

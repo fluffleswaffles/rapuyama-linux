@@ -13,5 +13,13 @@
 			interrupts = <19>, <21>, <23>;
 			interrupt-names = "rx", "tx", "event";
 		};
+
+		/* SIM controller (firmware va c6038300, Symbian page tables) and the
+		 * SIM HAL's interrupts 0xb1..0xb6 (E5 irq_register calls c638d012..) */
+		sim@20038300 {
+			compatible = "nokia,e5-sim-bridge";
+			reg = <0x20038300 0x30>;
+			interrupts = <177>, <178>, <179>, <180>, <181>, <182>;
+		};
 	};
 };
