@@ -3,6 +3,8 @@
  * ISI version requests (COMMON_MESSAGE 0xf0 / ISI_VERSION_GET_REQ 0x12) to
  * <dev>:<resource> over a Phonet datagram socket, printing the replies.
  *   pnping [dev:res ...]        default 00:15 (the firmware's MTC)
+ *   pnping --send <res> <hex> [seconds]   one ISI message (tid 0x42 + hex) to dev 00:<res>,
+ *        every reply within the window printed as "res <res>: <bytes>" (upstream phonet-test format)
  * needs e5rt running with --backend /dev/rapuyama-isi */
 #include <errno.h>
 #include <net/if.h>
@@ -96,6 +98,50 @@ int main(int argc, char **argv)
 	}
 	struct timeval tv = {.tv_sec = 3};
 	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+	if (argc >= 4 && argc <= 5 && !strcmp(argv[1], "--send")) {
+		unsigned res, len = 1, seconds = argc == 5 ? (unsigned)atoi(argv[4]) : 3;
+		unsigned char msg[256] = {0x42};
+		const char *h = argv[3];
+		if (sscanf(argv[2], "%x", &res) != 1 || strlen(h) % 2 || strlen(h) / 2 > sizeof(msg) - 1 || !seconds) {
+			fprintf(stderr, "usage: pnping --send <res> <hex> [seconds]\n");
+			return 2;
+		}
+		for (; *h; h += 2) {
+			unsigned b;
+			if (sscanf(h, "%2x", &b) != 1)
+				return 2;
+			msg[len++] = b;
+		}
+		struct sockaddr_pn to = {.spn_family = AF_PHONET, .spn_dev = 0, .spn_resource = res};
+		if (sendto(fd, msg, len, 0, (struct sockaddr *)&to, sizeof(to)) != (ssize_t)len) {
+			perror("sendto");
+			return 1;
+		}
+		struct timeval start, now;
+		gettimeofday(&start, NULL);
+		int replies = 0;
+		for (;;) {
+			gettimeofday(&now, NULL);
+			long left = (long)seconds * 1000 - ((now.tv_sec - start.tv_sec) * 1000 + (now.tv_usec - start.tv_usec) / 1000);
+			if (left <= 0)
+				break;
+			struct timeval w = {.tv_sec = left / 1000, .tv_usec = (left % 1000) * 1000};
+			setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &w, sizeof(w));
+			unsigned char reply[512];
+			struct sockaddr_pn from;
+			socklen_t fl = sizeof(from);
+			ssize_t n = recvfrom(fd, reply, sizeof(reply), 0, (struct sockaddr *)&from, &fl);
+			if (n < 0)
+				break;
+			printf("res %02x:", from.spn_resource);
+			for (ssize_t j = 0; j < n; j++)
+				printf(" %02x", reply[j]);
+			printf("\n");
+			replies++;
+		}
+		close(fd);
+		return replies ? 0 : 1;
+	}
 	int failures = 0;
 	for (int i = 1; i < (argc > 1 ? argc : 2); i++) {
 		unsigned dev = 0x00, res = 0x15;
