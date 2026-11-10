@@ -260,3 +260,12 @@ qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock
   c63d8514/c63d852c, used by PMIC read c63ec6b0); Linux's rapuyama_wdt cbus code did not -> collisions with the
   now active modem side. Kernel e5-cell: rapuyama_wdt takes it (optional 4th reg, only in e5-cell.dts), falls
   back + counts on timeout. Image-cell3 64c801e8, e5-cell3.dtb 8e2de1ff (install: smoke/xk4).
+
+## NETWORK REGISTRATION (2026-11-10, phone xo7, kernel e5-cell #5 with the cbus semaphore)
+Live runtime (SIM backend, OS timers, IMEI file, DSP patch) ran the full 240 s. CBUS semaphore: 172929 takes,
+0 misses. Legacy NET (resource 0x0a) queries every 20 s, all answered:
+- NET_REG_STATUS_GET (0xe0) -> 0xe1, sub-block 0x00 reg status 0x00 = HOME, operator name sub-blocks
+  (UCS-2), GSM/UMTS reg info sub-block 0x09 (cell/area ids, values stay out of the repo);
+- NET_RAT (0x36) -> 0x37, sub-block 0x2c value 0x02 = UMTS;
+- NET_RSSI_GET (0x0b 00 02) -> 0x0c, sub-block 0x04: signal 100 %.
+The E5 registers by itself once the SIM, timers and IMEI are in place (no request from Linux).
