@@ -5,4 +5,5 @@
 int isi_identity_load(const char *path);
 int isi_identity_attach(void);
 int isi_identity_selftest(void);
+void isi_identity_report(void);
 #endif

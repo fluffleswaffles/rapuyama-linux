@@ -243,3 +243,12 @@ qemu: --os-timer-selftest (100 expiries, 100 cancel/rearm, 240 slots, long clock
   answered at 3/45/85 s, 21 timer expiries, task 34's DSP request 0x12/0xda answered by the DSP (mdi tx da007c12 ->
   rx da7c0012, twice), SIM IRQs 180-182 once each, secure item 1 "unavailable", clean exit. xo2 had started at 19 s
   uptime: DSP startup traffic -> 15 SBIF writes + reset 0xa. Start the live runtime >= 60 s after boot.
+
+## Registration attempt (2026-11-10, phone xo4, live + SIM backend + timers + IMEI file)
+- Resource 0xe6 (DSP, dev 0x7c) version 8.6 (E6 9.0). Upstream's modem NET resource 0xc8 is "not identified" on
+  the E5: the E5 serves the legacy NET resource 0x0a (it sent NET 0x2c, channel info, unsolicited). Legacy ids:
+  REG_STATUS_GET 0xe0, RAT 0x36, RSSI_GET 0x0b.
+- With the IMEI the firmware starts L1 work (DSP descriptors with buffers, ~135 rx / 47 tx IRQs in ~20 s), queries
+  secure item 1 six times, then reset 6 from the task switch c6658af4: a task stack guard (table c6672564, word
+  must be 0xaaaaaaaa) was overwritten. Task unknown (the trap now names it). An fprintf inside the secure-item hook
+  does not break a guard offline; hooks no longer print on task stacks anyway (deferred to the main loop).

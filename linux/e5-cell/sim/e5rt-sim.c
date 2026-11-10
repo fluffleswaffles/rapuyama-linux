@@ -65,6 +65,12 @@
 #define FW_RESET 0xc63d7be4u	/* reset(reason) */
 #define HOST_QUEUE 0xc6836838u	/* queue of task 0x2f (E6: 0xc681c11c, task 0x30) */
 #define SCHED 0xc6835c3cu	/* +2 = current task, 0x2f when idle */
+#define STACK_GUARDS 0xc6672564u	/* per task: address of its stack guard word, must hold 0xaaaaaaaa (task switch c6658af4) */
+static int stack_guard_broken(unsigned t)
+{
+	uint32_t g = ((const uint32_t *)(uintptr_t)STACK_GUARDS)[t];
+	return g >= DATA && g + 4 <= DATA + DATA_SIZE && *(volatile uint32_t *)(uintptr_t)g != 0xaaaaaaaau;
+}
 
 static void region(uint32_t address, size_t length)
 {
@@ -129,6 +135,11 @@ void e5rt_firmware_reset(uint32_t reason, uint32_t unused1, uint32_t unused2, ui
 {
 	(void)unused1; (void)unused2; (void)unused3;
 	fprintf(stderr, "firmware reset requested: %08x (called from %08x)\n", reason, caller);
+	if (reason == 6)	/* task switch c6658af4: a task stack guard lost its 0xaaaaaaaa canary */
+		for (unsigned t = 0; t < 48; t++) {
+			if (stack_guard_broken(t))
+				fprintf(stderr, "task %u stack guard %08x overwritten\n", t, ((const uint32_t *)(uintptr_t)STACK_GUARDS)[t]);
+		}
 	for (unsigned r = 0; r < 4; r++) {	/* what the caller was working on (e.g. the parsed message) */
 		uint32_t v = e5rt_reset_regs[r];
 		fprintf(stderr, "r%u=%08x", r + 4, v);
@@ -592,6 +603,7 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 		alarm(2);
 		sbif_service();
 		isi_sim_service();
+		isi_identity_report();
 		os_fired += isi_os_timer_service();
 		schedule();
 		if (mdi_pump() || drain())
@@ -618,6 +630,7 @@ static int serve(unsigned seconds)
 		alarm(2);
 		sbif_service();
 		isi_sim_service();
+		isi_identity_report();
 		os_fired += isi_os_timer_service();
 		schedule();
 		if (mdi_pump())
@@ -783,18 +796,28 @@ int main(int argc, char **argv)
 		isi_os_timer_attach();
 		alarm(0);
 		uint64_t end = monotonic_ms() + atoi(argv[3]) * 1000ull;
-		unsigned rounds = 0;
+		unsigned rounds = 0, guards = 0;
+		for (unsigned t = 0; t < 48; t++)
+			guards += !stack_guard_broken(t);
+		printf("os soak: %u of 48 task stack guards intact\n", guards);
 		while (monotonic_ms() < end) {
 			poll(NULL, 0, isi_sim_timeout());
 			alarm(2);
 			sbif_service();
 			isi_sim_service();
+			isi_identity_report();
 			os_fired += isi_os_timer_service();
 			schedule();
 			if (drain())
 				return 1;
 			alarm(0);
 			rounds++;
+			for (unsigned t = 0; t < 48; t++) {
+				if (stack_guard_broken(t)) {
+					fprintf(stderr, "os soak: task %u stack guard overwritten after %u rounds\n", t, rounds);
+					return 1;
+				}
+			}
 		}
 		printf("os soak: %u rounds, os timers fired %u, no hang\n", rounds, os_fired);
 		return 0;

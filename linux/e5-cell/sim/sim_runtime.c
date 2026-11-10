@@ -191,11 +191,11 @@ static uint32_t pmic_read(uint32_t dev,uint32_t reg,uint32_t bits){
 	if(pmic_io(&request)){fprintf(stderr,"SIM PMIC read dev%u reg%02x caller=%p\n",dev,reg,__builtin_return_address(0));fatal("PMIC read");}
 	return request.value&((1U<<(bits+1))-1);
 }
+static volatile int watchdog_reported;
 static uint32_t pmic_write(uint32_t dev,uint32_t reg,uint32_t bits,uint32_t value){
 	if(bits>15){fatal("invalid PMIC width");}
 	if(embedded_mode && dev==1 && reg==0x17 && bits==15 && value==0x20){
-		static int reported;
-		if(!reported){fprintf(stderr,"PMIC watchdog feed delegated to Linux\n");reported=1;}
+		if(!watchdog_reported){watchdog_reported=1;}	/* firmware task stack: printed by isi_sim_service */
 		return 1;
 	}
 	struct isi_sim_pmic request={dev,reg,value&((1U<<(bits+1))-1),1};
@@ -337,6 +337,7 @@ void isi_sim_attach(void){
 }
 
 void isi_sim_service(void){
+	if(watchdog_reported==1){fprintf(stderr,"PMIC watchdog feed delegated to Linux\n");watchdog_reported=2;}
 	if(!embedded_mode){return;}
 	timer_service();
 	gazoo_service();

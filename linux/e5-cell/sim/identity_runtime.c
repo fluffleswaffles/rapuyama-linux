@@ -40,12 +40,17 @@ static uint32_t read_identity(void *request,uint32_t *response){
 	if(!loaded || input<POOL_LO || input>POOL_HI-4 || output<POOL_LO || output>POOL_HI-12){return 0;}
 	memcpy(response+1,identity,sizeof(identity));*response=1;return 1;
 }
+/* runs on a firmware task stack (0x4b0 bytes for some tasks): no stdio here, isi_identity_report prints */
+static volatile uint32_t item_last,item_count,item_reported;
 static uint32_t secure_item_size(uint32_t *request,uint32_t *response){
-	static unsigned reported;
 	uintptr_t input=(uintptr_t)request;
 	uint32_t item=input>=POOL_LO && input<=POOL_HI-8 ? request[1] : 0;
-	if(reported<16){fprintf(stderr,"secure item %08x (module 0x12): unavailable\n",item);reported++;}
+	item_last=item;item_count++;
 	(void)response;return 0xffffffff;
+}
+void isi_identity_report(void){
+	uint32_t count=item_count;
+	if(count!=item_reported && item_reported<16){fprintf(stderr,"secure item %08x (module 0x12): unavailable (%u queries)\n",item_last,count);item_reported=count;}
 }
 int isi_identity_attach(void){
 	static const unsigned char item_entry[]={0xfe,0xb5,0x05,0x46,0x0e,0x46,0x9a,0x4c,0x9b,0x48,0xa0,0x60};
