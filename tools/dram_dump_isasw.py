@@ -24,7 +24,10 @@ CHUNK = 0x40000
 # modem runtime first: the reset can stop the dump before the later regions
 REGIONS = [
     (0x1f8b0000, 0x1f8f0000),   # guest/shared RAM start (token, stack)
-    (0x10480000, 0x10500000),   # ISASW code
+    (0x10480000, 0x1088c000),   # ISASW code, all of it (V 0xc6200000, 0x40c000)
+    (0x1f8f0000, 0x1fcfd000),   # rest of the ISASW RAM (V 0xc6800000, 0x44d000)
+    (0x1ffe0000, 0x1fff0000),   # secure message pool (64 KB)
+    (0x100ec000, 0x100f0000),   # SIM patch window (V 0xc60f0000, 8 KB used; memdump reads 16 KB)
 ]
 
 
@@ -54,10 +57,13 @@ def cmd(fd, s):
 
 
 def dump_command(addr, size):
-    if 0x1f8b0000 <= addr and addr + size <= 0x1fcfd000:
-        path = "/sys/kernel/debug/rapuyama-shm/1f8b0000"
-        read = "dd if=%s bs=4096 skip=%d count=%d" % (
-            path, (addr - 0x1f8b0000) // 4096, size // 4096)
+    # reserved shared RAM: /dev/mem refuses it, the kernel's debugfs files don't
+    for base, end in ((0x1f8b0000, 0x1fcfd000), (0x1ffe0000, 0x20000000)):
+        if base <= addr and addr + size <= end:
+            path = "/sys/kernel/debug/rapuyama-shm/%08x" % base
+            read = "dd if=%s bs=4096 skip=%d count=%d" % (
+                path, (addr - base) // 4096, size // 4096)
+            break
     else:
         read = "/tmp/md %x %x" % (addr, size)
     # keep the reader's status: a pipeline would report base64's success

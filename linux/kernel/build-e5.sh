@@ -5,12 +5,16 @@
 # pwm; slim() drops the pi/armv7/E6/pc parts. writes the E5 initramfs list
 # into the output dir. own output dir, so the E6 trees stay untouched.
 # usage: ./build-e5.sh [config|build]
+# E5_CELL=1 = cellular development kernel (own dir build-e5-cell): VMSPLIT_3G25
+# so the userspace ISASW runtime can map the firmware VAs, Phonet + the
+# rapuyama_isi packet endpoint + the MDI ring driver, dtb from e5-cell.dts
 # E5_WLAN_FW = dir with ti-connectivity/wl1251-{fw,nvs}.bin (see the E5
 # README); without them the kernel builds and boots, just without wlan
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KSRC="$HERE/linux"
-KOUT="${KOUT:-$HERE/build-e5}"
+E5_CELL="${E5_CELL:-}"
+if [ -n "$E5_CELL" ]; then KOUT="${KOUT:-$HERE/build-e5-cell}"; DTS=e5-cell; else KOUT="${KOUT:-$HERE/build-e5}"; DTS=e5; fi
 export ARCH=arm CROSS_COMPILE=arm-linux-gnu-
 mkdir -p "$KOUT"
 MAKE=(make -C "$KSRC" O="$KOUT")
@@ -159,6 +163,11 @@ config() {
 	# sd card dma: the general dma (gdma)
 	for o in DMADEVICES RAPUYAMA_GDMA; do $S -e "$o"; done
 	slim
+	if [ -n "$E5_CELL" ]; then
+		# firmware VAs 0xc6000000..0xcbffffff must be user addresses
+		$S -d VMSPLIT_3G -e VMSPLIT_3G25
+		for o in PHONET RAPUYAMA_ISI SOC_RAPUYAMA_MDI; do $S -e "$o"; done
+	fi
 	initramfs_list
 	"${MAKE[@]}" olddefconfig
 }
@@ -167,7 +176,7 @@ case "${1:-build}" in
 	build)  [ -f "$KOUT/.config" ] || config
 		initramfs_list
 		"${MAKE[@]}" -j"$(nproc)" Image
-		dtc -I dts -O dtb -o "$KOUT/e5.dtb" "$HERE/../boot/e5.dts"
+		dtc -I dts -O dtb -o "$KOUT/e5.dtb" "$HERE/../boot/$DTS.dts"
 		ls -la "$KOUT/arch/arm/boot/Image" "$KOUT/e5.dtb" ;;
 	*) echo "usage: $0 [config|build]"; exit 1 ;;
 esac

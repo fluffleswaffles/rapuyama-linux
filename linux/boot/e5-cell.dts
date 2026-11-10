@@ -1,0 +1,17 @@
+/* E5 cellular development: e5.dts + the MCU/DSP MDI rings for the userspace
+ * ISASW runtime (needs the VMSPLIT_3G25 kernel, build-e5.sh with E5_CELL=1).
+ * Rings, doorbells and IRQs are the E6's: read from the E5 ISASW (MDI state
+ * c683a440 -> c601bce0/c601bdf0 = pa 0x30003ce0/0x30003df0, doorbell helpers on
+ * c6040280 = pa 0x20040280, irq_register(0x13/0x15/0x17) at c63c9084..c63c90b2) */
+/include/ "e5.dts"
+
+/ {
+	soc {
+		mdi@30003ce0 {
+			compatible = "nokia,e5-mdi";
+			reg = <0x30003ce0 0x220>, <0x20040280 0xc>;
+			interrupts = <19>, <21>, <23>;
+			interrupt-names = "rx", "tx", "event";
+		};
+	};
+};
