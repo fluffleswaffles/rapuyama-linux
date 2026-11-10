@@ -694,7 +694,7 @@ int main(int argc, char **argv)
 		return live(argv[3], probe_dev, probe_res, seconds, packet_device);
 	}
 	if (sim_mode)
-		return isi_sim_run(sim_mode >= 2, 0);
+		return isi_sim_run(sim_mode == 2 || sim_mode == 4, 0);	/* 2/4 = reset (ATR), 1/3 = STATUS + SIM_APDU */
 	if (argc == 7 && !strcmp(argv[2], "--replay")) {
 		/* offline: deliver one DSP descriptor from the snapshot's DSP window, like mdi_pump */
 		uint32_t d[4];
