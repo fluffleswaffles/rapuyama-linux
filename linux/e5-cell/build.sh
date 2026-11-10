@@ -10,7 +10,7 @@ OUT="${1:?usage: build.sh <out dir> [kernel build dir]}"
 SYSROOT="$TOP/work/sysroot-alpine"
 "$TOP/linux/initramfs/sysroot.sh" "$SYSROOT"
 mkdir -p "$OUT"
-for p in e5rt pnping simprobe regpeek; do
+for p in e5rt pnping simprobe regpeek e5gprs; do
 	clang --target=armv6-alpine-linux-musleabihf -march=armv6kz -mfloat-abi=hard \
 		-mfpu=vfp --sysroot="$SYSROOT" --ld-path=/usr/bin/arm-linux-gnu-ld \
 		-static -O2 -Wall -Wextra -o "$OUT/$p" "$HERE/$p.c"
