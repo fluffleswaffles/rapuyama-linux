@@ -178,7 +178,7 @@ static void trap(uint32_t site, void (*handler)())
  * printing happens in the serve loop. Trampoline = the 8 original bytes + jump back to the bl. */
 #define FW_SEND_TASK 0xc63bdbe4u
 static int msg_trace, msg_armed;
-static struct { uint32_t ms; uint8_t to, from, n, head[10]; } msgs[2048];
+static struct { uint32_t ms; uint8_t to, from, n, head[24]; } msgs[2048];
 static unsigned msgs_head, msgs_tail, msgs_printed, msgs_dropped;
 static uint32_t (*send_task_original)(uint32_t, uint32_t);
 static uint32_t (*const current_task)(void) = (void *)(uintptr_t)0xc63bdbc9u;
@@ -191,9 +191,12 @@ static uint32_t send_task_hook(uint32_t task, uint32_t message)
 			r->ms = (uint32_t)monotonic_ms();
 			r->to = task;
 			r->from = current_task();
-			r->n = message >= DATA && message + 10 <= DATA + DATA_SIZE ? 10 : 0;
-			if (r->n)
-				memcpy(r->head, (void *)(uintptr_t)message, 10);
+			r->n = message >= DATA && message + 24 <= DATA + DATA_SIZE ? 10 : 0;
+			if (r->n) {
+				memcpy(r->head, (void *)(uintptr_t)message, 24);
+				if (r->head[3] == 0x31 || r->head[3] == 0xc3)	/* GPDS: 24 bytes (no identities) */
+					r->n = 24;
+			}
 			msgs_head++;
 		} else
 			msgs_dropped++;
