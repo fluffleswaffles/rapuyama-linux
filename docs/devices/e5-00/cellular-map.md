@@ -306,6 +306,13 @@ Fixes on the way (all in linux/e5-cell):
   events, never data phases), E5RT_MSG_TRACE (inter-task messages via a trampoline on
   send-to-task c63bdbe4; GPDS = task 0f / obj 35, router 21, host queue 2f, DSP link 22,
   SIM server 29, MM 0d).
+xg15/xg16 (2026-11-11): e5rt crashed in xg15 with reset 6, task 0x0c (stack 0x468) guard broken,
+under data; the software KASUMI paths now run on a private 8 KB stack (veneers in the dead
+hardware blocks c6655524/c6655440 + C shims) and xg16 ran clean to the end. Pipe flow control
+is fine both ways (multi-credit, grants of 10 then 7). Downlink is only released right after
+an uplink packet: pings 0..5 answered together ~15 s after the first, later ones lost; looks
+like RLC AM status reports going out only piggybacked on uplink data (no standalone uplink
+opportunity). MDI event IRQ is requested but never raised by the DSP.
 Open: downlink latency. User data crosses the pipe both ways, but replies reach the firmware
 6-9 s late and in bursts (pings at 1 s spacing answered together; HTTP reply after TCP
 retransmits), DNS ~1.3 s. Suspects: RLC/RRC timing under the polling loop and the trace
