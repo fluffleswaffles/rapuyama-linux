@@ -28,6 +28,8 @@ static int reset_mode,cycle_mode,embedded_mode;
 static struct isi_sim_reg last_access;
 static uint32_t last_pc,access_count;
 static void timer_report(void);
+static void sim_event(uint8_t kind,uint32_t value,uint32_t len);
+static uint32_t word(uint32_t address);
 void isi_sim_report(void){
 	timer_report();
 	fprintf(stderr,"SIM MMIO last: pc=%08x offset=%02x size=%u write=%u value=%08x count=%u\n",last_pc,last_access.offset,last_access.size,last_access.write,last_access.value,access_count);
@@ -80,6 +82,7 @@ static uint64_t sim_timer_create(uint32_t callback,uint32_t repeat,uint32_t micr
 	for(unsigned int i=0;i<32;i++){
 		if(!timers[i].deadline){
 			timers[i]=(struct sim_timer){now_us()+microseconds,callback,repeat ? microseconds : 0};
+			sim_event(3,callback,microseconds);
 			return (uint64_t)callback<<32|i;
 		}
 	}
@@ -88,6 +91,7 @@ static uint64_t sim_timer_create(uint32_t callback,uint32_t repeat,uint32_t micr
 static uint32_t sim_timer_cancel(uint32_t handle){
 	handle&=255;
 	if(handle>=32 || !timers[handle].deadline){fatal("inactive HAL timer");}
+	sim_event(6,timers[handle].callback,0);
 	timers[handle].deadline=0;return 0;
 }
 static uint32_t sim_timer_remaining(uint32_t handle){
@@ -101,6 +105,7 @@ static void timer_service(void){
 		struct sim_timer *timer=&timers[i];
 		if(timer->deadline && timer->deadline<=now){
 			void (*callback)(void)=(void *)(uintptr_t)timer->callback;
+			sim_event(4,timer->callback,0);
 			timer->deadline=timer->period ? now+timer->period : 0;timer_fires++;callback();now=now_us();counter(now);
 		}
 	}
@@ -232,6 +237,7 @@ static void irq_control(uint32_t number,int enable){
 	if(mdi_irq(number)){return;}
 	unsigned int index=irq_index(number);
 	if(enable){enabled|=1U<<index;}else{enabled&=~(1U<<index);}
+	sim_event(2,number,enable);
 	if(device>=0){
 		struct isi_sim_irq request={number,enable};
 		if(ioctl(device,ISI_SIM_IRQ,&request)){fatal("IRQ control");}
@@ -266,15 +272,23 @@ void isi_sim_patches(void){
 /* E5RT_SIM_TRACE=1: card traffic summary, no data bytes (IMSI, RAND/AUTN stay out of logs):
    a TX run shows its 5-byte header only, an RX run its length, first byte and last two (status) */
 static int apdu_trace;
-static struct{uint8_t tx,len_hi;uint16_t len;uint8_t head[5],tail[2];uint32_t ms;}runs[64];
+enum{EV_RX,EV_TX,EV_IRQ,EV_TIMER,EV_FIRE,EV_HANDLER,EV_CANCEL};
+static struct{uint8_t kind,head[5],tail[2];uint32_t len,value,ms;}runs[256];
 static volatile unsigned int runs_head,runs_tail;
+static unsigned int events_printed;
 static struct{int open,tx;unsigned int len,seen;uint8_t head[5],tail[2];uint32_t ms;}run;
+static void sim_event(uint8_t kind,uint32_t value,uint32_t len){
+	if(!apdu_trace || runs_head-runs_tail>=256){return;}
+	typeof(runs[0]) *r=&runs[runs_head%256];
+	r->kind=kind;r->value=value;r->len=len;r->ms=(uint32_t)(now_us()/1000);
+	runs_head++;
+}
 static void run_close(void){
 	if(!run.open){return;}
 	run.open=0;
-	if(runs_head-runs_tail>=64){return;}
-	typeof(runs[0]) *r=&runs[runs_head%64];
-	r->tx=run.tx;r->len=run.len>0xffff ? 0xffff : run.len;memcpy(r->head,run.head,5);memcpy(r->tail,run.tail,2);r->ms=run.ms;
+	if(runs_head-runs_tail>=256){return;}
+	typeof(runs[0]) *r=&runs[runs_head%256];
+	r->kind=run.tx ? EV_TX : EV_RX;r->len=run.len;memcpy(r->head,run.head,5);memcpy(r->tail,run.tail,2);r->ms=run.ms;
 	runs_head++;
 }
 static void run_byte(int tx,uint8_t byte){
@@ -283,20 +297,36 @@ static void run_byte(int tx,uint8_t byte){
 	if(run.len<5){run.head[run.len]=byte;}
 	run.tail[0]=run.tail[1];run.tail[1]=byte;run.len++;
 }
+static uint32_t traced_state=0xffffffff;
+static uint32_t embedded_context;
 static void apdu_trace_flush(void){
 	if(!apdu_trace){return;}
 	if(run.open && run.seen==run.len){run_close();}
 	run.seen=run.len;
+	if(embedded_context && word(embedded_context+0x30)!=traced_state){
+		traced_state=word(embedded_context+0x30);
+		fprintf(stderr,"sim %u state %u (+40 %u +44 %u +4c %u +50 %u)\n",(uint32_t)(now_us()/1000),traced_state,
+			word(embedded_context+0x40),word(embedded_context+0x44),word(embedded_context+0x4c),word(embedded_context+0x50));
+	}
 	while(runs_tail!=runs_head){
-		typeof(runs[0]) *r=&runs[runs_tail%64];
-		if(r->tx){
+		typeof(runs[0]) *r=&runs[runs_tail%256];
+		runs_tail++;
+		if(events_printed++>=4000){continue;}
+		switch(r->kind){
+		case EV_TX:
 			if(r->len>=5){fprintf(stderr,"sim %u > %02x %02x %02x %02x %02x%s\n",r->ms,r->head[0],r->head[1],r->head[2],r->head[3],r->head[4],r->len>5 ? " +data" : "");}
 			else{fprintf(stderr,"sim %u > (%u bytes)\n",r->ms,r->len);}
-		}else{
+			break;
+		case EV_RX:
 			if(r->len==1){fprintf(stderr,"sim %u < %02x\n",r->ms,r->tail[1]);}
 			else{fprintf(stderr,"sim %u < %u bytes, first %02x, ends %02x %02x\n",r->ms,r->len,r->head[0],r->tail[0],r->tail[1]);}
+			break;
+		case EV_IRQ:fprintf(stderr,"sim %u irq %x %s\n",r->ms,r->value&255,r->len ? "on" : "off");break;
+		case EV_TIMER:fprintf(stderr,"sim %u timer %08x in %u us\n",r->ms,r->value,r->len);break;
+		case EV_FIRE:fprintf(stderr,"sim %u timer %08x fires\n",r->ms,r->value);break;
+		case EV_CANCEL:fprintf(stderr,"sim %u timer %08x cancelled\n",r->ms,r->value);break;
+		case EV_HANDLER:fprintf(stderr,"sim %u handler %u (pending %x)\n",r->ms,r->value,r->len);break;
 		}
-		runs_tail++;
 	}
 }
 int isi_sim_fault(siginfo_t *info,void *context){
@@ -362,7 +392,6 @@ static int rx_batch_ready(uint32_t context){
 	if(producer>=depth || consumer>=depth){return 0;}
 	return ((producer-consumer)&(depth-1))>=batch;
 }
-static uint32_t embedded_context;
 void isi_sim_attach(void){
 	uint32_t pointer=word(0xc638d46c);
 	if(!private_ram(pointer,4) || !private_ram(embedded_context=word(pointer),0x114)){fatal("embedded SIM context");}
@@ -389,6 +418,7 @@ void isi_sim_service(void){
 	}else{pending=peer.pending;peer.pending=0;}
 	for(unsigned int i=0;i<6;i++){
 		if((pending&enabled&(1U<<i)) && handlers[i]){
+			sim_event(5,i,pending);
 			((void (*)(void))(uintptr_t)handlers[i])();
 			if(enabled&(1U<<i)){irq_control(0xb1+i,1);}
 		}
