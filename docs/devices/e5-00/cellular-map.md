@@ -103,7 +103,7 @@ E6 -> E5 by masked bytes, fuzzy sequence match (score), call counts/order, or co
 | SIM HAL owner/transaction complete | c628922e / c6289548 | c6289a8e / c6289da8 | c638bfa0 / c638c270 | masked bytes |
 | SIM start / wake / cold reset | c6289fe7 / c628a1af / c628a303 | c628a847 / c628aa0f / c628ab63 | c638cd1f / c638cf17 / c638d06b | masked bytes |
 | SIM wake MMIO write site | c628a1cc | c628aa2c | c638cf36 | str r0,[r1,#4] |
-| IRQ handler table (RAM) | c6826f80 | c6826f80 | c683d280 (SIM 16-18: c60f08f3/0aed/094b) | |
+| IRQ handler table (RAM) | c6826f80 | c6826f80 | c683d280; PMIC id N handler at +8+4N (dispatcher c63ec9d2, mask bits table c6677634): SIM ids 13/14/15 = bits 0x2000/0x1000/0x0800 = c60f08f3/0aed/094b (CORRECTED 2026-11-11, was read one slot off) | |
 | task ids checked 27/29 | c62cc8e1/c621eadb | c62cd141/c621eadb | c63ca065/c6329389 | task table |
 | task 38 | c62bb371 | c62bbbd1 | NONE on E5 | |
 | code end bound | c660bf00/c660c000 | same | c66ae000 | E5 code size 0x3ae000 |

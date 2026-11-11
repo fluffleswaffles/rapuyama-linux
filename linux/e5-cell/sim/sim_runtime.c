@@ -138,7 +138,10 @@ int isi_sim_open(const char *path,int embedded){
 	if(!path){
 		device=-2;peer.regs[1]=0x0020a102;peer.regs[3]=0xae59;peer.regs[4]=6;peer.regs[5]=0x0f0f;
 		peer.pmic[1][3]=0x45fd;peer.pmic[0][0x1c]=0x488;peer.pmic[0][0x1d]=2;peer.pmic[0][0x1e]=2;
-		peer.rx[0]=0x90;peer.rx[1]=0;peer.rx_length=2;peer.tx_length=5;return 0;
+		peer.rx[0]=0x90;peer.rx[1]=0;peer.rx_length=2;peer.tx_length=5;
+		const char *rx=getenv("E5RT_PEER_RX");	/* simulated card's first reply, hex (e.g. 6c2a) */
+		if(rx){unsigned int b,n=0;while(n<sizeof(peer.rx) && sscanf(rx+2*n,"%2x",&b)==1){peer.rx[n++]=b;}peer.rx_length=n;}
+		return 0;
 	}
 	device=open(path,O_RDWR|O_NONBLOCK|O_CLOEXEC);
 	if(device<0){return -1;}
@@ -178,10 +181,10 @@ static int reg_io(struct isi_sim_reg *request){
 static int pmic_io(struct isi_sim_pmic *request){
 	if(device>=0){return ioctl(device,ISI_SIM_PMIC,request);}
 	/* embedded: reads are unrestricted, like the bridge (rapuyama_sim.c allowlists writes only) */
-	if(!(embedded_mode && !request->write && request->device>=1 && request->device<=2 && request->reg<0x20) && !((request->device==2 && (request->reg==3 || ((reset_mode || embedded_mode) && request->reg==1))) || (request->device==1 && (request->reg==0x1c || request->reg==0x1d || (cycle_mode && request->reg==0x1e))))){errno=EPERM;return -1;}
+	if(!(embedded_mode && !request->write && request->device>=1 && request->device<=2 && request->reg<0x20) && !((request->device==2 && (request->reg==3 || ((reset_mode || embedded_mode) && request->reg==1))) || (request->device==1 && (request->reg==0x1c || request->reg==0x1d || ((cycle_mode || embedded_mode) && request->reg==0x1e))))){errno=EPERM;return -1;}
 	if(request->write){
 		if(request->device==1 && request->reg==0x1e){
-			if(peer.voltage_count==4){errno=EMSGSIZE;return -1;}
+			if(peer.voltage_count==4){if(embedded_mode){peer.voltage_count=0;}else{errno=EMSGSIZE;return -1;}}
 			peer.voltage_values[peer.voltage_count++]=request->value;
 		}
 		peer.pmic[request->device-1][request->reg]=request->value;
@@ -327,7 +330,7 @@ static void apdu_trace_flush(void){
 		case EV_FIRE:fprintf(stderr,"sim %u timer %08x fires\n",r->ms,r->value);break;
 		case EV_CANCEL:fprintf(stderr,"sim %u timer %08x cancelled\n",r->ms,r->value);break;
 		case EV_REG:fprintf(stderr,"sim %u reg %s %02x = %08x%s\n",r->ms,(r->value>>8)&1 ? "W" : "R",r->value&255,r->len,r->value>>16 ? " (repeated)" : "");break;
-		case EV_HANDLER:fprintf(stderr,"sim %u handler %u (pending %x)\n",r->ms,r->value,r->len);break;
+		case EV_HANDLER:fprintf(stderr,"sim %u handler %x (pending %x)\n",r->ms,r->value,r->len);break;
 		}
 	}
 }
@@ -379,12 +382,16 @@ static void trace_event(uint32_t what){
 	trace[traced++]=(typeof(trace[0])){(uint32_t)now_us(),what,request.value};
 }
 
+/* PMIC (Gazoo) SIM interrupts, as the firmware dispatcher c63ec9d2 does it: id 13..15 = mask bit
+   0x2000>>(id-13) in device 2 regs 1 (pending) / 3 (mask), handler at c683d280 + 8 + id*4.
+   (Before 2026-11-11 the handler slot was one too far: bit 0x1000 = id 14, the deferred-start
+   resume the SIM start routine c638cd1f unmasks, ran id 15's handler instead.) */
 static void gazoo_service(void){
 	uint32_t pending=pmic_read(2,1,15)&~pmic_read(2,3,15)&0x3800;
-	for(unsigned int index=16;index<=18;index++){
-		if(!(pending&(0x2000>>(index-16)))){continue;}
-		trace_event(0x100|index);
-		uint32_t handler=word(0xc683d280+index*4);
+	for(unsigned int id=13;id<=15;id++){
+		if(!(pending&(0x2000>>(id-13)))){continue;}
+		trace_event(0x100|id);sim_event(5,0x100|id,pending);
+		uint32_t handler=word(0xc683d280+8+id*4);
 		if(!firmware_code(handler)){fatal("Gazoo SIM handler");}
 		((void (*)(void))(uintptr_t)handler)();
 	}
