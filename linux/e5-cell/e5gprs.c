@@ -39,6 +39,8 @@
 
 static int dg;	/* datagram socket, bound to 6c:fc */
 static uint8_t tid = 0x40;
+static int listen_pep = -1, gprs_sock = -1;	/* accepted while a request waits (the kernel answers the
+						   firmware's PNS_PEP_CONNECT_REQ only inside accept()) */
 
 static void dump(const char *what, const uint8_t *m, ssize_t n)
 {
@@ -61,11 +63,17 @@ static ssize_t request(uint8_t dev, uint8_t res, uint8_t obj, const uint8_t *bod
 		return -1;
 	}
 	for (;;) {
-		struct pollfd p = {.fd = dg, .events = POLLIN};
-		if (poll(&p, 1, ms) <= 0) {
+		struct pollfd p[2] = {{.fd = dg, .events = POLLIN}, {.fd = gprs_sock < 0 ? listen_pep : -1, .events = POLLIN}};
+		if (poll(p, 2, ms) <= 0) {
 			printf("no reply %02x to res %02x\n", want, res);
 			return -1;
 		}
+		if (p[1].revents & POLLIN) {
+			gprs_sock = accept(listen_pep, NULL, NULL);
+			printf("pipe end point connected (%d)\n", gprs_sock);
+		}
+		if (!(p[0].revents & POLLIN))
+			continue;
 		struct sockaddr_pn from;
 		socklen_t fl = sizeof(from);
 		ssize_t n = recvfrom(dg, reply, 300, 0, (struct sockaddr *)&from, &fl);
@@ -241,6 +249,7 @@ int main(int argc, char **argv)
 	}
 	fcntl(pep, F_SETFL, O_NONBLOCK | fcntl(pep, F_GETFL));
 	printf("pipe end point %04x\n", handle);
+	listen_pep = pep;
 	const uint8_t create[] = {0x00 /* PNS_PIPE_CREATE_REQ */, 0 /* disabled after */, 0 /* priority */,
 				  handle >> 8, handle & 0xff, PN_PEP_TYPE_GPRS, 0,
 				  gpds_dev, gpds_obj, PN_PEP_TYPE_GPRS, 0};
@@ -251,7 +260,7 @@ int main(int argc, char **argv)
 	}
 	uint8_t pipe = r[2];
 	printf("pipe handle %02x\n", pipe);
-	int gprs = -1;
+	int gprs = gprs_sock;
 	for (int i = 0; i < 50 && gprs < 0; i++) {
 		gprs = accept(pep, NULL, NULL);
 		if (gprs < 0)
