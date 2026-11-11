@@ -272,7 +272,8 @@ void isi_sim_patches(void){
 /* E5RT_SIM_TRACE=1: card traffic summary, no data bytes (IMSI, RAND/AUTN stay out of logs):
    a TX run shows its 5-byte header only, an RX run its length, first byte and last two (status) */
 static int apdu_trace;
-enum{EV_RX,EV_TX,EV_IRQ,EV_TIMER,EV_FIRE,EV_HANDLER,EV_CANCEL};
+enum{EV_RX,EV_TX,EV_IRQ,EV_TIMER,EV_FIRE,EV_HANDLER,EV_CANCEL,EV_REG};
+static uint32_t last_reg_key,last_reg_value,reg_repeats;
 static struct{uint8_t kind,head[5],tail[2];uint32_t len,value,ms;}runs[256];
 static volatile unsigned int runs_head,runs_tail;
 static unsigned int events_printed;
@@ -325,6 +326,7 @@ static void apdu_trace_flush(void){
 		case EV_TIMER:fprintf(stderr,"sim %u timer %08x in %u us\n",r->ms,r->value,r->len);break;
 		case EV_FIRE:fprintf(stderr,"sim %u timer %08x fires\n",r->ms,r->value);break;
 		case EV_CANCEL:fprintf(stderr,"sim %u timer %08x cancelled\n",r->ms,r->value);break;
+		case EV_REG:fprintf(stderr,"sim %u reg %s %02x = %08x%s\n",r->ms,(r->value>>8)&1 ? "W" : "R",r->value&255,r->len,r->value>>16 ? " (repeated)" : "");break;
 		case EV_HANDLER:fprintf(stderr,"sim %u handler %u (pending %x)\n",r->ms,r->value,r->len);break;
 		}
 	}
@@ -345,6 +347,11 @@ int isi_sim_fault(siginfo_t *info,void *context){
 		fatal("register transfer");
 	}
 	if(apdu_trace && (request.offset==0x20 || request.offset==0x24)){run_byte(request.offset==0x20,(uint8_t)request.value);}
+	else if(apdu_trace){	/* control registers; identical consecutive accesses (status polls) logged once, then once more as "repeated" */
+		uint32_t key=request.offset|request.write<<8;
+		if(key==last_reg_key && request.value==last_reg_value){if(++reg_repeats==1){sim_event(7,key|1U<<16,request.value);}}
+		else{last_reg_key=key;last_reg_value=request.value;reg_repeats=0;sim_event(7,key,request.value);}
+	}
 	last_access=request;isi_thumb_mmio_finish(&access,regs,request.value);return 1;
 }
 
