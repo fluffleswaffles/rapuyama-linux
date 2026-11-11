@@ -15,10 +15,18 @@ Kernel: `E5_CELL=1 linux/kernel/build-e5.sh` (own dir `build-e5-cell`): VMSPLIT_
 firmware addresses are user addresses, Phonet + `rapuyama_isi` + the MDI driver
 (`nokia,e5-mdi`), dtb from `linux/boot/e5-cell.dts`.
 
-Status (2026-11-10): self-tests pass in qemu-arm; on the phone the runtime
-attaches to the real MDI rings, the DSP answers, and a Linux Phonet socket gets
-the firmware's ISI version 18.0 through phonet0. SIM works on the real card (ATR, ICCID, USIM IMSI). Not done: OS timers,
-identity, registration, packet data.
+Status (2026-11-11, PAUSED): the runtime in `sim/` registers on the network (UMTS) with the real
+SIM, attaches to GPRS, activates a PDP context (`e5gprs`, gprs0 with IPv4 + DNS) and carries data
+on the shared channel (FACH): operator DNS answers, TCP handshake, HTTP response. Open: once the
+network moves the phone to a dedicated channel (CELL_DCH) the DSP never decodes a downlink block,
+so traffic stalls until the fallback to FACH (replies 6-15 s late, most pings lost). Not caused
+by ciphering (ETSI-verified), pipe flow control or e5rt's buffer copies; forcing 2G kills the DSP
+link. Details and ruled-out paths: `docs/devices/e5-00/cellular-map.md` (PACKET DATA).
+
+| | |
+|---|---|
+| `e5gprs.c` | ofono-style GPRS: attach, Phonet pipe end point (gprsN), context with APN, activate |
+| `sim/` | the live runtime (SIM, timers, identity, KASUMI, traces), see sim/README.md |
 
 On the phone (one runtime start per boot):
 
