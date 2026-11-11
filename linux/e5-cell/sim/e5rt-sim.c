@@ -453,8 +453,8 @@ static uint32_t sbif_write(uint32_t status, uint32_t sector, uint32_t size, uint
 	    size / 512 > 2016 - sector || !sbif_guest((uintptr_t)data, size))
 		sbif_invalid("invalid sector callback");
 	memcpy(sbif_store + sector * 512, data, size);
-	sbif_writes += size / 512;
-	printf("SBIF: %u sector(s) at %u -> private store (%u total)\n", size / 512, sector, sbif_writes);
+	sbif_writes += size / 512;	/* printed by sbif_service: this runs on the SBIF task's small stack
+					   (phone xg18: printf here broke task 0x23's stack guard) */
 	return 0;
 }
 static void sbif_validate_queue(void)
@@ -483,6 +483,11 @@ static void sbif_service(void)
 {
 	if (!sbif_attached)
 		return;
+	static unsigned sbif_reported;
+	if (sbif_writes != sbif_reported) {
+		printf("SBIF: %u sector(s) -> private store (%u total)\n", sbif_writes - sbif_reported, sbif_writes);
+		sbif_reported = sbif_writes;
+	}
 	sbif_validate_queue();
 	uint32_t (*api)(uint32_t, uintptr_t) = (void *)(uintptr_t)SBIF_API;
 	if (api(13, (uintptr_t)sbif_write))
