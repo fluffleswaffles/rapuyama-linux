@@ -140,8 +140,20 @@ void e5rt_firmware_reset(uint32_t reason, uint32_t unused1, uint32_t unused2, ui
 	fprintf(stderr, "firmware reset requested: %08x (called from %08x)\n", reason, caller);
 	if (reason == 6)	/* task switch c6658af4: a task stack guard lost its 0xaaaaaaaa canary */
 		for (unsigned t = 0; t < 48; t++) {
-			if (stack_guard_broken(t))
-				fprintf(stderr, "task %u stack guard %08x overwritten\n", t, ((const uint32_t *)(uintptr_t)STACK_GUARDS)[t]);
+			if (stack_guard_broken(t)) {
+				uint32_t g = ((const uint32_t *)(uintptr_t)STACK_GUARDS)[t];
+				fprintf(stderr, "task %u (0x%02x) stack guard %08x overwritten; deepest frames (code-like words above the guard):\n", t, t, g);
+				/* leftovers of the deepest frames: firmware return addresses (thumb, c63..c66 / c60f patch
+				   window) and e5rt's own text (our hooks), offset from the guard */
+				for (unsigned i = 0; i < 96 && g + 4 * i + 4 <= DATA + DATA_SIZE; i++) {
+					uint32_t v = ((const uint32_t *)(uintptr_t)g)[i];
+					extern char __executable_start[], etext[];
+					int fw = (v >= 0xc6300000 && v < 0xc66ae000) || (v >= 0xc60f0000 && v < 0xc60f1000);
+					int ours = v >= (uintptr_t)__executable_start && v < (uintptr_t)etext;
+					if (fw || ours || i < 4)
+						fprintf(stderr, "  +%03x %08x%s\n", 4 * i, v, ours ? " (e5rt)" : "");
+				}
+			}
 		}
 	for (unsigned r = 0; r < 4; r++) {	/* what the caller was working on (e.g. the parsed message) */
 		uint32_t v = e5rt_reset_regs[r];

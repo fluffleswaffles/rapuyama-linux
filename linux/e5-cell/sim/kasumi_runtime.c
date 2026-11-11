@@ -16,6 +16,47 @@
 #include "thumb_redirect.h"
 #include "kasumi_runtime.h"
 
+/* run fn(args[0..nargs-1]) on another stack (8-byte aligned top); args beyond 4 are passed on it */
+__attribute__((naked,target("arm"))) static uint32_t call_on_stack(void *top,void *fn,const uint32_t *args,unsigned nargs){
+	__asm__ volatile(
+		"push {r4-r7,lr}\n"
+		"mov r4,sp\n"
+		"mov r5,r1\n"
+		"mov r6,r2\n"
+		"mov r7,r3\n"
+		"mov sp,r0\n"
+		"subs r3,r7,#4\n"
+		"ble 1f\n"
+		"lsl r3,r3,#2\n"
+		"add r3,r3,#7\n"
+		"bic r3,r3,#7\n"
+		"sub sp,sp,r3\n"
+		"mov r12,#0\n"
+		"2:\n"
+		"add r0,r12,#4\n"
+		"ldr r1,[r6,r0,lsl #2]\n"
+		"str r1,[sp,r12,lsl #2]\n"
+		"add r12,r12,#1\n"
+		"sub r0,r7,#4\n"
+		"cmp r12,r0\n"
+		"blt 2b\n"
+		"1:\n"
+		"ldr r0,[r6]\n"
+		"ldr r1,[r6,#4]\n"
+		"ldr r2,[r6,#8]\n"
+		"ldr r3,[r6,#12]\n"
+		"blx r5\n"
+		"mov sp,r4\n"
+		"pop {r4-r7,pc}\n");
+}
+/* stack depth of fn on a pre-filled private stack (selftest) */
+static uint32_t probe_stack[4096] __attribute__((aligned(8)));
+static unsigned stack_depth(void *fn,const uint32_t *args,unsigned nargs){
+	for(unsigned i=0;i<4096;i++){probe_stack[i]=0x5a5aa5a5;}
+	call_on_stack(probe_stack+4096,fn,args,nargs);
+	unsigned i=0;while(i<4096 && probe_stack[i]==0x5a5aa5a5){i++;}
+	return (4096-i)*4;
+}
 static void invalid(void){fprintf(stderr,"invalid KASUMI f8 batch\n");_Exit(1);}
 static int private_range(uint32_t address,uint32_t size){
 	return (address>=0xc6800000 && size<=0x280000 && address-0xc6800000<=0x280000-size) ||	/* data */
@@ -57,13 +98,39 @@ static void f8_batch(const uint8_t *batch,const unsigned char *key,uint32_t bear
 	}
 }
 
+/* Software KASUMI on a private stack. With the selectors NOPed every call takes the software
+ * paths, which the original hardware branch never needed; task 0x0c (0x468 bytes of stack) broke
+ * its guard under data (phone xg15). The dead hardware blocks after the NOPed selectors hold a
+ * veneer, the bl to the software routine is pointed at it, the shim runs the routine here. */
+static uint32_t kasumi_stack[2048] __attribute__((aligned(8)));
+static uint32_t f9_soft(uint32_t a0,uint32_t a1,uint32_t a2,uint32_t a3,uint32_t s0,uint32_t s1,uint32_t s2){
+	const uint32_t a[7]={a0,a1,a2,a3,s0,s1,s2};
+	return call_on_stack(kasumi_stack+2048,(void *)0xc6655f13,a,7);
+}
+static uint32_t f8_soft(uint32_t a0,uint32_t a1,uint32_t a2,uint32_t a3,uint32_t s0,uint32_t s1){
+	const uint32_t a[6]={a0,a1,a2,a3,s0,s1};
+	return call_on_stack(kasumi_stack+2048,(void *)0xc6655e59,a,6);
+}
+static void f8_batch_private(const uint8_t *batch,const unsigned char *key,uint32_t bearer,uint32_t direction){
+	const uint32_t a[4]={(uintptr_t)batch,(uintptr_t)key,bearer,direction};
+	call_on_stack(kasumi_stack+2048,(void *)f8_batch,a,4);
+}
+static void thumb_bl(uint32_t site,uint32_t target){
+	int32_t off=(int32_t)(target-(site+4));
+	uint16_t hi=0xf000|((off>>12)&0x7ff),lo=0xf800|((off>>1)&0x7ff);
+	*(uint16_t *)site=hi;*(uint16_t *)(site+2)=lo;
+}
 void isi_kasumi_patches(void){
 	if(*(uint16_t *)0xc6655426!=0xd30a || *(uint16_t *)0xc6655508!=0xd30b){fprintf(stderr,"unsupported KASUMI selectors\n");_Exit(1);}
 	static const unsigned char batch_entry[]={0xff,0xb5,0x84,0xb0,0x00,0x24,0x00,0x28,0x05,0x46,0xa4,0x46};
 	if(memcmp((void *)0xc6655aac,batch_entry,sizeof(batch_entry))){fprintf(stderr,"unsupported KASUMI f8 batch\n");_Exit(1);}
 	*(uint16_t *)0xc6655426=0x46c0;
 	*(uint16_t *)0xc6655508=0x46c0;
-	isi_thumb_redirect((void *)0xc6655aac,(uintptr_t)f8_batch);
+	static const unsigned char bl9[]={0x00,0xf0,0xf9,0xfc},bl8[]={0x00,0xf0,0x0e,0xfd};	/* bl c6655f12 / bl c6655e58 */
+	if(memcmp((void *)0xc665551c,bl9,4) || memcmp((void *)0xc6655438,bl8,4)){fprintf(stderr,"unsupported KASUMI software calls\n");_Exit(1);}
+	isi_thumb_redirect((void *)0xc6655524,(uintptr_t)f9_soft);thumb_bl(0xc665551c,0xc6655524);	/* veneers in the dead hardware blocks */
+	isi_thumb_redirect((void *)0xc6655440,(uintptr_t)f8_soft);thumb_bl(0xc6655438,0xc6655440);
+	isi_thumb_redirect((void *)0xc6655aac,(uintptr_t)f8_batch_private);
 }
 int isi_kasumi_selftest(void){
 	/* ETSI TS135203 4.5 (f8 test set 1), through the redirected E5 batch entry */
@@ -118,5 +185,17 @@ int isi_kasumi_selftest(void){
 	f8_single(w,120,w+32,0xfa556b26,3,1,1);
 	if(memcmp(w,expected,15) || w[15]!=0xa5){fprintf(stderr,"UMTS f8 wrapper mismatch\n");return 1;}
 	release(w);
+	{	/* stack depth of each path (task 0x0c has 0x468 bytes; phone xg15: its guard broke under data) */
+		unsigned char *m=allocate(128);if(!m){return 1;}
+		memcpy(m+32,key,16);memcpy(m,plain,sizeof(plain));
+		uint32_t a9[8]={(uintptr_t)m,189,(uintptr_t)(m+32),0x38A6F056,0x05D2EC49,(uintptr_t)(m+96),0,1};
+		uint32_t a8[7]={(uintptr_t)m,120,(uintptr_t)(m+32),0xfa556b26,3,1,1};
+		unsigned char *st=allocate(96);if(!st){return 1;}
+		memset(st,0,48);st[0]=1;((uint32_t *)st)[1]=(uintptr_t)m;((uint32_t *)st)[2]=120;((uint32_t *)st)[3]=0xfa556b26;
+		uint32_t ab[4]={(uintptr_t)st,(uintptr_t)(m+32),3,1};
+		fprintf(stderr,"KASUMI stack depth: f9 c66554c7 %u, f8 wrapper c66553d5 %u, f8 batch c6655aad %u bytes\n",
+			stack_depth((void *)0xc66554c7,a9,8),stack_depth((void *)0xc66553d5,a8,7),stack_depth((void *)0xc6655aad,ab,4));
+		release(st);release(m);
+	}
 	puts("original software KASUMI: ETSI 120-bit UMTS f8 through the E5 batch layout, per-record COUNT, selectors patched; UIA1 f9 ETSI sets 1-3 through c66554c7, f8 set 1 through the wrapper c66553d5");return 0;
 }
