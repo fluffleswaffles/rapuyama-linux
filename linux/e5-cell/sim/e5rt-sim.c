@@ -172,6 +172,70 @@ static void trap(uint32_t site, void (*handler)())
 	word(site + 4, (uint32_t)(uintptr_t)handler);
 }
 
+/* E5RT_MSG_TRACE=1: firmware inter-task messages (send to task c63bdbe4), armed by the first host
+ * frame to GPDS (0x31). Per message: destination task, current task and the first 10 bytes (the
+ * Phonet-like header). The hook keeps to a few words of stack (firmware task stacks are small);
+ * printing happens in the serve loop. Trampoline = the 8 original bytes + jump back to the bl. */
+#define FW_SEND_TASK 0xc63bdbe4u
+static int msg_trace, msg_armed;
+static struct { uint32_t ms; uint8_t to, from, n, head[10]; } msgs[2048];
+static unsigned msgs_head, msgs_tail, msgs_printed, msgs_dropped;
+static uint32_t (*send_task_original)(uint32_t, uint32_t);
+static uint32_t (*const current_task)(void) = (void *)(uintptr_t)0xc63bdbc9u;
+static uint64_t monotonic_ms(void);
+static uint32_t send_task_hook(uint32_t task, uint32_t message)
+{
+	if (msg_armed) {
+		if (msgs_head - msgs_tail < 2048) {
+			typeof(msgs[0]) *r = &msgs[msgs_head % 2048];
+			r->ms = (uint32_t)monotonic_ms();
+			r->to = task;
+			r->from = current_task();
+			r->n = message >= DATA && message + 10 <= DATA + DATA_SIZE ? 10 : 0;
+			if (r->n)
+				memcpy(r->head, (void *)(uintptr_t)message, 10);
+			msgs_head++;
+		} else
+			msgs_dropped++;
+	}
+	return send_task_original(task, message);
+}
+static void msg_trace_install(void)
+{
+	const unsigned char entry[] = {0xf0, 0xb5, 0x85, 0xb0, 0x04, 0x46, 0x0d, 0x46};
+	if (memcmp((void *)(uintptr_t)FW_SEND_TASK, entry, sizeof(entry))) {
+		fprintf(stderr, "message trace: unexpected send-to-task entry, not installed\n");
+		return;
+	}
+	unsigned char *t = mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (t == MAP_FAILED) {
+		perror("message trace");
+		return;
+	}
+	memcpy(t, entry, 8);
+	const uint16_t back[] = {0x4f00, 0x4738};	/* ldr r7,[pc,#0]; bx r7 */
+	memcpy(t + 8, back, 4);
+	uint32_t resume = (FW_SEND_TASK + 8) | 1;
+	memcpy(t + 12, &resume, 4);
+	__builtin___clear_cache((char *)t, (char *)t + 16);
+	send_task_original = (void *)((uintptr_t)t | 1);
+	trap(FW_SEND_TASK, (void (*)())send_task_hook);
+	msg_trace = 1;
+	fprintf(stderr, "message trace installed (armed by the first GPDS request)\n");
+}
+static void msg_trace_flush(void)
+{
+	while (msgs_tail != msgs_head) {
+		typeof(msgs[0]) *r = &msgs[msgs_tail++ % 2048];
+		if (msgs_printed++ >= 6000)
+			continue;
+		printf("msg %u %02x<%02x:", r->ms, r->to, r->from);
+		for (unsigned i = 0; i < r->n; i++)
+			printf(" %02x", r->head[i]);
+		printf("\n");
+	}
+}
+
 /* upstream prepare.py's code patches, at the E5 addresses (core-map.md) */
 static void patches(void)
 {
@@ -667,6 +731,8 @@ static int serve(unsigned seconds)
 				void *p = allocate(n);
 				if (!p)
 					return 1;
+				if (msg_trace && frame[3] == 0x31)
+					msg_armed = 1;
 				memcpy(p, frame, n);
 				send(p);
 				if (mdi_pump())
@@ -676,7 +742,11 @@ static int serve(unsigned seconds)
 		if (drain())
 			return 1;
 		alarm(0);
+		if (msg_trace)
+			msg_trace_flush();
 	}
+	if (msg_trace)
+		printf("messages traced %u, dropped %u\n", msgs_printed, msgs_dropped);
 	printf("os timers fired %u\n", os_fired);
 	return 0;
 }
@@ -754,6 +824,13 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	patches();
+	if (getenv("E5RT_MSG_TRACE") && (link || !strcmp(getenv("E5RT_MSG_TRACE"), "all"))) {
+		msg_trace_install();
+		if (!strcmp(getenv("E5RT_MSG_TRACE"), "all")) {	/* offline check: armed at once, printed at exit */
+			msg_armed = 1;
+			atexit(msg_trace_flush);
+		}
+	}
 	if (os_test || os_live || soak)
 		isi_os_timer_patches();
 	if (link || soak || kasumi_test)
