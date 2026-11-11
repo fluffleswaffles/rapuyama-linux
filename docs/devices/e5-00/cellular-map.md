@@ -337,6 +337,10 @@ e5rt patches 7 of them. A call through any other one would SIGSEGV; no run ever 
 host service (DVFS, clocks, ...) is missing during registration, attach or DCH. qembian's E5
 model (models/nokia-e5-00-rm632) is an unbooted scaffold with the generic BB5 fake modem; its
 trace is the ISCPEER serial log lines (tools/isi.py log), no ISI_TRACE option.
+xg22 (E5RT_PERIPH_WATCH, data session incl. CELL_DCH, 0/20 pings): of all faked peripheral pages
+(SRAM c6018000 minus the MDI rings, crypto c6024000, timers c6033000, doorbells/semaphores c6040000,
+INTC c6060000) the firmware writes only the MDI doorbells c6040284/c6040288 (~13000 each, already
+forwarded by the kernel driver): no lost register write at the DCH setup.
 Open: downlink latency. User data crosses the pipe both ways, but replies reach the firmware
 6-9 s late and in bursts (pings at 1 s spacing answered together; HTTP reply after TCP
 retransmits), DNS ~1.3 s. Suspects: RLC/RRC timing under the polling loop and the trace
