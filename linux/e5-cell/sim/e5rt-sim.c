@@ -673,6 +673,18 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 	}
 	/* copied buffers: the driver copies DSP rx payloads into our cb500000 window
 	 * (and snapshots the whole window now) and our tx payloads into real RAM */
+	/* E5RT_DSP_DIRECT=1: the real DSP buffer window (kernel mdi mmap, buffers mode 2) instead of the
+	 * copy: on CELL_DCH the DSP reads/writes transport-block buffers no descriptor names (ring of
+	 * 0xa84-byte buffers from cb531874, firmware structures c68628f0 + n*0x168); with the copy
+	 * nothing passes on DCH (phone xg14..xg17), only FACH data inside descriptor payloads */
+	if (getenv("E5RT_DSP_DIRECT")) {
+		if (mmap((void *)(uintptr_t)DSP_BUF, 0x80000, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mdi, 0) == MAP_FAILED) {
+			perror("mdi dsp window mmap");
+			return 1;
+		}
+		buffers = 2;
+		printf("DSP buffer window mapped directly\n");
+	}
 	if (ioctl(mdi, RAPUYAMA_MDI_BUFFERS, &buffers) || ioctl(mdi, RAPUYAMA_MDI_STATUS, &st) || st.version != 2) {
 		perror("mdi setup");
 		return 1;
