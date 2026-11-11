@@ -324,6 +324,10 @@ a block), not in e5rt's buffer handling. Also fixed: sbif_write printed on the S
 (reset 6, task 0x23).
 xg20: the second DSP pool (va cb580000, pa 0x1fc90000, 320 KB) is untouched during a data
 session by both sides (real memory before == after == e5rt's private copy): not involved.
+xg21 (avoid DCH by forcing 2G): GSS (resource 0x32) works - selected RAT read 00 9c -> 00 (dual),
+write GSM only 00 0e 01 0b 04 01 00 accepted; the modem starts re-registering, then reset 9 from
+the DSP supervision (c63c8b8f, timer 219) ~12 s later: the RAT change needs the DSP to switch
+L1 (presumably a GSM DSP image / restart) that e5rt cannot provide. 2G is not a cheap way out.
 Open: downlink latency. User data crosses the pipe both ways, but replies reach the firmware
 6-9 s late and in bursts (pings at 1 s spacing answered together; HTTP reply after TCP
 retransmits), DNS ~1.3 s. Suspects: RLC/RRC timing under the polling loop and the trace
