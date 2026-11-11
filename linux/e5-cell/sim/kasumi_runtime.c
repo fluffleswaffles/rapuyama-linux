@@ -85,5 +85,38 @@ int isi_kasumi_selftest(void){
 	storage[0]=2;batch[1]=(uintptr_t)data;batch[2]=56;batch[3]=0xfa556b26;batch[4]=(uintptr_t)(data+7);batch[5]=64;batch[6]=0xfa556b26;
 	batch_entry(batch,testkey,3,1);
 	if(memcmp(data,expected,7) || !memcmp(data+7,expected+7,8)){fprintf(stderr,"UMTS f8 records mismatch\n");return 1;}
-	release(storage);puts("original software KASUMI: ETSI 120-bit UMTS f8 through the E5 batch layout, per-record COUNT, selectors patched");return 0;
+	release(storage);
+	/* UIA1 f9 through the firmware entry c66554c7 (selector NOPed: its software path c6655f12 for
+	   every length): ETSI TS 135203 5.3-5.5. Arguments: message, bits, IK, COUNT-I; stack FRESH,
+	   MAC out, direction, algorithm (1 = UIA1) */
+	static const struct{const char *ik,*msg;uint32_t count,fresh,dir,bits,mac;}sets[]={
+		{"2BD6459F82C5B300952C49104881FF48","6B227737296F393C8079353EDC87E2E805D2EC49A4F2D8E0",0x38A6F056,0x05D2EC49,0,189,0xF63BD72C},
+		{"D42F682428201CAFCD9F97945E6DE7B7","B5924384328A4AE00B737109F8B6C8DD2B4DB63DD533981CEB19AAD52A5B2BC0",0x3EDC87E2,0xA4F2D8E2,1,254,0xA9DAF1FF},
+		{"FDB9CFDF28936CC483A31869D81B8FAB","5932BC0ACE2B0ABA33D8AC188AC54F346FAD10BF9DEE2920B43BD0C53A915CB7DF6CAA72053ABFF2",0x36AF6144,0x9838F03A,1,319,0x1537D316},
+	};
+	void (*f9)(const void *,uint32_t,const void *,uint32_t,uint32_t,void *,uint32_t,uint32_t)=(void *)0xc66554c7;
+	int bad=0;
+	for(unsigned t=0;t<3;t++){
+		unsigned char *m=allocate(128);if(!m){return 1;}
+		unsigned char *ik=m+64;uint32_t *mac=(uint32_t *)(m+96);
+		unsigned n=strlen(sets[t].msg)/2;
+		for(unsigned i=0;i<n;i++){unsigned b;sscanf(sets[t].msg+2*i,"%2x",&b);m[i]=b;}
+		for(unsigned i=0;i<16;i++){unsigned b;sscanf(sets[t].ik+2*i,"%2x",&b);ik[i]=b;}
+		*mac=0;
+		f9(m,sets[t].bits,ik,sets[t].count,sets[t].fresh,mac,sets[t].dir,1);
+		uint32_t got=*mac,swapped=__builtin_bswap32(got);
+		fprintf(stderr,"UIA1 test set %u: firmware %08x (bytes %02x%02x%02x%02x), expected %08x\n",t+1,got,((unsigned char *)mac)[0],((unsigned char *)mac)[1],((unsigned char *)mac)[2],((unsigned char *)mac)[3],sets[t].mac);
+		if(got!=sets[t].mac && swapped!=sets[t].mac){bad=1;}
+		release(m);
+	}
+	if(bad){fprintf(stderr,"UMTS f9 software mismatch\n");return 1;}
+	/* the traced single-message f8 wrapper c66553d5 (selector c6655426 NOPed: software c6655e58):
+	   data, bits, CK, COUNT-C; stack bearer, direction, algorithm (1 = UEA1) */
+	void (*f8_single)(void *,uint32_t,const void *,uint32_t,uint32_t,uint32_t,uint32_t)=(void *)0xc66553d5;
+	unsigned char *w=allocate(64);if(!w){return 1;}
+	memcpy(w+32,key,16);memcpy(w,plain,sizeof(plain));w[15]=0xa5;
+	f8_single(w,120,w+32,0xfa556b26,3,1,1);
+	if(memcmp(w,expected,15) || w[15]!=0xa5){fprintf(stderr,"UMTS f8 wrapper mismatch\n");return 1;}
+	release(w);
+	puts("original software KASUMI: ETSI 120-bit UMTS f8 through the E5 batch layout, per-record COUNT, selectors patched; UIA1 f9 ETSI sets 1-3 through c66554c7, f8 set 1 through the wrapper c66553d5");return 0;
 }

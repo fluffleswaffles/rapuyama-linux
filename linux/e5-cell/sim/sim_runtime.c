@@ -327,7 +327,9 @@ static void apdu_trace_flush(void){
 		if(events_printed++>=4000){continue;}
 		switch(r->kind){
 		case EV_TX:
-			if(r->len>=5){fprintf(stderr,"sim %u > %02x %02x %02x %02x %02x%s\n",r->ms,r->head[0],r->head[1],r->head[2],r->head[3],r->head[4],r->len>5 ? " +data" : "");}
+			/* only a run of exactly 5 bytes is an APDU header; longer runs are data phases (RAND/AUTN,
+			   keys): length only (before 2026-11-11 their first 5 bytes were printed) */
+			if(r->len==5){fprintf(stderr,"sim %u > %02x %02x %02x %02x %02x\n",r->ms,r->head[0],r->head[1],r->head[2],r->head[3],r->head[4]);}
 			else{fprintf(stderr,"sim %u > (%u bytes)\n",r->ms,r->len);}
 			break;
 		case EV_RX:
