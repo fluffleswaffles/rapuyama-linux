@@ -313,6 +313,15 @@ is fine both ways (multi-credit, grants of 10 then 7). Downlink is only released
 an uplink packet: pings 0..5 answered together ~15 s after the first, later ones lost; looks
 like RLC AM status reports going out only piggybacked on uplink data (no standalone uplink
 opportunity). MDI event IRQ is requested but never raised by the DSP.
+xg17-xg19 (2026-11-11): on CELL_DCH the DSP sends only d8 (per-slot report) and e8 (transport
+block indication, always the same pattern: never a decoded block) to tasks 13/12; data reaches
+GPDS only on FACH (task 10, msg 03/05 with inline payload). Kernel 4 (mdi mmap, buffers mode 2)
++ E5RT_DSP_DIRECT mapped the real DSP window: the DSP sent garbage buffer descriptors (tag 0 at
+window offset 0) within seconds - the firmware's Symbian-era view of the shared pool overwrote
+live DSP state. Do NOT use direct mode; copy mode (1) stays. The 8 x 0xa84 ring at cb531874 holds
+power-on noise in the snapshot (never used). So the DCH downlink fails at L1 (DSP never decodes
+a block), not in e5rt's buffer handling. Also fixed: sbif_write printed on the SBIF task stack
+(reset 6, task 0x23).
 Open: downlink latency. User data crosses the pipe both ways, but replies reach the firmware
 6-9 s late and in bursts (pings at 1 s spacing answered together; HTTP reply after TCP
 retransmits), DNS ~1.3 s. Suspects: RLC/RRC timing under the polling loop and the trace
