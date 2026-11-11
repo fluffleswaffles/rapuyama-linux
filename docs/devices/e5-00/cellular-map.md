@@ -322,6 +322,8 @@ live DSP state. Do NOT use direct mode; copy mode (1) stays. The 8 x 0xa84 ring 
 power-on noise in the snapshot (never used). So the DCH downlink fails at L1 (DSP never decodes
 a block), not in e5rt's buffer handling. Also fixed: sbif_write printed on the SBIF task stack
 (reset 6, task 0x23).
+xg20: the second DSP pool (va cb580000, pa 0x1fc90000, 320 KB) is untouched during a data
+session by both sides (real memory before == after == e5rt's private copy): not involved.
 Open: downlink latency. User data crosses the pipe both ways, but replies reach the firmware
 6-9 s late and in bursts (pings at 1 s spacing answered together; HTTP reply after TCP
 retransmits), DNS ~1.3 s. Suspects: RLC/RRC timing under the polling loop and the trace
