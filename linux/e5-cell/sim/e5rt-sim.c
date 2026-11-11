@@ -52,6 +52,7 @@
 /* E5 firmware entry points (thumb, bit 0 set) */
 #define FW_ALLOCATE 0xc63c646du
 #define FW_SEND 0xc635b4e3u	/* frame from the host -> router task 0x21 */
+static int quiet;	/* E5RT_QUIET=1: no per-frame MDI / host frame lines (each was dozens of unbuffered writes) */
 #define FW_RECEIVE 0xc63bef51u
 #define FW_RELEASE 0xc63c69bfu
 #define FW_SCHEDULE 0xc63bca37u
@@ -508,7 +509,8 @@ static int mdi_forward(void)
 			fprintf(stderr, "mdi publish failed: %s\n", strerror(errno));
 			return 1;
 		}
-		printf("mdi tx %08x %08x %08x %08x\n", d[0], d[1], d[2], d[3]);
+		if (!quiet)
+			printf("mdi tx %08x %08x %08x %08x\n", d[0], d[1], d[2], d[3]);
 		forwarded = (forwarded + 1) & 31;
 	}
 	return 0;
@@ -539,7 +541,8 @@ static int mdi_pump(void)
 		schedule();
 	}
 	while ((n = read(mdi, d, sizeof(d))) == sizeof(d)) {
-		printf("mdi rx %08x %08x %08x %08x\n", d[0], d[1], d[2], d[3]);
+		if (!quiet)
+			printf("mdi rx %08x %08x %08x %08x\n", d[0], d[1], d[2], d[3]);
 		unsigned producer = *dsp & 31;
 		volatile uint32_t *slot = dsp + 1 + (producer & 15) * 4;
 		slot[0] = d[0]; slot[1] = d[1]; slot[2] = d[2]; slot[3] = d[3];
@@ -569,10 +572,12 @@ static int drain(void)
 		unsigned size = ((unsigned)r[4] | (unsigned)r[5] << 8) + 6;
 		if (size < 10 || (uintptr_t)r + size > DATA + DATA_SIZE)
 			return 1;
-		printf("host rx (%u):", size);
-		for (unsigned j = 0; j < size && j < 48; j++)
-			printf(" %02x", r[j]);
-		printf("\n");
+		if (!quiet) {
+			printf("host rx (%u):", size);
+			for (unsigned j = 0; j < size && j < 48; j++)
+				printf(" %02x", r[j]);
+			printf("\n");
+		}
 		if (backend >= 0 && write(backend, r, size) != (ssize_t)size) {
 			static unsigned dropped;	/* phonet0 down (nobody up yet) or full: drop, like a radio link */
 			if (errno != ENETDOWN && errno != ENOBUFS && errno != EAGAIN) {
@@ -727,10 +732,12 @@ static int serve(unsigned seconds)
 					fprintf(stderr, "backend: bad frame of %zd bytes\n", n);
 					return 1;
 				}
-				printf("host tx (%zd):", n);
-				for (ssize_t j = 0; j < n && j < 48; j++)
-					printf(" %02x", frame[j]);
-				printf("\n");
+				if (!quiet) {
+					printf("host tx (%zd):", n);
+					for (ssize_t j = 0; j < n && j < 48; j++)
+						printf(" %02x", frame[j]);
+					printf("\n");
+				}
 				void *p = allocate(n);
 				if (!p)
 					return 1;
@@ -757,6 +764,7 @@ static int serve(unsigned seconds)
 int main(int argc, char **argv)
 {
 	int link = argc >= 4 && !strcmp(argv[2], "--mdi");
+	quiet = getenv("E5RT_QUIET") != NULL;
 	int os_test = argc == 3 && !strcmp(argv[2], "--os-timer-selftest") ? 1 :
 		      argc == 3 && !strcmp(argv[2], "--os-timer-live-selftest") ? 2 : 0;
 	const char *os_clock = getenv("E5RT_OS_CLOCK");
