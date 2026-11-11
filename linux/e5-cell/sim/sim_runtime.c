@@ -263,6 +263,42 @@ void isi_sim_patches(void){
 	if(!embedded_mode){patch(0xc638bfa0,(uintptr_t)owner_complete);patch(0xc638c270,(uintptr_t)transaction_complete);}
 }
 
+/* E5RT_SIM_TRACE=1: card traffic summary, no data bytes (IMSI, RAND/AUTN stay out of logs):
+   a TX run shows its 5-byte header only, an RX run its length, first byte and last two (status) */
+static int apdu_trace;
+static struct{uint8_t tx,len_hi;uint16_t len;uint8_t head[5],tail[2];uint32_t ms;}runs[64];
+static volatile unsigned int runs_head,runs_tail;
+static struct{int open,tx;unsigned int len,seen;uint8_t head[5],tail[2];uint32_t ms;}run;
+static void run_close(void){
+	if(!run.open){return;}
+	run.open=0;
+	if(runs_head-runs_tail>=64){return;}
+	typeof(runs[0]) *r=&runs[runs_head%64];
+	r->tx=run.tx;r->len=run.len>0xffff ? 0xffff : run.len;memcpy(r->head,run.head,5);memcpy(r->tail,run.tail,2);r->ms=run.ms;
+	runs_head++;
+}
+static void run_byte(int tx,uint8_t byte){
+	if(run.open && run.tx!=tx){run_close();}
+	if(!run.open){run.open=1;run.tx=tx;run.len=0;run.ms=(uint32_t)(now_us()/1000);}
+	if(run.len<5){run.head[run.len]=byte;}
+	run.tail[0]=run.tail[1];run.tail[1]=byte;run.len++;
+}
+static void apdu_trace_flush(void){
+	if(!apdu_trace){return;}
+	if(run.open && run.seen==run.len){run_close();}
+	run.seen=run.len;
+	while(runs_tail!=runs_head){
+		typeof(runs[0]) *r=&runs[runs_tail%64];
+		if(r->tx){
+			if(r->len>=5){fprintf(stderr,"sim %u > %02x %02x %02x %02x %02x%s\n",r->ms,r->head[0],r->head[1],r->head[2],r->head[3],r->head[4],r->len>5 ? " +data" : "");}
+			else{fprintf(stderr,"sim %u > (%u bytes)\n",r->ms,r->len);}
+		}else{
+			if(r->len==1){fprintf(stderr,"sim %u < %02x\n",r->ms,r->tail[1]);}
+			else{fprintf(stderr,"sim %u < %u bytes, first %02x, ends %02x %02x\n",r->ms,r->len,r->head[0],r->tail[0],r->tail[1]);}
+		}
+		runs_tail++;
+	}
+}
 int isi_sim_fault(siginfo_t *info,void *context){
 	uint32_t address=(uint32_t)(uintptr_t)info->si_addr;
 	if(!isi_sim_active() || address<0xc6038300 || address>=0xc6038330){return 0;}
@@ -278,6 +314,7 @@ int isi_sim_fault(siginfo_t *info,void *context){
 		fprintf(stderr,"SIM MMIO: pc=%08x offset=%02x size=%u write=%u value=%08x\n",pc,request.offset,request.size,request.write,request.value);
 		fatal("register transfer");
 	}
+	if(apdu_trace && (request.offset==0x20 || request.offset==0x24)){run_byte(request.offset==0x20,(uint8_t)request.value);}
 	last_access=request;isi_thumb_mmio_finish(&access,regs,request.value);return 1;
 }
 
@@ -333,12 +370,14 @@ void isi_sim_attach(void){
 	for(unsigned int i=0;i<6;i++){irq_register(0xb1+i,word(initial_handlers[i]));}
 
 	if(device>=0 && word(embedded_context+0x30)==0){pmic_write(2,1,15,0x1000);}
+	apdu_trace=getenv("E5RT_SIM_TRACE")!=NULL;
 	fprintf(stderr,"SIM backend attached: context=%08x state=%u ready=%u\n",embedded_context,word(embedded_context+0x30),word(embedded_context+0x78));
 }
 
 void isi_sim_service(void){
 	if(watchdog_reported==1){fprintf(stderr,"PMIC watchdog feed delegated to Linux\n");watchdog_reported=2;}
 	if(!embedded_mode){return;}
+	apdu_trace_flush();
 	timer_service();
 	gazoo_service();
 	uint32_t pending=0;
