@@ -293,6 +293,28 @@ static void patches(void)
 }
 
 static char altstack[65536];
+/* E5RT_POOL_DUMP=<file>: on SIGTERM write e5rt's private copy of the second DSP pool (va cb580000,
+ * pa 0x1fc90000, 320 KB, filled once from 1fb60000.bin) to <file>: compared with the real memory
+ * before/after a session it shows what the firmware wrote there that the DSP never saw */
+static const char *pool_dump;
+static void terminate(int sig)
+{
+	(void)sig;
+	if (pool_dump) {
+		int fd = open(pool_dump, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (fd >= 0) {
+			const char *p = (const char *)(uintptr_t)(DSP_BUF + 0x80000);
+			for (size_t done = 0; done < 0x50000;) {
+				ssize_t n = write(fd, p + done, 0x50000 - done);
+				if (n <= 0)
+					break;
+				done += n;
+			}
+			close(fd);
+		}
+	}
+	_exit(143);
+}
 static void failure(int sig, siginfo_t *info, void *context)
 {
 	if (sig == SIGSEGV && isi_sim_fault(info, context))
@@ -837,6 +859,11 @@ int main(int argc, char **argv)
 	sigaction(SIGILL, &sa, NULL);
 	sigaction(SIGBUS, &sa, NULL);
 	sigaction(SIGALRM, &sa, NULL);
+	pool_dump = getenv("E5RT_POOL_DUMP");
+	if (pool_dump) {
+		struct sigaction st = {.sa_handler = terminate};
+		sigaction(SIGTERM, &st, NULL);
+	}
 	alarm(15);
 
 	image(argv[1], "10480000.bin", CODE, CODE_SIZE);
