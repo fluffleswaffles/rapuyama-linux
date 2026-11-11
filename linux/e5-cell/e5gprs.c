@@ -243,6 +243,14 @@ int main(int argc, char **argv)
 	const uint8_t attach[] = {0x13, 0x00};	/* GPDS_ATTACH_REQ, follow off */
 	if (request(0, PN_GPDS, 0, attach, sizeof(attach), 0x14, r, 30000) < 0)
 		printf("attach request unanswered, trying the context anyway\n");
+	/* E5GPRS_DELAY=<s>: wait after the attach before the context (xg13: an activate sent 40 ms after
+	   the attach response was never sent on the air; the attach's radio connection was being released) */
+	if (getenv("E5GPRS_DELAY")) {
+		unsigned d = atoi(getenv("E5GPRS_DELAY"));
+		printf("waiting %u s after the attach\n", d);
+		fflush(stdout);
+		sleep(d);
+	}
 
 	/* the Linux pipe end point */
 	int pep = socket(AF_PHONET, SOCK_SEQPACKET, 0);
