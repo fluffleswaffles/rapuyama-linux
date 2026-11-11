@@ -246,6 +246,57 @@ static void msg_trace_install(void)
 	msg_trace = getenv("E5RT_MSG_TRACE") && !strcmp(getenv("E5RT_MSG_TRACE"), "data") ? 2 : 1;
 	fprintf(stderr, "message trace installed (armed by the first %s)\n", msg_trace == 2 ? "uplink user-data frame" : "GPDS request");
 }
+/* E5RT_PERIPH_WATCH=1: writes to the peripheral pages e5rt only fakes as RAM (SRAM/MDI, crypto,
+ * timers, doorbells/semaphores, INTC), armed with the message trace (E5RT_MSG_TRACE=data: first
+ * uplink packet). A register the CELL_DCH setup writes there never reaches the hardware. */
+static const struct { uint32_t base, size; } periph[] = {
+	{0xc6018000u, 0x4000}, {0xc6024000u, 0x2000}, {0xc6033000u, 0x1000}, {0xc6040000u, 0x1000}, {0xc6060000u, 0x1000},
+};
+static uint32_t *periph_shadow[5];
+static uint16_t *periph_count[5];
+static unsigned periph_lines, periph_watch;
+static uint64_t periph_summary;
+static void periph_init(void)
+{
+	for (unsigned i = 0; i < 5; i++) {
+		periph_shadow[i] = malloc(periph[i].size);
+		periph_count[i] = calloc(periph[i].size / 4, 2);
+		memcpy(periph_shadow[i], (void *)(uintptr_t)periph[i].base, periph[i].size);
+	}
+	periph_watch = 1;
+}
+static uint64_t monotonic_ms(void);
+static void periph_check(int armed)
+{
+	for (unsigned i = 0; i < 5; i++) {
+		const uint32_t *now = (const uint32_t *)(uintptr_t)periph[i].base;
+		for (unsigned w = 0; w < periph[i].size / 4; w++) {
+			if (now[w] == periph_shadow[i][w])
+				continue;
+			uint32_t a = periph[i].base + 4 * w, old = periph_shadow[i][w];
+			periph_shadow[i][w] = now[w];
+			if ((a >= 0xc601bce0u && a < 0xc601bf00u) || a == 0xc603334cu || a == 0xc6033350u)
+				continue;	/* MDI rings and the emulated counters: e5rt's own */
+			if (!armed)
+				continue;
+			if (periph_count[i][w] < 0xffff)
+				periph_count[i][w]++;
+			if (periph_count[i][w] <= 20 && periph_lines < 5000) {
+				periph_lines++;
+				printf("periph %u %08x %08x -> %08x\n", (uint32_t)monotonic_ms(), a, old, now[w]);
+			}
+		}
+	}
+	if (armed && monotonic_ms() >= periph_summary) {
+		periph_summary = monotonic_ms() + 10000;
+		printf("periph summary %u:", (uint32_t)monotonic_ms());
+		for (unsigned i = 0; i < 5; i++)
+			for (unsigned w = 0; w < periph[i].size / 4; w++)
+				if (periph_count[i][w])
+					printf(" %08x=%u", periph[i].base + 4 * w, periph_count[i][w]);
+		printf("\n");
+	}
+}
 static void msg_trace_flush(void)
 {
 	while (msgs_tail != msgs_head) {
@@ -733,6 +784,8 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 		send(p);
 		alarm(0);
 	}
+	if (getenv("E5RT_PERIPH_WATCH"))
+		periph_init();
 	if (packet_device) {
 		backend = open(packet_device, O_RDWR | O_NONBLOCK | O_CLOEXEC);
 		if (backend < 0) {
@@ -812,6 +865,8 @@ static int serve(unsigned seconds)
 		alarm(0);
 		if (msg_trace)
 			msg_trace_flush();
+		if (periph_watch)
+			periph_check(msg_armed);
 	}
 	if (msg_trace)
 		printf("messages traced %u, dropped %u\n", msgs_printed, msgs_dropped);
