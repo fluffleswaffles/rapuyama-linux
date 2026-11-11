@@ -2,7 +2,7 @@
  * the sequence of ofono's isimodem gprs-context driver: a Linux Phonet pipe end point
  * (SOCK_SEQPACKET, accepted with PNPIPE_ENCAP_IP = a "gprsN" netdev), PNS_PIPE_CREATE
  * at the firmware's pipe service (0xd9) between it and GPDS, then GPDS context id
- * create, link configure (plain), context configure (IPv4, APN), activate, pipe enable.
+ * create, link configure (plain), context configure (IPv4, APN), activate + pipe enable (no wait between).
  * Prints the interface, IP and DNS from GPDS_CONTEXT_ACTIVATE_IND, then keeps the pipe
  * (and the netdev) until killed. Needs e5rt live with --backend and a registered modem.
  *   e5gprs <apn> */
@@ -108,6 +108,10 @@ static ssize_t indication(uint8_t res, uint8_t want, uint8_t *m, unsigned ms)
 		dump(what, m, n);
 		if (from.spn_resource == res && n >= 2 && m[1] == want)
 			return n;
+		if (from.spn_resource == PN_GPDS && n >= 5 && m[1] == 0x09 && m[3] != 0x01) {
+			printf("activate response status %02x cause %02x\n", m[3], m[4]);
+			return -1;
+		}
 		if (from.spn_resource == PN_GPDS && n >= 2 && (m[1] == 0x1f || m[1] == 0x0d)) {
 			printf("GPDS %s, cause %02x\n", m[1] == 0x1f ? "activation failed" : "context deactivated", n > 3 ? m[3] : 0);
 			return -1;
@@ -304,16 +308,21 @@ int main(int argc, char **argv)
 		printf("context configure failed\n");
 		return 1;
 	}
+	/* ofono order: activate, then enable the pipe at once (GPDS finishes the activation only
+	   with the pipe enabled); the activate response may come before or after the enable's */
 	const uint8_t act[] = {0x08, cid, 0};
-	if (request(0, PN_GPDS, 0, act, sizeof(act), 0x09, r, 30000) < 4) {
-		printf("context activate unanswered\n");
+	uint8_t am[8] = {++tid};
+	memcpy(am + 1, act, sizeof(act));
+	struct sockaddr_pn gpds = {.spn_family = AF_PHONET, .spn_dev = 0, .spn_obj = 0, .spn_resource = PN_GPDS};
+	dump("tx", am, sizeof(act) + 1);
+	if (sendto(dg, am, sizeof(act) + 1, 0, (struct sockaddr *)&gpds, sizeof(gpds)) != sizeof(act) + 1) {
+		perror("sendto");
 		return 1;
 	}
-	if (r[3] != 0x01)
-		printf("activate response status %02x cause %02x\n", r[3], r[4]);
 	const uint8_t enable[] = {0x06 /* PNS_PIPE_ENABLE_REQ */, pipe, 0};
-	request(0, PN_PIPE, 0, enable, sizeof(enable), 0x07, r, 5000);
-	n = indication(PN_GPDS, 0x0a, r, 60000);
+	if (request(0, PN_PIPE, 0, enable, sizeof(enable), 0x07, r, 5000) >= 4 && r[3] != 0x00)
+		printf("pipe enable error %02x\n", r[3]);
+	n = indication(PN_GPDS, 0x0a, r, 90000);
 	if (n < 0) {
 		printf("no context activation\n");
 		return 1;
