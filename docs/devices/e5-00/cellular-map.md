@@ -328,6 +328,9 @@ xg21 (avoid DCH by forcing 2G): GSS (resource 0x32) works - selected RAT read 00
 write GSM only 00 0e 01 0b 04 01 00 accepted; the modem starts re-registering, then reset 9 from
 the DSP supervision (c63c8b8f, timer 219) ~12 s later: the RAT change needs the DSP to switch
 L1 (presumably a GSM DSP image / restart) that e5rt cannot provide. 2G is not a cheap way out.
+WARNING: the GSS selected-RAT write PERSISTS beyond e5rt (not in e5rt's private SBIF store): every
+later boot's runtime was dead (DSP boot messages unanswered, reset 9) although Symbian showed Dual
+mode, until the user set Network mode GSM -> Dual in Symbian. Do not send GSS writes from Linux.
 Host services (2026-11-11): ISASW reaches Symbian only through the host table *c681c5a0
 (snapshot: 0xc80088f4, unmapped in e5rt) via 21 wrappers c63ebf44..c63ec494 (slots 0..0x6c);
 e5rt patches 7 of them. A call through any other one would SIGSEGV; no run ever did, so no
