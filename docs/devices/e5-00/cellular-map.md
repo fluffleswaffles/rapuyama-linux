@@ -277,3 +277,36 @@ The E5 registers by itself once the SIM, timers and IMEI are in place (no reques
   c6655508 (f9) and c6655426 (traced wrapper c66553d5, < 0x1400), redirect the f8 batch c6655aac (E5 layout:
   count byte, 12-byte records {data, bits, COUNT-C} from +4) to C f8 on the firmware's key schedule c6655d0f /
   cipher c6655c9b. qemu: ETSI f8 test set 1 passes through the E5 batch entry.
+
+## PACKET DATA (2026-11-11, phone xg3..xg14, e5rt-os16 + e5gprs4)
+Live GPRS/UMTS PS data on the E5's own ISASW: attach, PDP context (IPv4, APN), gprs0 netdev,
+DNS answered by the operator resolver over the cellular link, TCP handshake and an HTTP reply.
+Fixes on the way (all in linux/e5-cell):
+- e5gprs: accept() the pipe end point while PNS_PIPE_CREATE waits (the kernel answers the
+  firmware's PNS_PEP_CONNECT_REQ only inside accept()); PNS_PIPE_ENABLE right after the
+  activate request (ofono order); E5GPRS_DELAY between attach and context (an activate sent
+  40 ms after the attach response, while that radio connection was released, never went out).
+- Pipe service: resource 0xd9 in the router task (c63cb5c8 -> c63cabda), host frames with
+  res d9 msg 0x20 (pipe data) take the fast path c63cba04 from send_packet. PIPE_CREATED_IND
+  negotiates multi-credit flow control both ways.
+- SIM (the attach needs a working card: START-HFN writes, AUTHENTICATE, EF_KeysPS update):
+  - Gazoo PMIC SIM interrupts: id N -> handler c683d280 + 8 + 4N, mask bit table c6677634
+    (dispatcher c63ec9d2), ack c63ec9a2 = write the bit to dev 2 reg 1 (W1C). e5rt read the
+    handler one slot off: id 14's handler (c60f0aed) ran for id 13 and aborted transfers.
+  - id 14 is re-raised by the PMIC on SIM activity; dispatched by the e5rt poll in the middle
+    of a reply it powers the card down. Live mode holds ids 13-15 while the SIM transaction
+    state (context +0x30) is 1.
+  - SIM start c638cd1f: state 0 -> sets 2 (deferred, resumed by the id 14 handler), else
+    state 1 and transmit. Ops table at context +0x98.
+- KASUMI: all three paths checked against ETSI TS 135203 in qemu (--kasumi-selftest): f9
+  (UIA1) sets 1-3 through c66554c7 (args msg, bits, IK, COUNT-I; stack FRESH, MAC out, dir,
+  alg 1), f8 set 1 through the wrapper c66553d5, the C batch (layout matches c66558fe:
+  COUNT at engine +4, bearer<<27 | dir<<26 at +8).
+- Diagnostics: E5RT_SIM_TRACE (APDU headers, status words, IRQ/HAL-timer/register/PMIC
+  events, never data phases), E5RT_MSG_TRACE (inter-task messages via a trampoline on
+  send-to-task c63bdbe4; GPDS = task 0f / obj 35, router 21, host queue 2f, DSP link 22,
+  SIM server 29, MM 0d).
+Open: downlink latency. User data crosses the pipe both ways, but replies reach the firmware
+6-9 s late and in bursts (pings at 1 s spacing answered together; HTTP reply after TCP
+retransmits), DNS ~1.3 s. Suspects: RLC/RRC timing under the polling loop and the trace
+output (MDI descriptors printed unbuffered).
