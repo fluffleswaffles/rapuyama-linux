@@ -191,7 +191,8 @@ static void trap(uint32_t site, void (*handler)())
  * printing happens in the serve loop. Trampoline = the 8 original bytes + jump back to the bl. */
 #define FW_SEND_TASK 0xc63bdbe4u
 static int msg_trace, msg_armed;
-static struct { uint32_t ms; uint8_t to, from, n, head[24]; } msgs[2048];
+static struct { uint32_t ms; uint8_t to, from, n, head[64]; } msgs[2048];
+static unsigned msgs_l1;	/* L1 transport-block messages captured at 64 bytes (first 400) */
 static unsigned msgs_head, msgs_tail, msgs_printed, msgs_dropped;
 static uint32_t (*send_task_original)(uint32_t, uint32_t);
 static uint32_t (*const current_task)(void) = (void *)(uintptr_t)0xc63bdbc9u;
@@ -204,11 +205,17 @@ static uint32_t send_task_hook(uint32_t task, uint32_t message)
 			r->ms = (uint32_t)monotonic_ms();
 			r->to = task;
 			r->from = current_task();
-			r->n = message >= DATA && message + 24 <= DATA + DATA_SIZE ? 10 : 0;
+			r->n = message >= DATA && message + 64 <= DATA + DATA_SIZE ? 10 : 0;
 			if (r->n) {
-				memcpy(r->head, (void *)(uintptr_t)message, 24);
+				memcpy(r->head, (void *)(uintptr_t)message, 64);
 				if (r->head[3] == 0x31 || r->head[3] == 0xc3)	/* GPDS: 24 bytes (no identities) */
 					r->n = 24;
+				/* DSP link transport-block indications d8/e8 and the uplink 61: 64 bytes, to find
+				   DSP buffer addresses the copied-buffer driver mode does not refresh */
+				else if (r->head[3] == 0xed && (r->head[9] == 0xd8 || r->head[9] == 0xe8 || r->head[9] == 0x61) && msgs_l1 < 400) {
+					msgs_l1++;
+					r->n = 64;
+				}
 			}
 			msgs_head++;
 		} else
@@ -236,8 +243,8 @@ static void msg_trace_install(void)
 	__builtin___clear_cache((char *)t, (char *)t + 16);
 	send_task_original = (void *)((uintptr_t)t | 1);
 	trap(FW_SEND_TASK, (void (*)())send_task_hook);
-	msg_trace = 1;
-	fprintf(stderr, "message trace installed (armed by the first GPDS request)\n");
+	msg_trace = getenv("E5RT_MSG_TRACE") && !strcmp(getenv("E5RT_MSG_TRACE"), "data") ? 2 : 1;
+	fprintf(stderr, "message trace installed (armed by the first %s)\n", msg_trace == 2 ? "uplink user-data frame" : "GPDS request");
 }
 static void msg_trace_flush(void)
 {
@@ -753,8 +760,8 @@ static int serve(unsigned seconds)
 				void *p = allocate(n);
 				if (!p)
 					return 1;
-				if (msg_trace && frame[3] == 0x31)
-					msg_armed = 1;
+				if (msg_trace && (msg_trace == 2 ? frame[3] == 0xd9 && frame[9] == 0x20 : frame[3] == 0x31))
+					msg_armed = 1;	/* E5RT_MSG_TRACE=data: from the first uplink user-data frame */
 				memcpy(p, frame, n);
 				send(p);
 				if (mdi_pump())
