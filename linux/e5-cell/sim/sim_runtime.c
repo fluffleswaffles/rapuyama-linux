@@ -436,7 +436,10 @@ void isi_sim_service(void){
 	if(!embedded_mode){return;}
 	apdu_trace_flush();
 	timer_service();
-	gazoo_service();
+	/* live: PMIC SIM events wait while a card transaction runs (state 1). xg11: id 14 dispatched by
+	   this poll in the middle of a 45-byte reply made its handler power the card down after 20 bytes;
+	   on the phone the UART interrupts would have completed the transfer first */
+	if(device<0 || word(embedded_context+0x30)!=1){gazoo_service();}
 	uint32_t pending=0;
 	if(device>=0){
 		ssize_t count=read(device,&pending,4);
