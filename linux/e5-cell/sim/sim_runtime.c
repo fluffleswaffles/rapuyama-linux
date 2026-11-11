@@ -193,10 +193,18 @@ static int pmic_io(struct isi_sim_pmic *request){
 	return 0;
 }
 
+static uint32_t pmic_raw(uint32_t dev,uint32_t reg){
+	struct isi_sim_pmic request={dev,reg,0,0};
+	if(pmic_io(&request)){fprintf(stderr,"SIM PMIC read dev%u reg%02x\n",dev,reg);fatal("PMIC read");}
+	return request.value&0xffff;
+}
+/* SIM-relevant firmware PMIC accesses for E5RT_SIM_TRACE: Gazoo pending/mask, SIM supply */
+static int pmic_sim_reg(uint32_t dev,uint32_t reg){return (dev==2 && (reg==1 || reg==3)) || (dev==1 && reg>=0x1c && reg<=0x1e);}
 static uint32_t pmic_read(uint32_t dev,uint32_t reg,uint32_t bits){
 	if(bits>15){fatal("invalid PMIC width");}
 	struct isi_sim_pmic request={dev,reg,0,0};
 	if(pmic_io(&request)){fprintf(stderr,"SIM PMIC read dev%u reg%02x caller=%p\n",dev,reg,__builtin_return_address(0));fatal("PMIC read");}
+	if(pmic_sim_reg(dev,reg)){sim_event(8,dev<<8|reg,request.value);}
 	return request.value&((1U<<(bits+1))-1);
 }
 static volatile int watchdog_reported;
@@ -207,6 +215,7 @@ static uint32_t pmic_write(uint32_t dev,uint32_t reg,uint32_t bits,uint32_t valu
 		return 1;
 	}
 	struct isi_sim_pmic request={dev,reg,value&((1U<<(bits+1))-1),1};
+	if(pmic_sim_reg(dev,reg)){sim_event(8,1U<<16|dev<<8|reg,request.value);}
 	if(pmic_io(&request)){fprintf(stderr,"SIM PMIC write dev%u reg%02x value%04x caller=%p\n",dev,reg,value,__builtin_return_address(0));fatal("PMIC write");}
 	return 1;
 }
@@ -275,7 +284,7 @@ void isi_sim_patches(void){
 /* E5RT_SIM_TRACE=1: card traffic summary, no data bytes (IMSI, RAND/AUTN stay out of logs):
    a TX run shows its 5-byte header only, an RX run its length, first byte and last two (status) */
 static int apdu_trace;
-enum{EV_RX,EV_TX,EV_IRQ,EV_TIMER,EV_FIRE,EV_HANDLER,EV_CANCEL,EV_REG};
+enum{EV_RX,EV_TX,EV_IRQ,EV_TIMER,EV_FIRE,EV_HANDLER,EV_CANCEL,EV_REG,EV_PMIC};
 static uint32_t last_reg_key,last_reg_value,reg_repeats;
 static struct{uint8_t kind,head[5],tail[2];uint32_t len,value,ms;}runs[256];
 static volatile unsigned int runs_head,runs_tail;
@@ -330,6 +339,7 @@ static void apdu_trace_flush(void){
 		case EV_FIRE:fprintf(stderr,"sim %u timer %08x fires\n",r->ms,r->value);break;
 		case EV_CANCEL:fprintf(stderr,"sim %u timer %08x cancelled\n",r->ms,r->value);break;
 		case EV_REG:fprintf(stderr,"sim %u reg %s %02x = %08x%s\n",r->ms,(r->value>>8)&1 ? "W" : "R",r->value&255,r->len,r->value>>16 ? " (repeated)" : "");break;
+		case EV_PMIC:fprintf(stderr,"sim %u pmic %s %u.%02x = %04x\n",r->ms,r->value>>16 ? "W" : "R",(r->value>>8)&255,r->value&255,r->len);break;
 		case EV_HANDLER:fprintf(stderr,"sim %u handler %x (pending %x)\n",r->ms,r->value,r->len);break;
 		}
 	}
@@ -387,7 +397,11 @@ static void trace_event(uint32_t what){
    (Before 2026-11-11 the handler slot was one too far: bit 0x1000 = id 14, the deferred-start
    resume the SIM start routine c638cd1f unmasks, ran id 15's handler instead.) */
 static void gazoo_service(void){
-	uint32_t pending=pmic_read(2,1,15)&~pmic_read(2,3,15)&0x3800;
+	/* like the hardware: the pending register is only read when an unmasked SIM id can fire (it
+	   may clear on read; xg10: a masked id 14 event read away here never resumed the data phase) */
+	uint32_t mask=pmic_raw(2,3);
+	if((mask&0x3800)==0x3800){return;}
+	uint32_t pending=pmic_raw(2,1)&~mask&0x3800;
 	for(unsigned int id=13;id<=15;id++){
 		if(!(pending&(0x2000>>(id-13)))){continue;}
 		trace_event(0x100|id);sim_event(5,0x100|id,pending);
