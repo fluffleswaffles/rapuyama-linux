@@ -24,6 +24,17 @@ e5_mobile_files() {
 	[ -f "$1/linux/e5-apn" ] && cp "$1/linux/e5-apn" "$r/e5-apn"
 	return 0
 }
+# the 3G boot step (sd rootfs only: tools/sdroot.sh e5), in the background:
+# the modem runtime must start within 90 s of boot. MOBILE_BOOT, KMSG: tests
+e5_mobile_start() {
+	grep -q 'e5\.mobile=1' "${CMDLINE:-/proc/cmdline}" || return 0
+	b=${MOBILE_BOOT:-/usr/libexec/e5/mobile-boot}
+	if [ -x "$b" ]; then
+		"$b" &
+	else
+		echo "e5: 3GLinuxE5: mobile data needs the advanced setup (sd rootfs)" > "${KMSG:-/dev/kmsg}"
+	fi
+}
 # the tests source this file for the functions above, nothing below runs
 [ -n "$E5_INIT_TEST" ] && return
 
@@ -380,7 +391,7 @@ gui() {
 if grep -q e6.usbsh /proc/cmdline; then
 	usb_shell &
 	[ "$dev" = e5 ] && [ -x /bin/e5-dhcp ] && usb_net &
-	[ "$dev" = e5 ] && { e5_wlan_files; wlan_net; } &
+	[ "$dev" = e5 ] && { e5_wlan_files; e5_mobile_start; wlan_net; } &
 	# after the test pattern, else the pattern lands on top of the shell.
 	# e6.nogui on the cmdline = straight to the screen shell
 	{
