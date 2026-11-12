@@ -6,12 +6,15 @@ release. Addresses and findings: `docs/devices/e5-00/cellular-map.md`.
 
 | | |
 |---|---|
-| `e5rt.c` | the E5's own modem firmware (fw 101.003) as a userspace process: self-tests, live MDI link, Phonet backend, SBIF consumer |
+| `sim/` | the runtime that registers and carries data (built as `e5rt`, see `sim/README.md`) |
+| `e5rt.c` | the first E5 runtime (built as `e5rt-legacy`): self-tests, live MDI link, Phonet backend, SBIF consumer |
 | `pnping.c` | Linux side: phonet0 address 0x6c + up, ISI version requests over an AF_PHONET socket |
 | `e5mem/` | read-only debugfs view of the preserved ISASW / DSP memory, for same-boot images |
 | `build.sh` | `./build.sh <out> [kernel build dir]` |
+| `check-runtime.sh` | `./check-runtime.sh <out>`: the six e5rt selftests under qemu-arm |
 
-Kernel: `E5_CELL=1 linux/kernel/build-e5.sh` (own dir `build-e5-cell`): VMSPLIT_3G25 so the
+Kernel: `linux/kernel/build-e5.sh` (the default E5 kernel since 2026-11-12; `E5_CELL=1` = same
+config in `build-e5-cell`): VMSPLIT_3G25 so the
 firmware addresses are user addresses, Phonet + `rapuyama_isi` + the MDI driver
 (`nokia,e5-mdi`), dtb from `linux/boot/e5-cell.dts`.
 
