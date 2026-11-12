@@ -69,6 +69,8 @@ boot_setup() {
 	echo 'console=tty0 e5.mobile=1' > "$T/cmdline"
 	echo '30.00 20.00' > "$T/uptime"
 	printf '123456789012345' > "$T/run/e5-mobile/e5-imei"
+	printf '#!/bin/sh\necho "setsid $*" >> "%s/calls"\nexec "$@"\n' "$T" > "$T/bin/setsid"
+	printf '#!/bin/sh\necho "nice $*" >> "%s/calls"\nshift 2\nexec "$@"\n' "$T" > "$T/bin/nice"
 	for c in insmod mount ip; do
 		printf '#!/bin/sh\necho "%s $*" >> "%s/calls"\n' "$c" "$T" > "$T/bin/$c"
 	done
@@ -104,6 +106,9 @@ t_boot_happy() {
 	state_is registered
 	[ "$(grep -c '^mobile on$' "$T/calls")" = 1 ] || no "mobile on called $(grep -c '^mobile on$' "$T/calls") times"
 	grep -q '^e5rt .*/run/e5img --mdi /dev/rapuyama-mdi --backend /dev/rapuyama-isi' "$T/calls" || no "e5rt argv: $(grep ^e5rt "$T/calls")"
+	# own session (own CPU autogroup) + nice -10: from init's session the DSP
+	# went unanswered at boot (reset 9, phone 2026-11-12)
+	grep -q '^setsid nice -n -10 env -i' "$T/calls" || no "e5rt not started via setsid nice -n -10"
 	[ "$(cat "$T/e5rt.env" 2>/dev/null | tr '\n' ' ')" = "E5RT_IMEI_FILE=$T/run/e5-mobile/e5-imei E5RT_OS_CLOCK=1 E5RT_QUIET=1 E5RT_SIM_DEVICE=/dev/rapuyama-sim " ] ||
 		no "e5rt env: $(cat "$T/e5rt.env" 2>/dev/null | tr '\n' ' ')"
 	for f in 10480000 1fd50000 1ffe0000 1fb60000 100ec000; do cmp -s "$T/dbg/e5mem/$f" "$T/run/e5img/$f.bin" || no "image $f not copied"; done

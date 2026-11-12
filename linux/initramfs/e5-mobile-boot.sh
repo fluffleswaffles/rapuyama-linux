@@ -59,7 +59,10 @@ insmod "$LIBEXEC/rapuyama_sim.ko" || { state unavailable "insmod rapuyama_sim.ko
 while [ "$(up)" -lt 60 ]; do $SLEEP 2; done
 ip link set phonet0 up
 
-env -i PATH="$PATH" E5RT_QUIET=1 E5RT_IMEI_FILE="$RUN/e5-imei" \
+# own session = own CPU autogroup (CONFIG_SCHED_AUTOGROUP), + nice -10: in
+# init's session, next to the boot daemons, the DSP waited > 1 s for an
+# answer at boot (reset 9 in 2 of 2 runs; 0 with this and from a login shell)
+setsid nice -n -10 env -i PATH="$PATH" E5RT_QUIET=1 E5RT_IMEI_FILE="$RUN/e5-imei" \
 	E5RT_SIM_DEVICE=/dev/rapuyama-sim E5RT_OS_CLOCK=1 \
 	"$LIBEXEC/e5rt" "$IMG" --mdi /dev/rapuyama-mdi --backend /dev/rapuyama-isi --seconds 0 \
 	>> "$RUN/e5rt.log" 2>&1 &
