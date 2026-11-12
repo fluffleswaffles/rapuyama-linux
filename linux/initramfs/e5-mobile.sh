@@ -7,10 +7,13 @@
 #                 (metric 600: Wi-Fi and the PC link win while up), DNS when
 #                 Wi-Fi has no default route
 #   mobile off    data off, routes and resolv.conf back; the modem keeps running
-# Needs E:\linux\e5-imei and E:\linux\e5-apn, written by hand (see
-# /usr/share/doc/e5/mobile.txt); /etc/e5-apn wins over the card's.
+#   mobile setup  asks for the IMEI (*#06# in Symbian, checked: 15 digits +
+#                 check digit) and the APN, saves them on the card
+#                 (E:\linux\e5-imei, E:\linux\e5-apn); Enter keeps a saved one
+#   mobile apn <name>   changes only the APN
+# Nothing is read from Symbian. /etc/e5-apn wins over the card's APN.
 # A stopped modem cannot be restarted in the same boot: reboot.
-# overrides (tests/test-e5-mobile.sh): LIBEXEC RUN ETC SYS SLEEP
+# overrides (tests/test-e5-mobile.sh): LIBEXEC RUN ETC SYS SLEEP CARD_DIR
 LIBEXEC=${LIBEXEC:-/usr/libexec/e5}
 RUN=${RUN:-/run/e5-mobile}
 ETC=${ETC:-/etc}
@@ -50,8 +53,8 @@ need_root() { [ "$(id -u)" = 0 ] || { say "mobile: run it as root" >&2; exit 1; 
 modem_line() {
 	case "$(state)" in
 	'') say "off (not a 3G boot)" ;;
-	no-imei) say "not started: no IMEI (write it to E:\\linux\\e5-imei)" ;;
-	bad-imei) say "not started: E:\\linux\\e5-imei must hold the 15 digits from *#06# (fix it, then start 3GLinuxE5 again)" ;;
+	no-imei) say "not started: no IMEI (run mobile setup)" ;;
+	bad-imei) say "not started: the saved IMEI is not 15 digits (run mobile setup, then start 3GLinuxE5 again)" ;;
 	too-late) say "not started: too late after boot, reboot with 3GLinuxE5" ;;
 	unavailable) say "not available (see $RUN/boot.log)" ;;
 	*) if alive "$RUN/e5rt.pid"; then echo running; else say "stopped (reboot to use mobile data)"; fi ;;
@@ -80,7 +83,7 @@ status() {
 		say "data: off"
 	fi
 	a=$(apn)
-	say "apn: ${a:-none (write it to E:\\linux\\e5-apn)}"
+	say "apn: ${a:-none (run mobile setup)}"
 	for c in "$SYS"/class/power_supply/*/capacity; do
 		[ -r "$c" ] && { say "battery: $(cat "$c")%"; break; }
 	done
@@ -97,7 +100,7 @@ on() {
 	[ "$(state)" = registered ] || { say "mobile: not registered (SIM, coverage?), try again later" >&2; exit 1; }
 	if data_on; then say "mobile: data already on ($(field IP))"; exit 0; fi
 	a=$(apn)
-	[ -n "$a" ] || { say "mobile: no APN (write it to E:\\linux\\e5-apn), see /usr/share/doc/e5/mobile.txt" >&2; exit 1; }
+	[ -n "$a" ] || { say "mobile: no APN (run mobile setup)" >&2; exit 1; }
 	# 20 s after the attach: an activate right after it was never sent on the air
 	E5GPRS_DELAY=20 "$LIBEXEC/e5gprs" "$a" > "$RUN/e5gprs.out" 2>&1 &
 	echo $! > "$RUN/e5gprs.pid"
@@ -145,9 +148,93 @@ off() {
 	say "mobile: data off"
 }
 
+# the card's p1 (Symbian's E:), mounted read-write while setup writes to it
+card_open() {
+	if [ -n "${CARD_DIR:-}" ]; then C=$CARD_DIR; mkdir -p "$C/linux"; return 0; fi
+	r=$(sed -n 's/.*e6\.root=\([^ ]*\).*/\1/p' /proc/cmdline)
+	dev=${r%p[0-9]*}p1; [ -n "$r" ] || dev=/dev/mmcblk0p1
+	C=/tmp/e5-card
+	mkdir -p "$C"
+	mount -t vfat "$dev" "$C" || { say "mobile: can't mount the memory card ($dev)" >&2; exit 1; }
+	mkdir -p "$C/linux"
+}
+card_close() { sync; [ -n "${CARD_DIR:-}" ] || umount "$C"; }
+# 15 digits whose Luhn check digit is right
+imei_ok() {
+	printf '%s' "$1" | awk '{ if (length($0) != 15 || $0 !~ /^[0-9]+$/) exit 1
+		s = 0; for (i = 1; i <= 15; i++) { d = substr($0, i, 1) + 0
+			if (i % 2 == 0) { d *= 2; if (d > 9) d -= 9 } s += d }
+		exit (s % 10 != 0) }'
+}
+clean_apn() { printf '%s' "$1" | tr -d '\r \t'; }
+save_apn() {
+	printf '%s' "$1" > "$C/linux/e5-apn"
+	[ -d "$RUN" ] && printf '%s' "$1" > "$RUN/e5-apn"
+	# /etc/e5-apn overrides the card: keep it in step
+	[ -f "$ETC/e5-apn" ] && printf '%s' "$1" > "$ETC/e5-apn"
+	return 0
+}
+
+setup() {
+	need_root
+	card_open
+	old=$(tr -cd 0-9 < "$C/linux/e5-imei" 2>/dev/null)
+	imei_ok "$old" || old=
+	if [ -n "$old" ]; then
+		printf 'IMEI (Enter keeps the saved one): '
+	else
+		printf 'IMEI (dial *#06# in Symbian, 15 digits): '
+	fi
+	read -r in || in=
+	imei=$(printf '%s' "$in" | tr -cd 0-9)
+	[ -z "$imei" ] && imei=$old
+	if [ -z "$imei" ]; then
+		card_close; say "mobile: no IMEI given, nothing saved" >&2; exit 1
+	fi
+	if [ ${#imei} != 15 ]; then
+		card_close; say "mobile: an IMEI has 15 digits (got ${#imei}), nothing saved" >&2; exit 1
+	fi
+	if ! imei_ok "$imei"; then
+		card_close; say "mobile: the IMEI's check digit is wrong (typo?), nothing saved" >&2; exit 1
+	fi
+	olda=$(clean_apn "$(head -n 1 "$C/linux/e5-apn" 2>/dev/null)")
+	if [ -n "$olda" ]; then
+		printf 'APN (Enter keeps %s): ' "$olda"
+	else
+		printf 'APN (from your operator, e.g. internet): '
+	fi
+	read -r in || in=
+	a=$(clean_apn "$in")
+	[ -z "$a" ] && a=$olda
+	if [ -z "$a" ]; then
+		card_close; say "mobile: no APN given, nothing saved" >&2; exit 1
+	fi
+	printf '%s' "$imei" > "$C/linux/e5-imei"
+	save_apn "$a"
+	card_close
+	say "saved to E:\\linux\\e5-imei and E:\\linux\\e5-apn (apn $a)"
+	case "$(state)" in
+	'') say "start Linux with 3GLinuxE5 to use mobile data" ;;
+	registered) say "mobile off, then mobile on, to use the new APN" ;;
+	*) say "reboot and start Linux with 3GLinuxE5 to use mobile data" ;;
+	esac
+}
+
+apn_cmd() {
+	need_root
+	a=$(clean_apn "$1")
+	[ -n "$a" ] || { say "usage: mobile apn <name>" >&2; exit 1; }
+	card_open
+	save_apn "$a"
+	card_close
+	say "apn: $a (saved to E:\\linux\\e5-apn)"
+}
+
 case "$1" in
 '') status ;;
 on) on ;;
 off) off ;;
-*) say "usage: mobile [on|off]" >&2; exit 1 ;;
+setup) setup ;;
+apn) apn_cmd "$2" ;;
+*) say "usage: mobile [on|off|setup|apn <name>]" >&2; exit 1 ;;
 esac

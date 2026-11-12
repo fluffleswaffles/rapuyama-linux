@@ -98,5 +98,5 @@ sync
 umount "$M1" "$M2"
 echo "done. Next: card into the phone, in Symbian install E:\\LinuxE5.sis, run LinuxE5"
 echo "(first run copies the WLAN firmware from the phone's ROM to E:\\linux, then Linux starts)"
-echo "3G mobile data: also install E:\\3GLinuxE5.sis, write E:\\linux\\e5-imei and E:\\linux\\e5-apn"
-echo "(see E:\\linux\\3G-README.txt after the first 3GLinuxE5 run), start Linux with 3GLinuxE5"
+echo "3G mobile data: also install E:\\3GLinuxE5.sis; in Linux run \`mobile setup\` once"
+echo "(IMEI + APN), then start Linux with 3GLinuxE5"

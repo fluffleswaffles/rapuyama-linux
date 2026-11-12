@@ -240,9 +240,9 @@ static void WlanFiles(){
 
 #ifdef RB_3G
 // 3GLinuxE5: mobile data needs the IMEI and the APN, both written to the card
-// by the user (nothing is read from Symbian). The setup guide is put next to
-// them once (linux/initramfs/e5-mobile.txt, embedded by build_app.sh); without
-// the two files a Boot/Cancel dialog says so. 0 = boot
+// by the user with `mobile setup` in Linux (nothing is read from Symbian). The
+// setup guide is put next to them once (linux/initramfs/e5-mobile.txt, embedded
+// by build_app.sh); without the two files a Boot/Cancel dialog says so. 0 = boot
 #include "e5_mobile_txt.h"
 _LIT(KImei, "E:\\linux\\e5-imei");
 _LIT(KApn, "E:\\linux\\e5-apn");
@@ -256,8 +256,8 @@ static TInt MobileFiles(){
 	TBool imei=Exists(KImei), apn=Exists(KApn);
 	Lf(_L8("3g: imei file %d, apn file %d\n"), imei, apn);
 	if(imei && apn){return 0;}
-	return Ask(_L("3G needs E:\\linux\\e5-imei and E:\\linux\\e5-apn"),
-		_L("(see E:\\linux\\3G-README.txt). Boot anyway?"), _L("Boot"), _L("Cancel"));
+	return Ask(_L("3G needs the IMEI + APN: boot, run"),
+		_L("mobile setup, reboot (E:\\linux\\3G-README.txt)"), _L("Boot"), _L("Cancel"));
 }
 #endif
 #endif

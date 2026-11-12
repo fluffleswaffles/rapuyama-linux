@@ -129,7 +129,7 @@ t_boot_no_imei() {
 	check $rc = 0
 	state_is no-imei
 	grep -q '^e5rt' "$T/calls" 2>/dev/null && no "e5rt started"
-	grep -q 'E:\\linux\\e5-imei' "$T/run/e5-mobile/boot.log" || no "boot.log does not name E:\\linux\\e5-imei"
+	grep -q 'mobile setup' "$T/run/e5-mobile/boot.log" || no "boot.log does not point to mobile setup"
 }
 t_boot_too_late() {
 	boot_setup boot_too_late
@@ -283,7 +283,7 @@ t_no_apn_message() {
 	rm "$T/run/e5-mobile/e5-apn"
 	mob on
 	check $rc = 1
-	has 'no APN (write it to E:\linux\e5-apn)'
+	has 'no APN (run mobile setup)'
 	grep -q '^e5gprs' "$T/calls" 2>/dev/null && no "e5gprs ran"
 }
 t_wifi_keeps_dns() {
@@ -323,10 +323,10 @@ t_no_imei_message() {
 	mob_setup no_imei_message; fast
 	echo no-imei > "$T/run/e5-mobile/state"
 	mob
-	has 'no IMEI (write it to E:\linux\e5-imei)'
+	has 'no IMEI (run mobile setup)'
 	mob on
 	check $rc = 1
-	has 'no IMEI (write it to E:\linux\e5-imei)'
+	has 'no IMEI (run mobile setup)'
 }
 t_on_not_registered() {
 	mob_setup on_not_registered; fast
@@ -369,8 +369,7 @@ t_status_bad_imei() {
 	mob_setup status_bad_imei; fast
 	echo bad-imei > "$T/run/e5-mobile/state"
 	mob
-	has 'E:\linux\e5-imei'
-	has '15 digits'
+	has 'mobile setup'
 	case "$out" in *reboot*) no "says reboot" ;; esac
 }
 t_on_reprobe_registered() {
@@ -411,6 +410,85 @@ t_off_after_e5gprs_died() {
 	check $rc = 0
 	has "data already off"
 	[ "$(cat "$T/etc/resolv.conf")" = "nameserver 192.168.0.1" ] || no "resolv.conf not restored: $(cat "$T/etc/resolv.conf")"
+}
+
+# ---- mobile setup / mobile apn (the card is $T/card via CARD_DIR) ----
+GOOD_IMEI=490154203237518	# a Luhn-valid example IMEI, not a real phone's
+setup_run() {
+	out=$(printf "$1" | PATH="$T/bin:$PATH" LIBEXEC="$T/libexec" RUN="$T/run/e5-mobile" ETC="$T/etc" SYS="$T/sys" \
+		CARD_DIR="$T/card" SLEEP="$T/bin/fastsleep" $SH "$I/e5-mobile.sh" setup 2>&1)
+	rc=$?
+}
+t_setup_writes() {
+	mob_setup setup_writes; fast
+	rm -f "$T/run/e5-mobile/state"
+	setup_run "$GOOD_IMEI\ninternet.x\n"
+	check $rc = 0
+	[ "$(cat "$T/card/linux/e5-imei" 2>/dev/null)" = $GOOD_IMEI ] || no "e5-imei: $(cat "$T/card/linux/e5-imei" 2>/dev/null)"
+	[ "$(cat "$T/card/linux/e5-apn" 2>/dev/null)" = internet.x ] || no "e5-apn: $(cat "$T/card/linux/e5-apn" 2>/dev/null)"
+	has "3GLinuxE5"
+	case "$out" in *$GOOD_IMEI*) no "IMEI printed" ;; esac
+}
+t_setup_imei_typo() {
+	mob_setup setup_imei_typo; fast
+	setup_run "490154203237519\ninternet.x\n"
+	check $rc = 1
+	has "check digit"
+	check ! -e "$T/card/linux/e5-imei"
+	check ! -e "$T/card/linux/e5-apn"
+}
+t_setup_imei_short() {
+	mob_setup setup_imei_short; fast
+	setup_run "12345\ninternet.x\n"
+	check $rc = 1
+	has "15 digits"
+	check ! -e "$T/card/linux/e5-imei"
+}
+t_setup_imei_spaces() {
+	mob_setup setup_imei_spaces; fast
+	setup_run "49 015420 323751 8\r\ninternet.x\r\n"
+	check $rc = 0
+	[ "$(cat "$T/card/linux/e5-imei" 2>/dev/null)" = $GOOD_IMEI ] || no "e5-imei not cleaned"
+	[ "$(cat "$T/card/linux/e5-apn" 2>/dev/null)" = internet.x ] || no "e5-apn not cleaned"
+}
+t_setup_keeps() {
+	mob_setup setup_keeps; fast
+	printf $GOOD_IMEI > "$T/card/linux/e5-imei"; printf 'old.apn' > "$T/card/linux/e5-apn"
+	setup_run "\n\n"
+	check $rc = 0
+	[ "$(cat "$T/card/linux/e5-imei")" = $GOOD_IMEI ] || no "imei changed"
+	[ "$(cat "$T/card/linux/e5-apn")" = old.apn ] || no "apn changed"
+	has "old.apn"
+}
+t_setup_needs_imei() {
+	mob_setup setup_needs_imei; fast
+	setup_run "\ninternet.x\n"
+	check $rc = 1
+	check ! -e "$T/card/linux/e5-apn"
+}
+t_setup_running_3g_boot() {
+	mob_setup setup_running_3g_boot; fast
+	echo no-imei > "$T/run/e5-mobile/state"
+	setup_run "$GOOD_IMEI\nnew.apn\n"
+	check $rc = 0
+	[ "$(cat "$T/run/e5-mobile/e5-apn")" = new.apn ] || no "running APN not updated"
+	has "reboot"
+}
+t_setup_root_only() {
+	mob_setup setup_root_only; fast
+	printf '#!/bin/sh\necho 1000\n' > "$T/bin/id"
+	setup_run "$GOOD_IMEI\nx\n"
+	check $rc = 1
+	check ! -e "$T/card/linux/e5-imei"
+}
+t_apn_command() {
+	mob_setup apn_command; fast
+	printf 'own' > "$T/etc/e5-apn"
+	out=$(PATH="$T/bin:$PATH" RUN="$T/run/e5-mobile" ETC="$T/etc" CARD_DIR="$T/card" $SH "$I/e5-mobile.sh" apn 'new.apn' 2>&1); rc=$?
+	check $rc = 0
+	[ "$(cat "$T/card/linux/e5-apn")" = new.apn ] || no "card apn"
+	[ "$(cat "$T/run/e5-mobile/e5-apn")" = new.apn ] || no "run apn"
+	[ "$(cat "$T/etc/e5-apn")" = new.apn ] || no "/etc/e5-apn (overrides) not updated"
 }
 
 # ---- runner ----

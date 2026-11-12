@@ -174,3 +174,16 @@ logs "mobile data needs the advanced setup" and does nothing.
 
 - xg46 lean stability result; longer sessions; upload (HSUPA) rate.
 - Push of e5-cell / kernel e5-cell after a full diff review.
+
+## Design update (2026-11-12, after the build): `mobile setup`
+
+Writing the two card files by hand (mounting p1, printf) was a poor experience
+(user). Now `mobile setup` (root, LinuxE5 or 3GLinuxE5 boot) asks for the IMEI
+and the APN, checks the IMEI (15 digits + Luhn check digit, so a typo is caught
+at once), and writes `E:\linux\e5-imei` / `E:\linux\e5-apn` itself (mounts p1
+read-write, unmounts). Enter keeps a saved value; the IMEI is never printed.
+`mobile apn <name>` changes only the APN (card, running copy, and `/etc/e5-apn`
+if that override exists). Every message that pointed at the files now says
+"run mobile setup" (boot step states, `mobile` status, motd, guide, the
+3GLinuxE5 dialog). Still nothing is read from Symbian. A modem that could not
+start because the IMEI was missing still needs a reboot (90 s start limit).

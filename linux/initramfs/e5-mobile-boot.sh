@@ -34,11 +34,11 @@ state() { echo "$1" > "$RUN/state"; log "$1${2:+ ($2)}"; }
 up() { cut -d. -f1 "$UPTIME"; }
 
 [ -e "$RUN/started" ] && { log "the modem runtime already ran in this boot"; exit 0; }
-[ -s "$RUN/e5-imei" ] || { state no-imei "write the IMEI (*#06# in Symbian) to E:\\linux\\e5-imei"; exit 0; }
+[ -s "$RUN/e5-imei" ] || { state no-imei "no IMEI: run mobile setup, then reboot with 3GLinuxE5"; exit 0; }
 imei=$(cat "$RUN/e5-imei")
 case "$imei" in
 [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
-*) state bad-imei "E:\\linux\\e5-imei must hold the 15 digits from *#06#"; exit 0 ;;
+*) state bad-imei "the saved IMEI is not 15 digits: run mobile setup, then reboot with 3GLinuxE5"; exit 0 ;;
 esac
 imei=
 [ "$(up)" -gt 90 ] && { state too-late "uptime $(up) s, the modem must start within 90 s of boot: reboot"; exit 0; }
