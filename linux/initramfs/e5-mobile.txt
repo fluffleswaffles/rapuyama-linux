@@ -16,7 +16,9 @@
    mobile on     data on (after mobile off)
    mobile off    data off; the modem keeps running
 
-Wi-Fi wins when both are up (its route and DNS are kept).
+Wi-Fi wins when both are up (its route and DNS are kept). If
+Wi-Fi goes away while data is on, names stop resolving: run
+mobile off, then mobile on.
 "modem stopped" = the modem runtime ended: reboot (it runs once
 per boot and must start within 90 s of boot).
 3G uses the battery faster; Linux does not charge the phone yet.
