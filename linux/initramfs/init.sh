@@ -19,7 +19,8 @@ e5_mobile_files() {
 	r=${RUN:-/run/e5-mobile}
 	mkdir -p "$r"
 	if [ -f "$1/linux/e5-imei" ]; then
-		(umask 077; cp "$1/linux/e5-imei" "$r/e5-imei") && chmod 600 "$r/e5-imei"
+		# digits only: a file from Notepad has CRLF, *#06# may show a slash
+		(umask 077; tr -cd 0-9 < "$1/linux/e5-imei" > "$r/e5-imei") && chmod 600 "$r/e5-imei"
 	fi
 	[ -f "$1/linux/e5-apn" ] && cp "$1/linux/e5-apn" "$r/e5-apn"
 	return 0

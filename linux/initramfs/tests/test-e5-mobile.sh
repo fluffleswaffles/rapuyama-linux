@@ -35,7 +35,8 @@ init_fn() {
 	grep -q '^\[ -n "\$E5_INIT_TEST" \] && return' "$I/init.sh" || { no "init.sh has no E5_INIT_TEST return, not sourced"; return 1; }
 	E5_INIT_TEST=1 RUN="$T/run/e5-mobile" CMDLINE="$T/cmdline" $SH -c \
 		". '$I/init.sh'; type e5_mobile_files > /dev/null || exit 9; e5_mobile_files '$T/card'"
-	[ $? = 9 ] && no "e5_mobile_files not defined"
+	[ $? = 9 ] && { no "e5_mobile_files not defined"; return 1; }
+	return 0
 }
 t_files_copied() {
 	setup files_copied
@@ -169,7 +170,8 @@ start_run() {
 	grep -q '^\[ -n "\$E5_INIT_TEST" \] && return' "$I/init.sh" || { no "init.sh not sourceable"; return 1; }
 	E5_INIT_TEST=1 CMDLINE="$T/cmdline" MOBILE_BOOT="$T/mobile-boot" KMSG="$T/kmsg" $SH -c \
 		". '$I/init.sh'; type e5_mobile_start > /dev/null || exit 9; e5_mobile_start; wait"
-	[ $? = 9 ] && no "e5_mobile_start not defined"
+	[ $? = 9 ] && { no "e5_mobile_start not defined"; return 1; }
+	return 0
 }
 t_start_3g() {
 	setup start_3g
@@ -342,6 +344,73 @@ t_root_only() {
 	has "root"
 	mob off
 	check $rc = 1
+}
+
+# ---- final review fixes ----
+t_imei_crlf() {
+	setup imei_crlf
+	printf '123456789012345\r\n' > "$T/card/linux/e5-imei"
+	echo 'console=tty0 e5.mobile=1' > "$T/cmdline"
+	init_fn || return
+	[ "$(cat "$T/run/e5-mobile/e5-imei")" = 123456789012345 ] && [ "$(wc -c < "$T/run/e5-mobile/e5-imei")" = 15 ] ||
+		no "imei not normalised to 15 digits ($(wc -c < "$T/run/e5-mobile/e5-imei") bytes)"
+	[ "$(stat -c %a "$T/run/e5-mobile/e5-imei")" = 600 ] || no "imei mode"
+}
+t_boot_bad_imei() {
+	boot_setup boot_bad_imei
+	echo '65.00 20.00' > "$T/uptime"; printf '12345' > "$T/run/e5-mobile/e5-imei"
+	boot_run
+	check $rc = 0
+	state_is bad-imei
+	grep -q '^e5rt' "$T/calls" 2>/dev/null && no "e5rt started"
+	grep -q '12345' "$T/run/e5-mobile/boot.log" && no "IMEI digits in boot.log"
+}
+t_status_bad_imei() {
+	mob_setup status_bad_imei; fast
+	echo bad-imei > "$T/run/e5-mobile/state"
+	mob
+	has 'E:\linux\e5-imei'
+	has '15 digits'
+	case "$out" in *reboot*) no "says reboot" ;; esac
+}
+t_on_reprobe_registered() {
+	mob_setup on_reprobe_registered; fast
+	echo not-registered > "$T/run/e5-mobile/state"
+	printf '#!/bin/sh\necho "pnping $*" >> "%s/calls"\necho "res 0a: 42 e1 00 01 02 00 24 00 05"\n' "$T" > "$T/libexec/pnping"
+	chmod +x "$T/libexec/pnping"
+	mob on
+	check $rc = 0
+	has "data on 10.20.30.40"
+	state_is registered
+}
+t_on_reprobe_still_not() {
+	mob_setup on_reprobe_still_not; fast
+	echo not-registered > "$T/run/e5-mobile/state"
+	printf '#!/bin/sh\necho "res 0a: 42 e1 00 01 02 00 22 00 05"\n' > "$T/libexec/pnping"
+	chmod +x "$T/libexec/pnping"
+	mob on
+	check $rc = 1
+	has "not registered"
+	state_is not-registered
+}
+t_off_after_wifi_dns() {
+	mob_setup off_after_wifi_dns; fast
+	rm "$T/etc/resolv.conf"
+	mob on
+	echo 'nameserver 192.168.1.1' > "$T/etc/resolv.conf"	# wifi's dhcp came later
+	mob off
+	[ "$(cat "$T/etc/resolv.conf")" = "nameserver 192.168.1.1" ] || no "wifi dns lost: '$(cat "$T/etc/resolv.conf")'"
+	check ! -e "$T/run/e5-mobile/resolv.conf.saved"
+}
+t_off_after_e5gprs_died() {
+	mob_setup off_after_e5gprs_died; fast
+	mob on
+	g=$(cat "$T/run/e5-mobile/e5gprs.pid"); kill $g
+	n=0; while kill -0 $g 2>/dev/null && [ $n -lt 30 ]; do sleep 0.1; n=$((n + 1)); done
+	mob off
+	check $rc = 0
+	has "data already off"
+	[ "$(cat "$T/etc/resolv.conf")" = "nameserver 192.168.0.1" ] || no "resolv.conf not restored: $(cat "$T/etc/resolv.conf")"
 }
 
 # ---- runner ----

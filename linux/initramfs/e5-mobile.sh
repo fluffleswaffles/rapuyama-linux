@@ -30,12 +30,28 @@ apn() {
 	done
 }
 data_on() { alive "$RUN/e5gprs.pid"; }
+registered_now() {
+	case "$("$LIBEXEC/pnping" --send 0a e000 2>&1)" in
+	*"42 e1 00 "*" 00 24 00 "*|*"42 e1 00 "*" 00 24 01 "*) return 0 ;;
+	esac
+	return 1
+}
+# put the saved resolv.conf back, but only over the line `mobile on` wrote:
+# Wi-Fi's dhcp may have written its own since then (that one stays)
+restore_dns() {
+	[ -f "$RUN/resolv.conf.saved" ] || return 0
+	if [ -f "$RUN/resolv.conf.mobile" ] && cmp -s "$RUN/resolv.conf.mobile" "$ETC/resolv.conf"; then
+		cat "$RUN/resolv.conf.saved" > "$ETC/resolv.conf"
+	fi
+	rm -f "$RUN/resolv.conf.saved" "$RUN/resolv.conf.mobile"
+}
 field() { sed -n "s/^$1 //p" "$RUN/e5gprs.out" | head -n 1; }
 need_root() { [ "$(id -u)" = 0 ] || { say "mobile: run it as root" >&2; exit 1; }; }
 modem_line() {
 	case "$(state)" in
 	'') say "off (not a 3G boot)" ;;
 	no-imei) say "not started: no IMEI (write it to E:\\linux\\e5-imei)" ;;
+	bad-imei) say "not started: E:\\linux\\e5-imei must hold the 15 digits from *#06# (fix it, then start 3GLinuxE5 again)" ;;
 	too-late) say "not started: too late after boot, reboot with 3GLinuxE5" ;;
 	unavailable) say "not available (see $RUN/boot.log)" ;;
 	*) if alive "$RUN/e5rt.pid"; then echo running; else say "stopped (reboot to use mobile data)"; fi ;;
@@ -74,6 +90,10 @@ on() {
 	need_root
 	m=$(modem_line)
 	[ "$m" = running ] || { say "mobile: modem $m" >&2; exit 1; }
+	# the boot step gave up after 20 tries: ask the network once more
+	if [ "$(state)" = not-registered ] && registered_now; then
+		echo registered > "$RUN/state"
+	fi
 	[ "$(state)" = registered ] || { say "mobile: not registered (SIM, coverage?), try again later" >&2; exit 1; }
 	if data_on; then say "mobile: data already on ($(field IP))"; exit 0; fi
 	a=$(apn)
@@ -100,7 +120,8 @@ on() {
 	ip route add default dev "$ifn" metric 600
 	if [ -n "$dns" ] && ! ip route show default | grep -q 'dev wlan0'; then
 		[ -f "$RUN/resolv.conf.saved" ] || cp "$ETC/resolv.conf" "$RUN/resolv.conf.saved" 2>/dev/null || : > "$RUN/resolv.conf.saved"
-		say "nameserver $dns" > "$ETC/resolv.conf"
+		say "nameserver $dns" > "$RUN/resolv.conf.mobile"
+		cat "$RUN/resolv.conf.mobile" > "$ETC/resolv.conf"
 	fi
 	say "mobile: data on $ip4 ($ifn)"
 }
@@ -109,6 +130,7 @@ off() {
 	need_root
 	if ! data_on; then
 		rm -f "$RUN/e5gprs.pid"
+		restore_dns	# e5gprs may have died with data on
 		say "mobile: data already off"
 		exit 0
 	fi
@@ -119,10 +141,7 @@ off() {
 	rm -f "$RUN/e5gprs.pid"
 	ip route del default dev "$ifn" metric 600 2>/dev/null
 	ip addr flush dev "$ifn" 2>/dev/null
-	if [ -f "$RUN/resolv.conf.saved" ]; then
-		cat "$RUN/resolv.conf.saved" > "$ETC/resolv.conf"
-		rm -f "$RUN/resolv.conf.saved"
-	fi
+	restore_dns
 	say "mobile: data off"
 }
 

@@ -10,7 +10,7 @@
 #   4. registration (pnping, 20 x 5 s), then `mobile on`
 # e5rt must start within ~2 min of boot (later: the firmware's dealloc block /
 # reset 9) and only once per boot. /run/e5-mobile/state = starting,
-# registered, not-registered, no-imei, too-late, unavailable, stopped.
+# registered, not-registered, no-imei, bad-imei, too-late, unavailable, stopped.
 # The IMEI is read by e5rt from its file, never printed here.
 # overrides (tests/test-e5-mobile.sh): LIBEXEC RUN CMDLINE UPTIME SLEEP DBG IMG MOBILE KMSG
 LIBEXEC=${LIBEXEC:-/usr/libexec/e5}
@@ -35,6 +35,12 @@ up() { cut -d. -f1 "$UPTIME"; }
 
 [ -e "$RUN/started" ] && { log "the modem runtime already ran in this boot"; exit 0; }
 [ -s "$RUN/e5-imei" ] || { state no-imei "write the IMEI (*#06# in Symbian) to E:\\linux\\e5-imei"; exit 0; }
+imei=$(cat "$RUN/e5-imei")
+case "$imei" in
+[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+*) state bad-imei "E:\\linux\\e5-imei must hold the 15 digits from *#06#"; exit 0 ;;
+esac
+imei=
 [ "$(up)" -gt 90 ] && { state too-late "uptime $(up) s, the modem must start within 90 s of boot: reboot"; exit 0; }
 for f in e5rt pnping e5mem.ko rapuyama_sim.ko; do
 	[ -e "$LIBEXEC/$f" ] || { state unavailable "$LIBEXEC/$f missing"; exit 0; }
@@ -85,7 +91,7 @@ while [ $n -lt 20 ]; do
 	kill -0 $rt 2>/dev/null || exit 0
 	$SLEEP 5
 done
-[ -n "$reg" ] || { state not-registered "no network after 100 s (SIM, coverage?)"; exit 0; }
+[ -n "$reg" ] || { state not-registered "no network after 20 tries (SIM, coverage?); mobile on asks again"; exit 0; }
 "$LIBEXEC/pnping" --send 0a 3600 > /dev/null 2>&1
 state registered
 "$MOBILE" on >> "$RUN/boot.log" 2>&1
