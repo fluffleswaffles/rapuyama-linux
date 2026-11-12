@@ -33,6 +33,19 @@ apn() {
 	done
 }
 data_on() { alive "$RUN/e5gprs.pid"; }
+# no PDP context left in the modem (GPDS status "1a 00 00"): a new
+# activation started while the old one was still going down never came up
+# (phone, m2 2026-11-12: off, then on 1 s later). up to 20 tries, 1 s apart
+gpds_idle_wait() {
+	alive "$RUN/e5rt.pid" || return 0	# no modem, no context to wait for
+	n=0
+	while [ $n -lt 20 ]; do
+		case "$("$LIBEXEC/pnping" --send 31 19 2>&1)" in *" 1a 00 00 "*) return 0 ;; esac
+		n=$((n + 1))
+		$SLEEP 1
+	done
+	return 1
+}
 registered_now() {
 	case "$("$LIBEXEC/pnping" --send 0a e000 2>&1)" in
 	*"42 e1 00 "*" 00 24 00 "*|*"42 e1 00 "*" 00 24 01 "*) return 0 ;;
@@ -101,6 +114,7 @@ on() {
 	if data_on; then say "mobile: data already on ($(field IP))"; exit 0; fi
 	a=$(apn)
 	[ -n "$a" ] || { say "mobile: no APN (run mobile setup)" >&2; exit 1; }
+	gpds_idle_wait || say "mobile: the modem still reports a data context, trying anyway"
 	# 20 s after the attach: an activate right after it was never sent on the air
 	E5GPRS_DELAY=20 "$LIBEXEC/e5gprs" "$a" > "$RUN/e5gprs.out" 2>&1 &
 	echo $! > "$RUN/e5gprs.pid"
@@ -142,6 +156,7 @@ off() {
 	n=0
 	while data_on && [ $n -lt 10 ]; do $SLEEP 1; n=$((n + 1)); done
 	rm -f "$RUN/e5gprs.pid"
+	gpds_idle_wait || say "mobile: the modem still reports a data context"
 	ip route del default dev "$ifn" metric 600 2>/dev/null
 	ip addr flush dev "$ifn" 2>/dev/null
 	restore_dns

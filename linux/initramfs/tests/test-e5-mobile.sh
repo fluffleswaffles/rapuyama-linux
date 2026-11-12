@@ -496,6 +496,38 @@ t_apn_command() {
 	[ "$(cat "$T/etc/e5-apn")" = new.apn ] || no "/etc/e5-apn (overrides) not updated"
 }
 
+# GPDS status stub: context active for the first N status queries, then idle
+gpds_stub() {
+	cat > "$T/libexec/pnping" <<STUB
+#!/bin/sh
+echo "pnping \$*" >> "$T/calls"
+if [ "\$*" = "--send 31 19" ]; then
+	n=\$(cat "$T/gpdsn" 2>/dev/null || echo 0); n=\$((n + 1)); echo \$n > "$T/gpdsn"
+	if [ \$n -le $1 ]; then echo "rx 00:35 res 31: 42 1a 01 01 00 00 00 00 00 00 00 00 01 02 00"
+	else echo "rx 00:35 res 31: 42 1a 00 00 00 00 00 00 00 00 00 00 00 03"; fi
+fi
+STUB
+	chmod +x "$T/libexec/pnping"
+}
+t_off_waits_context_gone() {
+	mob_setup off_waits_context_gone; fast
+	gpds_stub 1000
+	mob on
+	rm -f "$T/gpdsn"; gpds_stub 3
+	mob off
+	check $rc = 0
+	[ "$(cat "$T/gpdsn" 2>/dev/null)" -ge 4 ] || no "off asked GPDS $(cat "$T/gpdsn" 2>/dev/null) times, wanted until idle (4)"
+	has "data off"
+}
+t_on_waits_leftover_context() {
+	mob_setup on_waits_leftover_context; fast
+	gpds_stub 2
+	mob on
+	check $rc = 0
+	[ "$(cat "$T/gpdsn" 2>/dev/null)" -ge 3 ] || no "on did not wait for the old context to go ($(cat "$T/gpdsn" 2>/dev/null) queries)"
+	has "data on"
+}
+
 # ---- runner ----
 ALL="${*:-$(sed -n 's/^t_\([a-z0-9_]*\)() {$/\1/p' "$0")}"
 for name in $ALL; do
