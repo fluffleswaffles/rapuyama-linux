@@ -48,14 +48,36 @@ static uint32_t secure_item_size(uint32_t *request,uint32_t *response){
 	item_last=item;item_count++;
 	(void)response;return 0xffffffff;
 }
+/* Every other secure service (28 functions c6369400..c636b47a, e.g. c636b106 reading "PA_DEVLOCK"
+ * from module 0x12 late in a session) first converts its secure-pool buffers with the host
+ * address service c63ebfba (slot +12 of the Symbian object *c681c5a0 = c80088f4, not mapped in
+ * e5rt: SIGSEGV at c63ebfd4 from lr c63693d5, xg33/xg40/xg42) and then enters the secure world
+ * through c636b908. Both are answered here: c63ebfba returns its argument, the secure entry
+ * returns -1 (the services' own failure value, as for the item-size query above); the item
+ * name table they search first is dropped (below). */
+static volatile uint32_t secure_calls,secure_reported,secure_last_arg;
+static uint32_t secure_entry(uint32_t handle,uint32_t op,uint32_t request,uint32_t zero){
+	(void)handle;(void)zero;secure_last_arg=op<<24|(request&0xffffff);secure_calls++;return 0xffffffff;
+}
 void isi_identity_report(void){
 	uint32_t count=item_count;
 	if(count!=item_reported && item_reported<16){fprintf(stderr,"secure item %08x (module 0x12): unavailable (%u queries)\n",item_last,count);item_reported=count;}
+	count=secure_calls;
+	if(count!=secure_reported && secure_reported<16){fprintf(stderr,"secure service call answered -1 (%u calls, last op %02x req ..%06x)\n",count,secure_last_arg>>24,secure_last_arg&0xffffff);secure_reported=count;}
 }
 int isi_identity_attach(void){
 	static const unsigned char item_entry[]={0xfe,0xb5,0x05,0x46,0x0e,0x46,0x9a,0x4c,0x9b,0x48,0xa0,0x60};
 	if(memcmp((void *)0xc636a9e6u,item_entry,sizeof(item_entry))){return -1;}
 	isi_thumb_redirect((void *)0xc636a9e6u,(uintptr_t)secure_item_size);
+	static const unsigned char v2p_entry[]={0x70,0xb5,0x05,0x46,0xb7,0x4c,0x20,0x68};
+	static const unsigned char call_entry[]={0x0f,0xb4,0x10,0xb5,0xff,0xf7,0xec,0xef};
+	if(memcmp((void *)0xc63ebfbau,v2p_entry,sizeof(v2p_entry)) || memcmp((void *)0xc636b908u,call_entry,sizeof(call_entry))){return -1;}
+	*(volatile uint16_t *)0xc63ebfbau=0x4770;	/* bx lr: the address comes back unchanged */
+	/* the services first look their item name up in a secure-shared table (*(c6831100 + 4) =
+	   cb294000 in the Symbian boot, not mapped in e5rt). With no table the lookup c636969a
+	   returns -2 and the service returns -1 before any secure call. */
+	if(*(volatile uint32_t *)0xc6831104u-0xcb000000u<0x1000000u){*(volatile uint32_t *)0xc6831104u=0;}
+	isi_thumb_redirect((void *)0xc636b908u,(uintptr_t)secure_entry);
 	if(!loaded){return 0;}
 	void *entry=(void *)READER;
 	static const unsigned char expected[]={0x70,0xb5,0x06,0x46,0xe7,0x4d,0xe5,0x48,0x0c,0x46,0xa8,0x60};

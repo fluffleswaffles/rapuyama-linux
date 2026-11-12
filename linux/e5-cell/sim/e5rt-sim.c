@@ -1008,6 +1008,12 @@ static void fw_summary(void)
 }
 static void fw_soak_report(void)
 {
+	if (getenv("E5RT_SECURE_TEST")) {	/* the late-session crash path: "PA_DEVLOCK" read c636b106 */
+		uint32_t (*devlock)(uint32_t, uint32_t) = (uint32_t (*)(uint32_t, uint32_t))(uintptr_t)0xc636b107u;
+		uint32_t r = devlock(0xc6b0002cu, 0xc6b00044u);
+		printf("secure selftest: PA_DEVLOCK read returned %08x\n", r);
+		isi_identity_report();
+	}
 	if (getenv("E5RT_DSP_GET_TEST")) {	/* the firmware's own invalidate path: c6564082(ptr, len) */
 		void (*invalidate)(uint32_t, uint32_t) = (void (*)(uint32_t, uint32_t))(uintptr_t)0xc6564083u;
 		invalidate(DSP_BUF + 0x5bd00, 0x40);
