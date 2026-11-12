@@ -26,6 +26,7 @@ arm-linux-gnu-gcc -march=armv6k -marm -static -nostdlib -fno-pie -no-pie \
 # userspace for /dev/vc-khrn (musl, clang + alpine sysroot)
 "$HERE/../vc-khrn/build.sh" "$KOUT/vc-khrn"
 "$HERE/../yamashell/build.sh" "$KOUT/yamashell"
+"$HERE/../charging/build.sh" "$KOUT/charging"
 python3 "$HERE/../../tools/vc_extract.py" "$KERN_BIN" "$KOUT/vcfw"
 # alpine armhf userspace with weston (cached, see alpine.sh)
 ROOTFS="$HERE/../../work/rootfs-alpine"
@@ -43,6 +44,10 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/khrntest %s 755 0 0\n' "$KOUT/vc-khrn/khrntest"
 	printf 'file /usr/bin/vctri %s 755 0 0\n' "$KOUT/vc-khrn/vctri"
 	printf 'file /usr/bin/vcwl %s 755 0 0\n' "$KOUT/vc-khrn/vcwl"
+	printf 'file /usr/bin/rapuyama-charge %s 755 0 0\n' "$KOUT/charging/rapuyama-charge"
+	if [ -n "${CHARGE_CALIBRATION:-}" ]; then
+		printf 'file /etc/rapuyama-charge.cal %s 600 0 0\n' "$(realpath "$CHARGE_CALIBRATION")"
+	fi
 	printf 'file /usr/bin/yamashell %s 755 0 0\n' "$KOUT/yamashell/yamashell"
 	printf 'file /usr/bin/yamashell-modem-state %s 755 0 0\n' "$KOUT/yamashell/yamashell-modem-state"
 	for app in "$HERE/../yamashell/apps"/*/; do
@@ -115,6 +120,12 @@ make -C "$KSRC" O="$KOUT" scripts_dtc
 for v in vc vc-565 vc-565-gpu vc-565-gpu-dma vc-565-gpu-dma-nohlt vc-565-charger vc-khrn vc-gl; do
 	"$KOUT/scripts/dtc/dtc" -I dts -O dtb -i "$HERE/../boot" \
 		-o "$KOUT/e6-$v.dtb" "$HERE/../boot/e6-$v.dts"
+	if [ -n "${CHARGE_CALIBRATION:-}" ]; then
+		node=/soc/i2c@20032500/charger@6b
+		phandle=$(fdtget -t u "$KOUT/e6-$v.dtb" /soc/gpio@20031900 phandle)
+		fdtput "$KOUT/e6-$v.dtb" "$node" nokia,em-control
+		fdtput -t i "$KOUT/e6-$v.dtb" "$node" nokia,em-stat-gpios "$phandle" 4 0
+	fi
 done
 
 echo
