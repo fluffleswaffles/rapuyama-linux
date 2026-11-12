@@ -8,6 +8,25 @@
 #
 # without it: the sign of life, sleep 30 s then a warm reboot (soc reset):
 # unlike a power off it keeps the ram, so ramread.sis can pull the whole log
+
+# E5 3G boot (3GLinuxE5 -> e5-3g.dtb, e5.mobile=1 on the cmdline): the IMEI
+# and APN the user wrote to E:\linux\ (nothing reads them from symbian) go to
+# /run/e5-mobile for the boot step and `mobile`; the IMEI file stays mode 600.
+# called by e5_wlan_files with the card's p1 mounted; a LinuxE5 boot copies
+# nothing. RUN, CMDLINE: test overrides (tests/test-e5-mobile.sh)
+e5_mobile_files() {
+	grep -q 'e5\.mobile=1' "${CMDLINE:-/proc/cmdline}" || return 0
+	r=${RUN:-/run/e5-mobile}
+	mkdir -p "$r"
+	if [ -f "$1/linux/e5-imei" ]; then
+		(umask 077; cp "$1/linux/e5-imei" "$r/e5-imei") && chmod 600 "$r/e5-imei"
+	fi
+	[ -f "$1/linux/e5-apn" ] && cp "$1/linux/e5-apn" "$r/e5-apn"
+	return 0
+}
+# the tests source this file for the functions above, nothing below runs
+[ -n "$E5_INIT_TEST" ] && return
+
 /bin/busybox --install -s /bin
 /bin/busybox --install -s /sbin
 mkdir -p /proc /sys /dev /tmp /root /run
@@ -197,6 +216,7 @@ e5_wlan_files() {
 	fi
 	# the user's own /etc/e5-wlan-mac wins
 	[ -f "$c/e5-wlan-mac" ] && [ ! -f /etc/e5-wlan-mac ] && cp "$c/e5-wlan-mac" /etc/e5-wlan-mac
+	e5_mobile_files /tmp/card
 	umount /tmp/card
 	[ -e /sys/class/net/wlan0 ] && return
 	[ -f "$fwd/wl1251-nvs.bin" ] || { log "wlan: no firmware (run LinuxE5 once with E:\\linux\\ on the card)"; return; }
