@@ -35,7 +35,13 @@ Live environment (all optional except the first three for registration):
 | `E5RT_SIM_TRACE=1` | APDU headers, status words, IRQ/HAL timer/register/PMIC events (never data phases) |
 | `E5RT_MSG_TRACE=1` / `=data` | inter-task messages from the first GPDS request / first uplink packet (`=all`: offline) |
 | `E5RT_OS_TRACE=1` | OS timer fires |
+| `E5RT_HS_TRACE=1` (+ `E5RT_MSG_TRACE=data`, `E5RT_HS_DIR`) | Symbian cache-service stubs (host slots 0x58..0x68) counted with arguments, tx 06 payloads, forked snapshots of private + real ISASW data / DSP window at arming and 1 s / 3 s into CELL_DCH; `--os-soak` with it = trap selftest |
 | `E5RT_POOL_DUMP=<file>` | on SIGTERM, e5rt's copy of the second DSP pool |
+| `E5RT_NO_UL_PUT=1` | do not write the HSUPA/DCH uplink blocks named in DSP message 3b/61 into the real DSP window (kernel `RAPUYAMA_MDI_DSP_PUT`; without it DCH uplink is empty) |
+| `E5RT_NO_DSP_GET=1` | do not refresh DSP-written buffers (HSDPA MAC-hs PDUs) from the real window when the firmware invalidates them (c6658dcc, kernel `RAPUYAMA_MDI_DSP_GET`; without it HSDPA PDUs are stale) |
+| `E5RT_FW_TRACE=all` / `id,id,..` (+ `E5RT_FW_TRACE_OFF`) | the firmware's own debug prints (trace ids 0xa0..0xff, e.g. af RRC, a5 errors, b3 RLC, c9 HS config) as `fw` lines. Keep it light: per-frame ids (b8 b5 c4 c5 c6 bc be bf) or `all` stall the DSP link |
+| `E5RT_TX_DUMP=1` | full firmware -> DSP setup payloads (`txfull`) + address scan (`txptr`) |
+| `E5RT_INV_LOG=1` | `inv` (invalidate ranges), `dltb` / `ultb` (DCH blocks) lines; too heavy at HSDPA rates |
 | `E5RT_DSP_DIRECT=1` | map the real DSP window (kernel 4, mdi buffers mode 2). BREAKS the DSP link: do not use |
 
 Packet data: `../e5gprs.c` (`E5GPRS_DELAY=20 e5gprs <apn>`), status in ../README.md.

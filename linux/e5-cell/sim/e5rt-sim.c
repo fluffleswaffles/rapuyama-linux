@@ -38,6 +38,8 @@
 #include "os_timer_runtime.h"
 #include "identity_runtime.h"
 #include "kasumi_runtime.h"
+#include "thumb_redirect.h"
+#include <ctype.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -191,6 +193,9 @@ static void trap(uint32_t site, void (*handler)())
  * printing happens in the serve loop. Trampoline = the 8 original bytes + jump back to the bl. */
 #define FW_SEND_TASK 0xc63bdbe4u
 static int msg_trace, msg_armed;
+static int hs_trace;	/* E5RT_HS_TRACE, below */
+static uint32_t hs_d8_ms;
+static unsigned dch_d8, dch_e8, dch_e8_tb, dch_ul61;	/* armed: d8 slot reports, e8 indications (with a TB field not ff), uplink 61 naming a buffer */
 static struct { uint32_t ms; uint8_t to, from, n, head[64]; } msgs[2048];
 static unsigned msgs_l1;	/* L1 transport-block messages captured at 64 bytes (first 400) */
 static unsigned msgs_head, msgs_tail, msgs_printed, msgs_dropped;
@@ -200,12 +205,27 @@ static uint64_t monotonic_ms(void);
 static uint32_t send_task_hook(uint32_t task, uint32_t message)
 {
 	if (msg_armed) {
+		if (message >= DATA && message + 30 <= DATA + DATA_SIZE && ((const uint8_t *)(uintptr_t)message)[3] == 0xed) {
+			const uint8_t *m = (const uint8_t *)(uintptr_t)message;
+			if (m[9] == 0xd8)
+				dch_d8++;
+			else if (m[9] == 0xe8) {
+				dch_e8++;
+				if ((m[24] & m[25] & m[26] & m[27]) != 0xff)
+					dch_e8_tb++;
+			} else if (m[9] == 0x61 && m[7] == 0x3b && (m[26] | m[27] | m[28] | m[29]))
+				dch_ul61++;
+		}
+		if (hs_trace && !hs_d8_ms && message >= DATA && message + 10 <= DATA + DATA_SIZE &&
+		    ((const uint8_t *)(uintptr_t)message)[3] == 0xed && ((const uint8_t *)(uintptr_t)message)[9] == 0xd8)
+			hs_d8_ms = (uint32_t)monotonic_ms();	/* first CELL_DCH slot report */
 		if (msgs_head - msgs_tail < 2048) {
 			typeof(msgs[0]) *r = &msgs[msgs_head % 2048];
 			r->ms = (uint32_t)monotonic_ms();
 			r->to = task;
 			r->from = current_task();
 			r->n = message >= DATA && message + 64 <= DATA + DATA_SIZE ? 10 : 0;
+			r->head[0] = r->head[3] = r->head[9] = 0;
 			if (r->n) {
 				memcpy(r->head, (void *)(uintptr_t)message, 64);
 				if (r->head[3] == 0x31 || r->head[3] == 0xc3)	/* GPDS: 24 bytes (no identities) */
@@ -297,10 +317,36 @@ static void periph_check(int armed)
 		printf("\n");
 	}
 }
+/* CELL_DCH downlink blocks: the d8 slot report of every 4th frame (40 ms TTI) carries a decoded
+ * transport block inline: 00 18 00 01 <bits> 00 10 <seq> ff ff ff ff <bytes> <data> (xg32: 148-bit
+ * signalling blocks, RLC AM on SRB2 with polls the network repeats). Printed for the whole run as
+ * "dltb" lines (the full message trace stops at 6000), first 24 data bytes. */
+static int inv_log_on;	/* E5RT_INV_LOG=1: inv / dltb / ultb lines (heavy at HSDPA rates) */
+static unsigned dl_tbs, dl_tb_lines;
+static void dl_tb_line(const uint8_t *h, uint32_t ms)
+{
+	for (unsigned i = 10; i + 16 <= 64; i += 2) {
+		if (h[i] || h[i + 1] != 0x18 || h[i + 2] || h[i + 3] != 0x01)
+			continue;
+		unsigned bits = h[i + 4] << 8 | h[i + 5], bytes = h[i + 14] << 8 | h[i + 15];
+		if (!bits)
+			return;
+		dl_tbs++;
+		if (!inv_log_on || dl_tb_lines++ >= 4000)
+			return;
+		printf("dltb %u bits %u bytes %u:", ms, bits, bytes);
+		for (unsigned j = i + 16; j < 64 && j < i + 16 + bytes && j < i + 40; j++)
+			printf(" %02x", h[j]);
+		printf("\n");
+		return;
+	}
+}
 static void msg_trace_flush(void)
 {
 	while (msgs_tail != msgs_head) {
 		typeof(msgs[0]) *r = &msgs[msgs_tail++ % 2048];
+		if (r->head[3] == 0xed && r->head[9] == 0xd8 && r->head[0] == 0x12)
+			dl_tb_line(r->head, r->ms);
 		if (msgs_printed++ >= 6000)
 			continue;
 		printf("msg %u %02x<%02x:", r->ms, r->to, r->from);
@@ -308,6 +354,183 @@ static void msg_trace_flush(void)
 			printf(" %02x", r->head[i]);
 		printf("\n");
 	}
+}
+
+/* E5RT_HS_TRACE=1 (with E5RT_MSG_TRACE=data): what the firmware shares with the DSP outside MDI
+ * descriptor payloads, to compare a CELL_DCH setup with HSDPA on and off.
+ * - The 5 Symbian cache services (host slots 0x58..0x68, bse_sisa.c sos_dispatcher: CleanDCache,
+ *   InvalidateICache, InvalidateDCache, CleanDCacheArea, CleanInvalidateDCacheArea) are bx-lr stubs:
+ *   here they count and log their arguments (an area the firmware cleans is one the DSP will read).
+ * - tx descriptor type 06 payloads (first 64 bytes).
+ * - Snapshots (fork: copy-on-write view of e5rt's private copies + the real memory read at once):
+ *   private ISASW data / DSP window and the real ones (pa 0x1fd50000 via /dev/mem, pa 0x10140000 via
+ *   the mdi mmap, read-only) at arming, 1 s and 3 s after the first CELL_DCH slot report (d8)
+ *   or 20 s after arming without one. Files in E5RT_HS_DIR (default /tmp/hs). */
+static volatile sig_atomic_t hs_stop;	/* SIGTERM: leave the serve loop, print the summary */
+static void hs_term(int sig) { (void)sig; hs_stop = 1; }
+static const char *hs_dir = "/tmp/hs";
+static uint32_t hs_arm_ms, hs_done;	/* hs_done bits: 1 base, 2 dch1, 4 dch3, 8 no-d8 */
+static struct { uint32_t ms, a, b, c; uint8_t op; } hs_ops[1024];
+static unsigned hs_head, hs_tail, hs_dropped, hs_printed, hs_txp;
+static unsigned hs_count[5];
+static const char *const hs_name[5] = {"CleanDCache", "InvalidateICache", "InvalidateDCache", "CleanDCacheArea", "CleanInvalidateDCacheArea"};
+static void hs_record(uint8_t op, uint32_t a, uint32_t b, uint32_t c)
+{
+	hs_count[op]++;
+	if (hs_head - hs_tail < 1024) {
+		typeof(hs_ops[0]) *r = &hs_ops[hs_head++ % 1024];
+		r->ms = (uint32_t)monotonic_ms();
+		r->op = op; r->a = a; r->b = b; r->c = c;
+	} else
+		hs_dropped++;
+}
+/* entered by "ldr r3,[pc,#0]; bx r3" (r0..r2 = the caller's arguments). The bx-lr stubs changed
+ * nothing, so the veneers keep every register and the flags and record on a private 8 KB stack
+ * (28 bytes of the firmware task stack; first phone run of a plain C hook died, xg26). */
+__attribute__((used)) void hs_record_c(uint32_t op, uint32_t a, uint32_t b, uint32_t c) { hs_record(op, a, b, c); }
+__attribute__((used)) char hs_stack[8192] __attribute__((aligned(8)));
+#define HS_VENEER(n) \
+	".arm\n.type hs_v" #n ",%function\nhs_v" #n ":\n" \
+	"push {r0-r2, r4, r5, r12, lr}\n" \
+	"mrs r5, cpsr\n" \
+	"mov r4, sp\n" \
+	"ldr sp, =hs_stack+8192\n" \
+	"mov r3, r2\nmov r2, r1\nmov r1, r0\nmov r0, #" #n "\n" \
+	"bl hs_record_c\n" \
+	"mov sp, r4\n" \
+	"msr cpsr_f, r5\n" \
+	"pop {r0-r2, r4, r5, r12, lr}\n" \
+	"bx lr\n.ltorg\n"
+__asm__(".text\n.balign 4\n" HS_VENEER(0) HS_VENEER(1) HS_VENEER(2) HS_VENEER(3) HS_VENEER(4));
+void hs_v0(void), hs_v1(void), hs_v2(void), hs_v3(void), hs_v4(void);
+static void hs_install(void)
+{
+	static const uint32_t site[5] = {0xc63ec10c, 0xc63ec13e, 0xc63ec17c, 0xc63ec1ba, 0xc63ec1f8};
+	static void (*const hook[5])(void) = {hs_v0, hs_v1, hs_v2, hs_v3, hs_v4};
+	for (unsigned i = 0; i < 5; i++) {	/* patches() wrote bx lr over the push: check it + the next insn */
+		const unsigned char *s = (const unsigned char *)(uintptr_t)site[i];
+		if (s[0] != 0x70 || s[1] != 0x47 || s[3] != (i ? 0x46 : 0x4c)) {
+			fprintf(stderr, "hs trace: unexpected cache wrapper at %08x, not installed\n", site[i]);
+			return;
+		}
+	}
+	for (unsigned i = 0; i < 5; i++) {
+		uint32_t s = site[i];
+		if (s & 2) {
+			thumb16(s, 0x46c0);	/* nop, then the trap on the next word */
+			s += 2;
+		}
+		trap(s, hook[i]);
+	}
+	hs_trace = 1;
+	if (getenv("E5RT_HS_DIR"))
+		hs_dir = getenv("E5RT_HS_DIR");
+	mkdir(hs_dir, 0700);
+	signal(SIGCHLD, SIG_IGN);
+	struct sigaction st = {.sa_handler = hs_term};
+	sigaction(SIGTERM, &st, NULL);
+	fprintf(stderr, "hs trace installed (cache services, tx 06 payloads, snapshots in %s)\n", hs_dir);
+}
+static void hs_file(const char *tag, const char *what, const void *p, size_t size)
+{
+	char path[256];
+	snprintf(path, sizeof(path), "%s/%s-%s.bin", hs_dir, tag, what);
+	int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+	if (fd < 0)
+		return;
+	for (size_t done = 0; done < size;) {
+		ssize_t n = write(fd, (const char *)p + done, size - done);
+		if (n <= 0)
+			break;
+		done += n;
+	}
+	close(fd);
+}
+/* real memory, read only inside the snapshot child: a mapping of the DSP window kept for the whole
+ * run (os24/os25, like E5RT_DSP_DIRECT in xg19) killed the DSP within a second with HSDPA on
+ * (tag-0 type 16 buffer 1600b039 at dsp 0x140000, then silence, reset 9; xg27 x2). pa != 0: an
+ * uncached /dev/mem mapping (below Linux RAM), else / on failure the e5mem debugfs blob at off. */
+static void hs_real(const char *tag, const char *what, const char *blob, size_t off, size_t size, uint32_t pa)
+{
+	char path[256];
+	snprintf(path, sizeof(path), "%s/%s-%s.bin", hs_dir, tag, what);
+	if (pa) {
+		int fd = open("/dev/mem", O_RDONLY | O_SYNC | O_CLOEXEC);
+		void *p = fd < 0 ? MAP_FAILED : mmap(NULL, size, PROT_READ, MAP_SHARED, fd, pa);
+		if (fd >= 0)
+			close(fd);
+		if (p != MAP_FAILED) {
+			hs_file(tag, what, p, size);
+			munmap(p, size);
+			return;
+		}
+	}
+	static char buf[65536];
+	snprintf(buf, sizeof(buf), "/sys/kernel/debug/e5mem/%s", blob);
+	int in = open(buf, O_RDONLY), out = in < 0 ? -1 : open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+	if (in >= 0 && off && lseek(in, off, SEEK_SET) != (off_t)off) {
+		close(in);
+		in = -1;
+	}
+	for (size_t done = 0; in >= 0 && out >= 0 && done < size;) {
+		ssize_t n = read(in, buf, size - done < sizeof(buf) ? size - done : sizeof(buf));
+		if (n <= 0 || write(out, buf, n) != n)
+			break;
+		done += n;
+	}
+	if (in >= 0)
+		close(in);
+	if (out >= 0)
+		close(out);
+}
+static void hs_snapshot(const char *tag)
+{
+	printf("hs snapshot %s at %u ms (d8 %u, armed %u)\n", tag, (uint32_t)monotonic_ms(), hs_d8_ms, hs_arm_ms);
+	fflush(stdout);
+	pid_t pid = fork();
+	if (pid == 0) {	/* child: private copies frozen at the fork, real memory read now */
+		alarm(0);
+		hs_file(tag, "priv-ap", (const void *)(uintptr_t)DATA, DATA_SIZE);
+		hs_file(tag, "priv-dsp", (const void *)(uintptr_t)DSP_BUF, 0x80000);
+		hs_real(tag, "real-ap", "1fd50000", 0, DATA_SIZE, 0);	/* /dev/mem refuses it: e5mem */
+		hs_real(tag, "real-dsp", "10000000", 0x140000, 0x80000, 0);	/* e5mem too: no new mapping of the DSP window (its kernel alias already existed in the good xg28) */
+		_exit(0);
+	}
+	if (pid < 0)
+		perror("hs snapshot fork");
+}
+static void hs_service(int armed)
+{
+	uint32_t now = (uint32_t)monotonic_ms();
+	if (armed && !(hs_done & 1)) {
+		hs_done |= 1;
+		hs_arm_ms = now;
+		hs_snapshot("base");
+	}
+	if (hs_d8_ms && !(hs_done & 2) && now >= hs_d8_ms + 1000) {
+		hs_done |= 2;
+		hs_snapshot("dch1");
+	}
+	if (hs_d8_ms && !(hs_done & 4) && now >= hs_d8_ms + 3000) {
+		hs_done |= 4;
+		hs_snapshot("dch3");
+	}
+	if (hs_arm_ms && !hs_d8_ms && !(hs_done & 8) && now >= hs_arm_ms + 20000) {
+		hs_done |= 8;
+		hs_snapshot("nod8");
+	}
+	while (hs_tail != hs_head) {
+		typeof(hs_ops[0]) *r = &hs_ops[hs_tail++ % 1024];
+		if (hs_printed++ < 4000)
+			printf("cache %u %s %08x %08x %08x\n", r->ms, hs_name[r->op], r->a, r->b, r->c);
+	}
+}
+static void hs_summary(void)
+{
+	printf("cache services:");
+	for (unsigned i = 0; i < 5; i++)
+		printf(" %s=%u", hs_name[i], hs_count[i]);
+	printf(" (dropped %u, printed %u, tx06 payloads %u)\n", hs_dropped, hs_printed, hs_txp);
 }
 
 /* upstream prepare.py's code patches, at the E5 addresses (core-map.md) */
@@ -376,6 +599,13 @@ static void failure(int sig, siginfo_t *info, void *context)
 			 (unsigned long)(uintptr_t)info->si_addr, (unsigned long)uc->uc_mcontext.arm_pc,
 			 (unsigned long)uc->uc_mcontext.arm_lr, (unsigned long)uc->uc_mcontext.arm_sp);
 	write(2, text, n);
+	if (hs_trace) {	/* the last cache-service calls before the fault */
+		n = snprintf(text, sizeof(text), "hs counts %u %u %u %u %u, task %02x, last:", hs_count[0], hs_count[1], hs_count[2], hs_count[3], hs_count[4], ((uint8_t *)(uintptr_t)SCHED)[2]);
+		for (unsigned i = hs_head > 4 ? hs_head - 4 : 0; i < hs_head && n < 180; i++)
+			n += snprintf(text + n, sizeof(text) - n, " %u:%08x/%x", hs_ops[i % 1024].op, hs_ops[i % 1024].a, hs_ops[i % 1024].b);
+		text[n++] = '\n';
+		write(2, text, n);
+	}
 	uint32_t sp = uc->uc_mcontext.arm_sp;
 	if (sp >= DATA && sp + 64 <= DATA + DATA_SIZE && !(sp & 3)) {	/* return addresses for the diagnosis */
 		n = snprintf(text, sizeof(text), "stack:");
@@ -580,7 +810,319 @@ struct rapuyama_mdi_status {
 };
 #define RAPUYAMA_MDI_STATUS _IOR('M', 0, struct rapuyama_mdi_status)
 #define RAPUYAMA_MDI_BUFFERS _IOW('M', 1, uint32_t)
+struct rapuyama_mdi_put { uint32_t offset, size; uint64_t buffer; };
+#define RAPUYAMA_MDI_DSP_PUT _IOW('M', 2, struct rapuyama_mdi_put)
+/* CELL_DCH uplink: the firmware writes each transport block into one of 4 buffers of 0xa84 bytes
+ * in its DSP window copy (dsp 0x171834 + n * 0xa84) and names the buffer in a type 06 message to
+ * the DSP (resource 0x3b, message 0x61, big-endian DSP address at payload +26). Copy mode never
+ * wrote them to the real window: the DSP sent empty blocks, so on DCH no RRC completion or RLC
+ * status reached the network (xg29 snapshots). Written through the kernel (RAPUYAMA_MDI_DSP_PUT)
+ * before the message goes out. E5RT_NO_UL_PUT=1 turns it off. */
+#define UL_TB_SIZE 0xa84u
+static int ul_put = 1;
+static unsigned ul_puts, ul_put_errors;
+static void ul_tb_put(int fd, const uint8_t *payload, uint32_t size)
+{
+	if (!ul_put || size < 30 || payload[7] != 0x3b || payload[9] != 0x61)
+		return;
+	uint32_t dsp = (uint32_t)payload[26] << 24 | payload[27] << 16 | payload[28] << 8 | payload[29];
+	if (dsp < 0x140000u || dsp >= 0x1c0000u)
+		return;
+	/* payload +22: block size in bits (0x162 = 354 -> the 44-byte block of xg29, 0x402 = 1026 ->
+	   128 bytes); the block is 16-bit words plus one trailer word. os27 copied the whole 0xa84
+	   buffer over words the DSP writes itself (xg30: DCH, no data). */
+	uint32_t bits = (uint32_t)payload[22] << 8 | payload[23];
+	if (!bits)
+		return;
+	uint32_t offset = dsp - 0x140000u, n = ((bits + 15) / 16 * 2 + 2 + 3) & ~3u;
+	if (n > UL_TB_SIZE)
+		n = UL_TB_SIZE;
+	if (n > 0x80000u - offset)
+		n = 0x80000u - offset;
+	struct rapuyama_mdi_put put = {.offset = offset, .size = n, .buffer = (uintptr_t)(DSP_BUF + offset)};
+	if (ioctl(fd, RAPUYAMA_MDI_DSP_PUT, &put)) {
+		if (ul_put_errors++ < 3)
+			fprintf(stderr, "uplink TB put dsp %06x: %s\n", dsp, strerror(errno));
+		if (errno == ENOTTY) {
+			fprintf(stderr, "kernel without RAPUYAMA_MDI_DSP_PUT: DCH uplink blocks stay empty\n");
+			ul_put = 0;
+		}
+		return;
+	}
+	if (inv_log_on && ul_puts < 3000) {
+		printf("ultb %u dsp %06x bits %u msg:", (uint32_t)monotonic_ms(), dsp, bits);
+		for (uint32_t i = 10; i < 30; i++)
+			printf(" %02x", payload[i]);
+		printf(" data:");
+		for (uint32_t i = 0; i < n && i < 48; i++)
+			printf(" %02x", ((const uint8_t *)(uintptr_t)(DSP_BUF + offset))[i]);
+		printf("\n");
+	}
+	if (ul_puts++ < 5) {
+		/* first few: read the real window back through e5mem (debugfs, no lasting mapping) */
+		static uint8_t back[UL_TB_SIZE];
+		int in = open("/sys/kernel/debug/e5mem/10000000", O_RDONLY);
+		ssize_t got = in < 0 ? -1 : pread(in, back, n, 0x140000 + offset);
+		if (in >= 0)
+			close(in);
+		printf("uplink TB put dsp %06x (%u bits, %u bytes): readback %s\n", dsp, bits, n,
+		       got != (ssize_t)n ? "unavailable" : memcmp(back, (void *)(uintptr_t)(DSP_BUF + offset), n) ? "MISMATCH" : "ok");
+	}
+}
+/* E5RT_TX_DUMP=1: every firmware -> DSP payload of a resource other than 3b in full (first 1024
+ * bytes, 1500 lines: the DCH setup messages were only ever logged to 64 bytes), and any 32-bit
+ * value in any payload that looks like an address the DSP could follow into memory copy mode does
+ * not refresh (AP data as the DSP sees it 0fd50000.., the DSP window 140000.. big-endian, or a
+ * firmware virtual address in DATA / DSP_BUF). */
+static int tx_dump;
+static unsigned tx_dumped, tx_ptrs;
+static void tx_scan(const uint8_t *b, uint32_t size)
+{
+	uint32_t ms = (uint32_t)monotonic_ms();
+	if (size > 10 && b[7] != 0x3b && tx_dumped < 1500) {
+		tx_dumped++;
+		printf("txfull %u %u:", ms, size);
+		for (uint32_t i = 0; i < size && i < 1024; i++)
+			printf(" %02x", b[i]);
+		printf("\n");
+	}
+	for (uint32_t o = 10; o + 4 <= size && tx_ptrs < 300; o += 2) {
+		uint32_t be = (uint32_t)b[o] << 24 | b[o + 1] << 16 | b[o + 2] << 8 | b[o + 3];
+		uint32_t le = (uint32_t)b[o + 3] << 24 | b[o + 2] << 16 | b[o + 1] << 8 | b[o];
+		const char *what = NULL;
+		uint32_t v = 0;
+		if (be - 0x0fd50000u < DATA_SIZE) what = "ap-be", v = be;
+		else if (le - 0x0fd50000u < DATA_SIZE) what = "ap-le", v = le;
+		else if (be - DATA < DATA_SIZE || le - DATA < DATA_SIZE) what = "virt-data", v = be - DATA < DATA_SIZE ? be : le;
+		else if (be - DSP_BUF < 0x80000u || le - DSP_BUF < 0x80000u) what = "virt-dsp", v = be - DSP_BUF < 0x80000u ? be : le;
+		else if (be - 0x140000u < 0x80000u && !(b[7] == 0x3b && b[9] == 0x61 && o == 26)) what = "dsp-be", v = be;
+		if (what) {
+			tx_ptrs++;
+			printf("txptr %u res %02x msg %02x size %u off %u %s %08x\n", ms, b[7], b[9], size, o, what, v);
+		}
+	}
+}
+/* DCH timing (os31): the firmware answers each DSP e8 with the uplink 61 for the next frame; a
+ * late answer leaves the frame empty. Microsecond histograms: rx descriptor read -> 61 published
+ * (after the ring write), poll wake -> first rx read, gaps between rx reads (the DSP reports every
+ * 10 ms on DCH). */
+static uint64_t t_wake, t_last_rx;
+static int rx_since_wake;
+static unsigned lat61[6], wake_rx[6], rx_gap_long;
+static uint32_t lat61_max, wake_rx_max, rx_gap_max;
+static uint64_t now_us(void)
+{
+	struct timespec t;
+	clock_gettime(CLOCK_MONOTONIC, &t);
+	return (uint64_t)t.tv_sec * 1000000u + t.tv_nsec / 1000;
+}
+static void lat_add(unsigned *h, uint32_t *max, uint32_t us)
+{
+	h[us < 1000 ? 0 : us < 2000 ? 1 : us < 4000 ? 2 : us < 8000 ? 3 : us < 16000 ? 4 : 5]++;
+	if (us > *max)
+		*max = us;
+}
+/* E5RT_FW_TRACE=all | id,id,.. (hex 0xa0..0xff): the firmware's own debug prints. Every trace site
+ * is `if (flags[id - 0xa0]) { set id; vsnprintf-style print }` with the flag bytes at
+ * *(void **)0xc685978c + 0xa0 (all 0 in a Symbian boot); the formatted text goes to the output
+ * hook c63552d4 (r0 = length, r1 = id << 16, r2 = text). The runtime sets the flags in its
+ * private data and redirects c63552d4 into a ring (firmware stack: copy only), printed as
+ * "fw <ms> <id>: text" by the serve loop. E5RT_FW_TRACE_OFF=id,.. clears chosen ids. */
+#define FW_DSP_INVALIDATE 0xc6658dccu	/* DSP get hook, defined with mdi below */
+static unsigned dsp_get_calls;
+static uint32_t dsp_get_last[2];
+void dsp_get_veneer(void);
+#define FW_TRACE_FLAGS 0xc685978cu
+#define FW_TRACE_SINK 0xc63552d4u
+static uint8_t fw_on[96];
+static int fw_trace;
+static struct { uint32_t ms; uint16_t id, n; char text[156]; } fw_ring[1024];
+static volatile unsigned fw_head, fw_tail, fw_dropped;
+static unsigned fw_printed, fw_count[96];
+__attribute__((used)) void fw_sink_c(uint32_t length, uint32_t id, const char *text)
+{
+	if (fw_head - fw_tail < 1024) {
+		typeof(fw_ring[0]) *r = &fw_ring[fw_head % 1024];
+		r->ms = (uint32_t)monotonic_ms();
+		r->id = (uint16_t)(id >> 16);
+		r->n = length > sizeof(r->text) ? sizeof(r->text) : (uint16_t)length;
+		if ((uintptr_t)text >= 0xc0000000u)
+			memcpy(r->text, text, r->n);
+		else
+			r->n = 0;
+		fw_head++;
+	} else
+		fw_dropped++;
+}
+/* entered by isi_thumb_redirect's "bx pc; ldr pc" from firmware code on a firmware task stack:
+ * like the hs veneers (xg26, and xg36 died the same way with a plain C sink: pc 8009c3e8 from a
+ * stale frame), keep registers and flags and run the C part on a private stack. Returns 0. */
+__attribute__((used)) char fw_stack[8192] __attribute__((aligned(8)));
+__asm__(".text\n.balign 4\n.arm\n.type fw_veneer,%function\nfw_veneer:\n"
+	"push {r1-r5, r12, lr}\n"
+	"mrs r5, cpsr\n"
+	"mov r4, sp\n"
+	"ldr sp, =fw_stack+8192\n"
+	"bl fw_sink_c\n"
+	"mov sp, r4\n"
+	"msr cpsr_f, r5\n"
+	"pop {r1-r5, r12, lr}\n"
+	"mov r0, #0\n"
+	"bx lr\n.ltorg\n");
+void fw_veneer(void);
+static void fw_flags(void)
+{
+	uint32_t base = *(volatile uint32_t *)(uintptr_t)FW_TRACE_FLAGS;
+	if (base - DATA >= DATA_SIZE - 0x100)
+		return;
+	for (unsigned i = 0; i < 96; i++)
+		((volatile uint8_t *)(uintptr_t)(base + 0xa0))[i] = fw_on[i];
+}
+static void fw_flush(void)
+{
+	while (fw_tail != fw_head) {
+		typeof(fw_ring[0]) *r = &fw_ring[fw_tail++ % 1024];
+		if (r->id >= 0xa0 && r->id < 0x100)
+			fw_count[r->id - 0xa0]++;
+		if (fw_printed++ >= 60000)
+			continue;
+		printf("fw %u %02x:", r->ms, r->id);
+		if (r->n && (unsigned char)r->text[0] >= 0x20) {
+			for (unsigned i = 0; i < r->n && r->text[i]; i++)
+				putchar(r->text[i] >= 0x20 && r->text[i] < 0x7f ? r->text[i] : '.');
+		} else {	/* binary trace record */
+			printf(" [%u]", r->n);
+			for (unsigned i = 0; i < r->n && i < 32; i++)
+				printf(" %02x", (unsigned char)r->text[i]);
+		}
+		putchar('\n');
+	}
+}
+static void fw_summary(void)
+{
+	printf("fw trace: %u lines, %u dropped; per id:", fw_printed, fw_dropped);
+	for (unsigned i = 0; i < 96; i++)
+		if (fw_count[i])
+			printf(" %02x=%u", 0xa0 + i, fw_count[i]);
+	printf("\n");
+}
+static void fw_soak_report(void)
+{
+	if (getenv("E5RT_DSP_GET_TEST")) {	/* the firmware's own invalidate path: c6564082(ptr, len) */
+		void (*invalidate)(uint32_t, uint32_t) = (void (*)(uint32_t, uint32_t))(uintptr_t)0xc6564083u;
+		invalidate(DSP_BUF + 0x5bd00, 0x40);
+		printf("dsp get selftest: calls %u, last %08x..%08x\n", dsp_get_calls, dsp_get_last[0], dsp_get_last[1]);
+	}
+	/* end-to-end check: the firmware's own id-0xa5 print wrapper (vsnprintf + output hook) */
+	void (*print_a5)(const char *, ...) = (void (*)(const char *, ...))(uintptr_t)0xc6563b85u;
+	static const char fmt[] = "fw trace selftest %d %s";
+	print_a5(fmt, 42, "ok");
+	fw_flush();
+	fw_summary();
+}
+static void fw_trace_install(const char *spec)
+{
+	const unsigned char entry[] = {0xf8, 0xb5, 0x05, 0x46, 0x0e, 0x46, 0x17, 0x46};
+	if (memcmp((void *)(uintptr_t)FW_TRACE_SINK, entry, sizeof(entry))) {
+		fprintf(stderr, "fw trace: unexpected output hook entry, not installed\n");
+		return;
+	}
+	if (!strcmp(spec, "all"))
+		memset(fw_on, 1, sizeof(fw_on));
+	else
+		for (const char *p = spec; *p;) {
+			unsigned long id = strtoul(p, (char **)&p, 16);
+			if (id >= 0xa0 && id < 0x100)
+				fw_on[id - 0xa0] = 1;
+			while (*p == ',' || *p == ' ')
+				p++;
+			if (*p && !isxdigit((unsigned char)*p))
+				break;
+		}
+	const char *off = getenv("E5RT_FW_TRACE_OFF");
+	for (const char *p = off ? off : ""; *p;) {
+		unsigned long id = strtoul(p, (char **)&p, 16);
+		if (id >= 0xa0 && id < 0x100)
+			fw_on[id - 0xa0] = 0;
+		while (*p == ',' || *p == ' ')
+			p++;
+		if (*p && !isxdigit((unsigned char)*p))
+			break;
+	}
+	isi_thumb_redirect((void *)(uintptr_t)FW_TRACE_SINK, (uintptr_t)fw_veneer);
+	fw_trace = 1;
+	fw_flags();
+	printf("fw trace installed (flags at %08x)\n", *(volatile uint32_t *)(uintptr_t)FW_TRACE_FLAGS);
+}
 static int mdi = -1;
+/* DSP -> firmware buffers named by address (HSDPA: the HS data indication handler c65832ee reads a
+ * big-endian DSP address per MAC-hs PDU, converts it (c63c8a02) and invalidates the range
+ * (c6564082 -> c63c983c, window bounds -> c6658dcc(start, end)) before mhs_pdu_create_from_raw
+ * parses it). patches() made c6658dcc a bx lr, so the firmware parsed its stale private copy:
+ * xg40 "vf field is invalid" x152, "queue id 0/4 is not active". Now c6658dcc (through a
+ * private-stack veneer) copies the real window bytes over the private copy for any range inside
+ * the window (kernel RAPUYAMA_MDI_DSP_GET). E5RT_NO_DSP_GET=1 turns it off. */
+struct rapuyama_mdi_get { uint32_t offset, size; uint64_t buffer; };
+#define RAPUYAMA_MDI_DSP_GET _IOW('M', 3, struct rapuyama_mdi_get)
+static int dsp_get = 1;
+static struct { uint32_t ms, start, end; uint8_t head[16]; } inv_log[4096];
+static volatile unsigned inv_log_n;
+static unsigned inv_log_printed;
+static unsigned dsp_gets, dsp_get_errors, dsp_get_outside, dsp_get_ul_skips;
+static uint64_t dsp_get_bytes;
+__attribute__((used)) void dsp_get_c(uint32_t start, uint32_t end)
+{
+	dsp_get_calls++;
+	dsp_get_last[0] = start;
+	dsp_get_last[1] = end;
+	if (inv_log_on && inv_log_n < 4096 && start >= DSP_BUF && end < DSP_BUF + 0x80000u) {	/* printed by the serve loop ("inv" lines) */
+		inv_log[inv_log_n].ms = (uint32_t)monotonic_ms();
+		inv_log[inv_log_n].start = start;
+		inv_log[inv_log_n].end = end;
+		inv_log_n++;
+	}
+	if (!dsp_get || mdi < 0)
+		return;
+	if (end < start || start < DSP_BUF || end >= DSP_BUF + 0x80000u) {
+		dsp_get_outside++;
+		return;
+	}
+	/* c6658dcc is CleanInvalidate (host slot c63ec1f8): the firmware also calls it on the HSUPA
+	 * MAC-e uplink buffers it has just written (the ones 3b/61 names, dsp 0x171834 + n*0xa84; xg42:
+	 * a copy there replaced each fresh uplink block with the old one -> RLC resets on rb9). Those
+	 * are firmware -> DSP: the 61 put handles them, never copy the window over them. */
+	if (start < DSP_BUF + 0x34400u && end >= DSP_BUF + 0x31800u) {
+		dsp_get_ul_skips++;
+		return;
+	}
+	for (uint32_t a = start; a <= end;) {
+		uint32_t n = end - a + 1 > 8192 ? 8192 : end - a + 1;
+		struct rapuyama_mdi_get get = {.offset = a - DSP_BUF, .size = n, .buffer = a};
+		if (ioctl(mdi, RAPUYAMA_MDI_DSP_GET, &get)) {
+			dsp_get_errors++;
+			if (errno == ENOTTY)
+				dsp_get = 0;
+			return;
+		}
+		dsp_gets++;
+		dsp_get_bytes += n;
+		a += n;
+	}
+	if (inv_log_n && inv_log[inv_log_n - 1].start == start)
+		memcpy(inv_log[inv_log_n - 1].head, (const void *)(uintptr_t)start, end - start + 1 < 16 ? end - start + 1 : 16);
+}
+__attribute__((used)) char dsp_get_stack[8192] __attribute__((aligned(8)));
+__asm__(".text\n.balign 4\n.arm\n.type dsp_get_veneer,%function\ndsp_get_veneer:\n"
+	"push {r0-r5, r12, lr}\n"
+	"mrs r5, cpsr\n"
+	"mov r4, sp\n"
+	"ldr sp, =dsp_get_stack+8192\n"
+	"bl dsp_get_c\n"
+	"mov sp, r4\n"
+	"msr cpsr_f, r5\n"
+	"pop {r0-r5, r12, lr}\n"
+	"bx lr\n.ltorg\n");
+void dsp_get_veneer(void);
 static unsigned forwarded;
 static uint32_t seen_tx, seen_event;
 
@@ -599,7 +1141,21 @@ static int mdi_forward(void)
 			fprintf(stderr, "mdi dealloc with an empty tag blocked: %08x %08x %08x %08x\n", d[0], d[1], d[2], d[3]);
 			return 1;
 		}
+		int is61 = 0;
+		if (d[2] >> 24 == 6) {	/* DCH uplink transport block named in the payload: real window first */
+			uint32_t off = d[3] + 0x10000000u - DATA_PA, size = __builtin_bswap16(d[1] & 0xffff) + 6;
+			if (off < DATA_SIZE && size <= DATA_SIZE - off)
+			{
+				const uint8_t *pl = (const uint8_t *)(uintptr_t)(DATA + off);
+				is61 = size >= 30 && pl[7] == 0x3b && pl[9] == 0x61;
+				ul_tb_put(mdi, (const uint8_t *)(uintptr_t)(DATA + off), size);
+				if (tx_dump)
+					tx_scan((const uint8_t *)(uintptr_t)(DATA + off), size);
+			}
+		}
 		ssize_t n = write(mdi, d, sizeof(d));
+		if (n == sizeof(d) && is61 && msg_armed && t_last_rx)
+			lat_add(lat61, &lat61_max, (uint32_t)(now_us() - t_last_rx));
 		if (n < 0 && errno == EAGAIN)
 			return 0;
 		if (n != sizeof(d)) {
@@ -608,6 +1164,17 @@ static int mdi_forward(void)
 		}
 		if (!quiet)
 			printf("mdi tx %08x %08x %08x %08x\n", d[0], d[1], d[2], d[3]);
+		if (hs_trace && msg_armed && d[2] >> 24 == 6 && hs_txp < 6000) {
+			uint32_t off = d[3] + 0x10000000u - DATA_PA, size = __builtin_bswap16(d[1] & 0xffff) + 6;
+			if (off < DATA_SIZE && size <= DATA_SIZE - off) {
+				const uint8_t *p = (const uint8_t *)(uintptr_t)(DATA + off);
+				hs_txp++;
+				printf("mdi txp %u %u:", (uint32_t)monotonic_ms(), size);
+				for (uint32_t i = 0; i < size && i < 64; i++)
+					printf(" %02x", p[i]);
+				printf("\n");
+			}
+		}
 		forwarded = (forwarded + 1) & 31;
 	}
 	return 0;
@@ -638,6 +1205,19 @@ static int mdi_pump(void)
 		schedule();
 	}
 	while ((n = read(mdi, d, sizeof(d))) == sizeof(d)) {
+		if (msg_armed) {
+			uint64_t t = now_us();
+			if (!rx_since_wake++ && t_wake)
+				lat_add(wake_rx, &wake_rx_max, (uint32_t)(t - t_wake));
+			if (t_last_rx) {
+				uint32_t gap = (uint32_t)(t - t_last_rx);
+				if (gap > 15000 && gap < 200000)
+					rx_gap_long++;
+				if (gap < 200000 && gap > rx_gap_max)
+					rx_gap_max = gap;
+			}
+			t_last_rx = t;
+		}
 		if (!quiet)
 			printf("mdi rx %08x %08x %08x %08x\n", d[0], d[1], d[2], d[3]);
 		unsigned producer = *dsp & 31;
@@ -767,6 +1347,8 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 		perror("mdi setup");
 		return 1;
 	}
+	if (buffers != 1)
+		dsp_get = 0;	/* direct window: nothing to copy */
 	*(volatile uint32_t *)(uintptr_t)MDI_AP = st.ap;
 	*(volatile uint32_t *)(uintptr_t)MDI_DSP = (st.dsp & 0xffff0000) | (st.ap >> 16);
 	forwarded = st.ap & 31;
@@ -822,10 +1404,12 @@ static int live(const char *device, int probe_dev, int probe_res, unsigned secon
 static int serve(unsigned seconds)
 {
 	static unsigned char frame[65541];
-	for (uint64_t end = monotonic_ms() + seconds * 1000ull; !seconds || monotonic_ms() < end;) {
+	for (uint64_t end = monotonic_ms() + seconds * 1000ull; (!seconds || monotonic_ms() < end) && !hs_stop;) {
 		struct pollfd w[3] = {{.fd = mdi, .events = POLLIN | POLLPRI}, {.fd = backend, .events = POLLIN}, {.fd = isi_sim_fd(), .events = POLLIN}};
 		if (poll(w, isi_sim_embedded() ? 3 : 2, isi_sim_embedded() ? (int)isi_sim_timeout() : 100) < 0 && errno != EINTR)
 			return 1;
+		t_wake = now_us();
+		rx_since_wake = 0;
 		alarm(2);
 		sbif_service();
 		isi_sim_service();
@@ -867,9 +1451,45 @@ static int serve(unsigned seconds)
 			msg_trace_flush();
 		if (periph_watch)
 			periph_check(msg_armed);
+		if (hs_trace)
+			hs_service(msg_armed);
+		while (inv_log_printed < inv_log_n) {
+			typeof(inv_log[0]) *v = &inv_log[inv_log_printed++];
+			int in = v->start >= DSP_BUF && v->end < DSP_BUF + 0x80000u;
+			printf("inv %u %08x..%08x %u%s", v->ms, v->start, v->end, v->end - v->start + 1, in ? " dsp:" : "");
+			for (unsigned i = 0; in && i < 16 && i < v->end - v->start + 1; i++)
+				printf(" %02x", v->head[i]);
+			printf("\n");
+		}
+		if (fw_trace) {
+			static uint64_t fw_next;
+			fw_flush();
+			if (monotonic_ms() >= fw_next) {	/* keep the flags on if the firmware rewrites them */
+				fw_next = monotonic_ms() + 1000;
+				fw_flags();
+			}
+		}
+		static uint64_t dch_next;
+		if (msg_armed && monotonic_ms() >= dch_next) {
+			dch_next = monotonic_ms() + 5000;
+			printf("dch %u ms: dsp gets %u (%llu bytes, errors %u, outside %u, ul skips %u); d8 %u, dl tb %u, e8 %u, ul 61 %u, puts %u; rx->61 ms <1/<2/<4/<8/<16/more %u/%u/%u/%u/%u/%u max %u us; wake->rx %u/%u/%u/%u/%u/%u max %u us; rx gaps >15 ms %u, max %u us\n",
+			       (uint32_t)monotonic_ms(), dsp_gets, (unsigned long long)dsp_get_bytes, dsp_get_errors, dsp_get_outside, dsp_get_ul_skips, dch_d8, dl_tbs, dch_e8, dch_ul61, ul_puts,
+			       lat61[0], lat61[1], lat61[2], lat61[3], lat61[4], lat61[5], lat61_max,
+			       wake_rx[0], wake_rx[1], wake_rx[2], wake_rx[3], wake_rx[4], wake_rx[5], wake_rx_max, rx_gap_long, rx_gap_max);
+			lat61_max = wake_rx_max = rx_gap_max = 0;
+		}
 	}
 	if (msg_trace)
 		printf("messages traced %u, dropped %u\n", msgs_printed, msgs_dropped);
+	printf("uplink TB puts %u, errors %u%s\n", ul_puts, ul_put_errors, ul_put ? "" : " (off)");
+	printf("dsp gets %u (%llu bytes), errors %u, outside window %u, uplink buffers skipped %u, invalidate calls %u%s\n", dsp_gets,
+	       (unsigned long long)dsp_get_bytes, dsp_get_errors, dsp_get_outside, dsp_get_ul_skips, dsp_get_calls, dsp_get ? "" : " (off)");
+	if (hs_trace)
+		hs_summary();
+	if (fw_trace) {
+		fw_flush();
+		fw_summary();
+	}
 	printf("os timers fired %u\n", os_fired);
 	return 0;
 }
@@ -878,6 +1498,10 @@ int main(int argc, char **argv)
 {
 	int link = argc >= 4 && !strcmp(argv[2], "--mdi");
 	quiet = getenv("E5RT_QUIET") != NULL;
+	if (getenv("E5RT_NO_UL_PUT"))
+		ul_put = 0;
+	tx_dump = getenv("E5RT_TX_DUMP") != NULL;
+	inv_log_on = getenv("E5RT_INV_LOG") != NULL;
 	int os_test = argc == 3 && !strcmp(argv[2], "--os-timer-selftest") ? 1 :
 		      argc == 3 && !strcmp(argv[2], "--os-timer-live-selftest") ? 2 : 0;
 	const char *os_clock = getenv("E5RT_OS_CLOCK");
@@ -915,10 +1539,8 @@ int main(int argc, char **argv)
 	sigaction(SIGBUS, &sa, NULL);
 	sigaction(SIGALRM, &sa, NULL);
 	pool_dump = getenv("E5RT_POOL_DUMP");
-	if (pool_dump) {
-		struct sigaction st = {.sa_handler = terminate};
-		sigaction(SIGTERM, &st, NULL);
-	}
+	struct sigaction st = {.sa_handler = pool_dump ? terminate : hs_term};
+	sigaction(SIGTERM, &st, NULL);	/* else: leave the serve loop and print the summary */
 	alarm(15);
 
 	image(argv[1], "10480000.bin", CODE, CODE_SIZE);
@@ -960,6 +1582,11 @@ int main(int argc, char **argv)
 			atexit(msg_trace_flush);
 		}
 	}
+	if (getenv("E5RT_HS_TRACE") && (link || soak)) {
+		hs_install();
+		if (soak)	/* offline check of the cache-service traps */
+			atexit(hs_summary);
+	}
 	if (os_test || os_live || soak)
 		isi_os_timer_patches();
 	if (link || soak || kasumi_test)
@@ -967,6 +1594,11 @@ int main(int argc, char **argv)
 	if (isi_identity_attach()) {
 		fprintf(stderr, "unsupported identity reader\n");
 		return 2;
+	}
+	if (getenv("E5RT_FW_TRACE") && (link || soak)) {
+		fw_trace_install(getenv("E5RT_FW_TRACE"));
+		if (soak && fw_trace)
+			atexit(fw_soak_report);
 	}
 	if (isi_sim_active()) {
 		/* E5 SIM patch window: va c60f0000 = pa 0x100ec000 (Symbian page tables), executable */
@@ -977,6 +1609,13 @@ int main(int argc, char **argv)
 			perror("SIM register page");
 			return 1;
 		}
+	}
+	/* c6658dcc (bx-lr stub from patches(), 4-aligned): DSP buffer invalidate -> real window copy */
+	if (getenv("E5RT_NO_DSP_GET") || getenv("E5RT_DSP_DIRECT"))
+		dsp_get = 0;
+	else if (link || getenv("E5RT_DSP_GET_TEST")) {
+		trap(FW_DSP_INVALIDATE, (void (*)())dsp_get_veneer);
+		printf("DSP buffer invalidate -> real window copy (RAPUYAMA_MDI_DSP_GET)\n");
 	}
 	__builtin___clear_cache((char *)(uintptr_t)CODE, (char *)(uintptr_t)(CODE + CODE_SIZE));
 	if (mprotect((void *)(uintptr_t)CODE, CODE_SIZE, PROT_READ | PROT_EXEC)) {
@@ -1016,6 +1655,40 @@ int main(int argc, char **argv)
 	if (kasumi_test)
 		return isi_kasumi_selftest();
 	if (soak) {
+		if (hs_trace) {	/* each cache wrapper once through its trap: counts + arguments */
+			static const uint32_t site[5] = {0xc63ec10c, 0xc63ec13e, 0xc63ec17c, 0xc63ec1ba, 0xc63ec1f8};
+			for (unsigned i = 0; i < 5; i++)
+				((void (*)(uint32_t, uint32_t, uint32_t))(uintptr_t)(site[i] | 1))(0xc6800000u + i, 0x100u + i, 7);
+			hs_service(0);
+			for (unsigned i = 0; i < 5; i++)
+				if (hs_count[i] != 1) {
+					fprintf(stderr, "hs trace selftest: wrapper %u counted %u\n", i, hs_count[i]);
+					return 1;
+				}
+			printf("hs trace selftest: 5 cache wrappers trapped, arguments above\n");
+			uint32_t r[8];	/* registers + flags across a trapped call, from assembly */
+			__asm__ volatile(
+				"push {r4-r11}\n"
+				"mov r7, %0\n"
+				"ldr r0, =0x11111111\nldr r1, =0x22222222\nldr r2, =0x33333333\n"
+				"ldr r4, =0x44444444\nldr r5, =0x55555555\nldr r12, =0xcccccccc\n"
+				"ldr r6, =0xc63ec1bb\n"
+				"msr cpsr_f, #0xa0000000\n"	/* N and C set */
+				"blx r6\n"
+				"mrs r3, cpsr\n"
+				"str r0, [r7]\nstr r1, [r7, #4]\nstr r2, [r7, #8]\nstr r3, [r7, #12]\n"
+				"str r4, [r7, #16]\nstr r5, [r7, #20]\nstr r12, [r7, #24]\n"
+				"pop {r4-r11}\n"
+				"b 1f\n.ltorg\n1:\n"
+				: : "r"(r) : "r0", "r1", "r2", "r3", "r12", "lr", "memory", "cc");
+			if (r[0] != 0x11111111 || r[1] != 0x22222222 || r[2] != 0x33333333 || (r[3] & 0xf0000000) != 0xa0000000 ||
+			    r[4] != 0x44444444 || r[5] != 0x55555555 || r[6] != 0xcccccccc) {
+				fprintf(stderr, "hs trace selftest: veneer changed state: %08x %08x %08x cpsr %08x %08x %08x %08x\n", r[0], r[1], r[2], r[3], r[4], r[5], r[6]);
+				return 1;
+			}
+			printf("hs trace selftest: veneer keeps r0-r2 r4 r5 r12 and the flags\n");
+			hs_snapshot("selftest");	/* private files only (no real windows offline) */
+		}
 		ramdrives_from_dump(argv[1]);
 		sbif_attach();
 		isi_sim_attach();
