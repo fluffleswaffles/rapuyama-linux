@@ -6,6 +6,9 @@
  apk add <package>         install
  ssh-server on | off       ssh in from a pc
  tailnet on | off          tailscale
+ mobile | mobile on | off  3G data
+   (3GLinuxE5 + E:\linux\e5-imei, e5-apn
+   guide /usr/share/doc/e5/mobile.txt)
  brightness 50% | up | down
  blank <minutes> | off     screen off
  font list | font set <name>

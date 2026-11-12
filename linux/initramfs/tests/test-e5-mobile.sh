@@ -92,6 +92,7 @@ boot_run() {
 		UPTIME="$T/uptime" SLEEP="$T/bin/fastsleep" DBG="$T/dbg" IMG="$T/run/e5img" MOBILE="$T/bin/mobile" \
 		KMSG="$T/kmsg" $SH "$I/e5-mobile-boot.sh"
 	rc=$?
+	touch "$T/boot-test"
 }
 state_is() { [ "$(cat "$T/run/e5-mobile/state" 2>/dev/null)" = "$1" ] || no "state '$(cat "$T/run/e5-mobile/state" 2>/dev/null)' != '$1'"; }
 t_boot_happy() {
@@ -191,13 +192,167 @@ t_start_simple_install() {
 	grep -q 'needs the advanced setup' "$T/kmsg" 2>/dev/null || no "no 'needs the advanced setup' message"
 }
 
+# ---- Task 5: mobile command ----
+# a 3G boot after registration: fake e5rt (a sleep), state registered, APN on
+# the card copy; stubs: id (root), ip (logs; "route show default" prints
+# $T/routes), e5gprs (logs its argv, prints the context lines, sleeps)
+mob_setup() {
+	setup "$1"
+	mkdir -p "$T/libexec" "$T/run/e5-mobile" "$T/sys/class/net/gprs0/statistics" "$T/sys/class/power_supply/battery"
+	echo 1234 > "$T/sys/class/net/gprs0/statistics/rx_bytes"
+	echo 567 > "$T/sys/class/net/gprs0/statistics/tx_bytes"
+	echo 81 > "$T/sys/class/power_supply/battery/capacity"
+	echo registered > "$T/run/e5-mobile/state"
+	printf 'internet.test\n' > "$T/run/e5-mobile/e5-apn"
+	echo 'nameserver 192.168.0.1' > "$T/etc/resolv.conf"
+	: > "$T/routes"
+	sleep 300 & echo $! > "$T/fake-e5rt.pid"; cp "$T/fake-e5rt.pid" "$T/run/e5-mobile/e5rt.pid"
+	printf '#!/bin/sh\necho 0\n' > "$T/bin/id"
+	cat > "$T/bin/ip" <<STUB
+#!/bin/sh
+echo "ip \$*" >> "$T/calls"
+[ "\$*" = "route show default" ] && cat "$T/routes"
+exit 0
+STUB
+	cat > "$T/libexec/e5gprs" <<STUB
+#!/bin/sh
+echo "e5gprs \$# [\$1]" >> "$T/calls"
+echo "IFNAME gprs0"; echo "IP 10.20.30.40"; echo "DNS1 10.0.0.53"; echo "CONTEXT ACTIVE on gprs0"
+trap 'exit 0' TERM
+while :; do sleep 1; done
+STUB
+	chmod +x "$T/bin/"* "$T/libexec/e5gprs"
+}
+mob() {
+	out=$(PATH="$T/bin:$PATH" LIBEXEC="$T/libexec" RUN="$T/run/e5-mobile" ETC="$T/etc" SYS="$T/sys" \
+		SLEEP="$T/bin/fastsleep" $SH "$I/e5-mobile.sh" "$@" 2>&1)
+	rc=$?
+}
+fast() { printf '#!/bin/sh\nexec sleep 0.02\n' > "$T/bin/fastsleep"; chmod +x "$T/bin/fastsleep"; }
+has() { case "$out" in *"$1"*) ;; *) no "output lacks '$1': $out" ;; esac; }
+t_on_happy() {
+	mob_setup on_happy; fast
+	mob on
+	check $rc = 0
+	has "data on 10.20.30.40"
+	grep -q '^ip addr add 10.20.30.40/32 dev gprs0$' "$T/calls" || no "no ip addr add"
+	grep -q '^ip link set gprs0 up$' "$T/calls" || no "no link up"
+	grep -q '^ip route add default dev gprs0 metric 600$' "$T/calls" || no "no default route metric 600"
+	[ "$(cat "$T/etc/resolv.conf")" = "nameserver 10.0.0.53" ] || no "resolv.conf: $(cat "$T/etc/resolv.conf")"
+	[ "$(cat "$T/run/e5-mobile/resolv.conf.saved" 2>/dev/null)" = "nameserver 192.168.0.1" ] || no "resolv.conf not saved"
+}
+t_on_twice() {
+	mob_setup on_twice; fast
+	mob on; mob on
+	check $rc = 0
+	has "data already on"
+	[ "$(grep -c '^ip route add default' "$T/calls")" = 1 ] || no "$(grep -c '^ip route add default' "$T/calls") default routes"
+	[ "$(grep -c '^e5gprs' "$T/calls")" = 1 ] || no "e5gprs ran twice"
+}
+t_off_happy() {
+	mob_setup off_happy; fast
+	mob on; mob off
+	check $rc = 0
+	has "data off"
+	grep -q '^ip route del default dev gprs0 metric 600$' "$T/calls" || no "default route not removed"
+	[ "$(cat "$T/etc/resolv.conf")" = "nameserver 192.168.0.1" ] || no "resolv.conf not restored: $(cat "$T/etc/resolv.conf")"
+	kill -0 "$(cat "$T/run/e5-mobile/e5gprs.pid" 2>/dev/null)" 2>/dev/null && no "e5gprs still running"
+}
+t_off_twice() {
+	mob_setup off_twice; fast
+	mob on; mob off; mob off
+	check $rc = 0
+	has "data already off"
+}
+t_apn_crlf() {
+	mob_setup apn_crlf; fast
+	printf 'internet.a1.bg\r\n' > "$T/run/e5-mobile/e5-apn"
+	mob on
+	grep -q '^e5gprs 1 \[internet.a1.bg\]$' "$T/calls" || no "e5gprs argv: $(grep ^e5gprs "$T/calls" | od -c | head -3)"
+}
+t_apn_override() {
+	mob_setup apn_override; fast
+	printf 'own.apn' > "$T/etc/e5-apn"
+	mob on
+	grep -q '^e5gprs 1 \[own.apn\]$' "$T/calls" || no "e5gprs argv: $(grep ^e5gprs "$T/calls")"
+}
+t_no_apn_message() {
+	mob_setup no_apn_message; fast
+	rm "$T/run/e5-mobile/e5-apn"
+	mob on
+	check $rc = 1
+	has 'no APN (write it to E:\linux\e5-apn)'
+	grep -q '^e5gprs' "$T/calls" 2>/dev/null && no "e5gprs ran"
+}
+t_wifi_keeps_dns() {
+	mob_setup wifi_keeps_dns; fast
+	echo 'default via 192.168.0.1 dev wlan0' > "$T/routes"
+	mob on
+	check $rc = 0
+	[ "$(cat "$T/etc/resolv.conf")" = "nameserver 192.168.0.1" ] || no "resolv.conf changed"
+	grep -v '^ip route show default$' "$T/calls" | grep -q wlan0 && no "wlan touched"
+	grep -q '^ip route add default dev gprs0 metric 600$' "$T/calls" || no "no mobile default route"
+}
+t_status_on() {
+	mob_setup status_on; fast
+	mob on; mob
+	check $rc = 0
+	has "modem: running"; has "network: registered"; has "data: on 10.20.30.40"
+	has "apn: internet.test"; has "gprs0: rx 1234 tx 567 bytes"; has "battery: 81%"
+}
+t_status_stopped() {
+	mob_setup status_stopped; fast
+	kill "$(cat "$T/fake-e5rt.pid")"; sleep 0.1
+	echo stopped > "$T/run/e5-mobile/state"
+	printf 'l1\nl2\nl3\nl4\nl5\nl6\n' > "$T/run/e5-mobile/e5rt.log"
+	mob
+	has "modem: stopped (reboot to use mobile data)"
+	has "l6"
+	case "$out" in *l1*) no "more than 5 log lines" ;; esac
+}
+t_status_not_3g() {
+	mob_setup status_not_3g; fast
+	rm "$T/run/e5-mobile/state"
+	mob
+	check $rc = 0
+	has "modem: off (not a 3G boot)"
+}
+t_no_imei_message() {
+	mob_setup no_imei_message; fast
+	echo no-imei > "$T/run/e5-mobile/state"
+	mob
+	has 'no IMEI (write it to E:\linux\e5-imei)'
+	mob on
+	check $rc = 1
+	has 'no IMEI (write it to E:\linux\e5-imei)'
+}
+t_on_not_registered() {
+	mob_setup on_not_registered; fast
+	echo not-registered > "$T/run/e5-mobile/state"
+	mob on
+	check $rc = 1
+	has "not registered"
+	grep -q '^e5gprs' "$T/calls" 2>/dev/null && no "e5gprs ran"
+}
+t_root_only() {
+	mob_setup root_only; fast
+	printf '#!/bin/sh\necho 1000\n' > "$T/bin/id"
+	mob on
+	check $rc = 1
+	has "root"
+	mob off
+	check $rc = 1
+}
+
 # ---- runner ----
 ALL="${*:-$(sed -n 's/^t_\([a-z0-9_]*\)() {$/\1/p' "$0")}"
 for name in $ALL; do
 	cur=$name bad=0
 	"t_$name"
 	# a started e5rt stub: stop it and let the step's watcher finish
-	if [ -n "$T" ] && [ -f "$T/run/e5-mobile/e5rt.pid" ]; then
+	[ -n "$T" ] && [ -f "$T/run/e5-mobile/e5gprs.pid" ] && kill "$(cat "$T/run/e5-mobile/e5gprs.pid")" 2>/dev/null
+	[ -n "$T" ] && [ -f "$T/fake-e5rt.pid" ] && kill "$(cat "$T/fake-e5rt.pid")" 2>/dev/null
+	if [ -n "$T" ] && [ -f "$T/boot-test" ] && [ -f "$T/run/e5-mobile/e5rt.pid" ]; then
 		kill "$(cat "$T/run/e5-mobile/e5rt.pid")" 2>/dev/null
 		n=0; while [ "$(cat "$T/run/e5-mobile/state" 2>/dev/null)" != stopped ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
 	fi

@@ -1,0 +1,22 @@
+3G mobile data on the Nokia E5 (Linux, advanced setup)
+
+1. Write two files on the memory card (E:), by hand:
+   E:\linux\e5-imei  the phone's IMEI: dial *#06# in Symbian,
+                     the 15 digits, nothing else
+   E:\linux\e5-apn   your operator's APN, one line (look it up
+                     on the operator's site, e.g. "internet")
+   On Linux, /etc/e5-apn wins over the card's e5-apn.
+   Linux never reads them from Symbian, never shows the IMEI.
+2. In Symbian's settings allow 3G (network mode Dual mode or
+   UMTS) and high speed packet access (HSDPA) for fast data.
+3. Start Linux with 3GLinuxE5 (LinuxE5 = Wi-Fi only, no modem).
+   Data comes up by itself within ~2 minutes.
+
+   mobile        status: modem, network, data, APN, bytes
+   mobile on     data on (after mobile off)
+   mobile off    data off; the modem keeps running
+
+Wi-Fi wins when both are up (its route and DNS are kept).
+"modem stopped" = the modem runtime ended: reboot (it runs once
+per boot and must start within 90 s of boot).
+3G uses the battery faster; Linux does not charge the phone yet.
