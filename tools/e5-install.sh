@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # E5-00 advanced install, run on a Linux PC from the unpacked e5-advanced
 # release tarball (README "Advanced install"). ERASES the whole card and makes
-#   p1 FAT32 "E5CARD" = Symbian's E: (default 2 GiB): Image, e5.dtb, LinuxE5.sis
+#   p1 FAT32 "E5CARD" = Symbian's E: (default 2 GiB): Image, e5.dtb, e5-3g.dtb,
+#                       LinuxE5.sis, 3GLinuxE5.sis
 #   p2 ext4 "e5root"  = the rest: the Alpine rootfs + a /swapfile (1 GiB)
 # Linux then runs from p2 (normal mode, e6.root=/dev/mmcblk0p2 in e5.dtb).
 # usage: sudo ./install.sh /dev/sdX [--fat-size 2G] [--card-size 4900M]
@@ -30,7 +31,7 @@ done
 
 # the release files, checked before anything is touched
 cd "$HERE"
-for f in Image e5.dtb LinuxE5.sis rootfs.tar.gz SHA256SUMS; do
+for f in Image e5.dtb e5-3g.dtb LinuxE5.sis 3GLinuxE5.sis rootfs.tar.gz SHA256SUMS; do
 	[ -f "$f" ] || { echo "no $f next to install.sh: unpack the whole tarball" >&2; exit 1; }
 done
 sha256sum --quiet -c SHA256SUMS || { echo "release files damaged (SHA256SUMS)" >&2; exit 1; }
@@ -90,10 +91,12 @@ fallocate -l "$swap" "$M2/swapfile"
 chmod 600 "$M2/swapfile"
 mkswap -q "$M2/swapfile"
 mount "/dev/$name${p}1" "$M1"
-cp Image e5.dtb LinuxE5.sis "$M1/"
+cp Image e5.dtb e5-3g.dtb LinuxE5.sis 3GLinuxE5.sis "$M1/"
 sync
-(cd "$M1" && grep -E ' (Image|e5\.dtb|LinuxE5\.sis)$' "$HERE/SHA256SUMS" | sha256sum --quiet -c -) ||
+(cd "$M1" && grep -E ' (Image|e5\.dtb|e5-3g\.dtb|LinuxE5\.sis|3GLinuxE5\.sis)$' "$HERE/SHA256SUMS" | sha256sum --quiet -c -) ||
 	{ echo "copy on the card does not match: bad card?" >&2; exit 1; }
 umount "$M1" "$M2"
 echo "done. Next: card into the phone, in Symbian install E:\\LinuxE5.sis, run LinuxE5"
 echo "(first run copies the WLAN firmware from the phone's ROM to E:\\linux, then Linux starts)"
+echo "3G mobile data: also install E:\\3GLinuxE5.sis, write E:\\linux\\e5-imei and E:\\linux\\e5-apn"
+echo "(see E:\\linux\\3G-README.txt after the first 3GLinuxE5 run), start Linux with 3GLinuxE5"

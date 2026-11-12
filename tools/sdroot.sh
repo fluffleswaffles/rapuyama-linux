@@ -113,6 +113,8 @@ if [ "$DEV" = e5 ]; then
 		if [ -f "$f" ]; then
 			case "$f" in *.ko) m=644 ;; *) m=755 ;; esac
 			$SUDO install -D -m $m "$f" "$MNT/usr/libexec/e5/${f##*/}"
+			# modules: no debug info (smaller; it names this pc's build paths)
+			case "$f" in *.ko) $SUDO arm-linux-gnu-strip --strip-debug "$MNT/usr/libexec/e5/${f##*/}" ;; esac
 		else
 			echo "warning: $f missing, no mobile data on this rootfs" >&2
 		fi
