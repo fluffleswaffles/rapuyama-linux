@@ -18,8 +18,12 @@ Linux from Symbian with a "3G" launcher and has a working internet connection on
 
 - A second Symbian launcher, **3GLinuxE5**, next to LinuxE5. Starting it means
   "Linux with mobile data". LinuxE5 keeps booting Wi-Fi only, exactly as today.
-- The 3G launcher reads the **IMEI** from Symbian and leaves it on the card for
-  Linux, so registration needs no manual `/root/e5-imei`.
+- **IMEI and APN are set up by the user, by hand** (user decision 2026-11-12):
+  whoever wants 3G writes `E:\linux\e5-imei` (the phone's IMEI, `*#06#` in
+  Symbian) and `E:\linux\e5-apn` (their operator's APN). Nothing reads them
+  automatically (unlike the Wi-Fi MAC). This is said clearly in the login
+  message, in a short guide on the phone, in `mobile`'s messages and in the
+  3GLinuxE5 launcher when the files are missing.
 - On a 3G boot, Linux starts the modem stack early (the runtime must start within
   about 2 minutes of boot) and brings data up automatically.
 - `mobile` command, in the style of `ssh-server` / `tailnet`:
@@ -28,15 +32,16 @@ Linux from Symbian with a "3G" launcher and has a working internet connection on
   - `mobile on`: activate data (context, default route, DNS)
   - `mobile off`: deactivate data, restore routes and `resolv.conf`; the modem
     stays running
-- **APN set by hand**: a one-line file on the card; default `internet.a1.bg`.
+- **APN set by hand**: a one-line file on the card; no default (operator
+  specific).
 - Wi-Fi keeps priority when both are up.
 
 ## Non-goals (this version)
 
 - Restarting the modem stack within a boot (e5rt can run once per boot; after a
   modem death the answer is "reboot").
-- Reading the APN from Symbian's access-point settings (CommsDat): more work than
-  the IMEI, left for later.
+- Reading the IMEI or the APN from Symbian (telephony API, CommsDat): the user
+  writes both files.
 - SMS, voice calls, signal bars in a GUI, data-usage limits, roaming checks.
 - Changing the network mode (2G/3G/HSDPA) from Linux. That stays a Symbian
   setting (see anti-goals).
@@ -75,17 +80,12 @@ Linux from Symbian with a "3G" launcher and has a working internet connection on
 - Loads the same `E:\Image`; device tree `E:\e5-3g.dtb` = `e5.dtb` with
   `e5.mobile=1` added to `bootargs` (built by the kernel build next to `e5.dtb`).
   One kernel file on the card.
-- Before handing over (where it already copies the Wi-Fi firmware to
-  `E:\linux\`): reads the IMEI through the Symbian telephony API and writes
-  `E:\linux\e5-imei` (15 digits, no newline handling needed beyond the current
-  reader's rules). If it cannot read it: a dialog "IMEI unavailable, mobile data
-  will not register" with Continue/Cancel.
-- `E:\linux\e5-apn` is created with `internet.a1.bg` if missing; the user edits
-  it on the card (Symbian file manager or a PC). Linux reads it at boot (2) and
-  `/etc/e5-apn` in the root overrides it, like `/etc/e5-wlan-mac`.
-- IMEI API: Symbian `CTelephony::GetPhoneId` (asynchronous, active object);
-  the launcher is self-signed, so this must work without extra capabilities
-  (to verify first on the phone; fallback: the dialog above).
+- Before handing over: if `E:\linux\e5-imei` or `E:\linux\e5-apn` is
+  missing, a dialog "3G needs E:\linux\e5-imei and E:\linux\e5-apn (see
+  E:\linux\3G-README.txt). Boot anyway?" with Boot/Cancel. The launcher writes
+  `E:\linux\3G-README.txt` (the short setup guide) if it is missing, so the
+  instructions are on the card where the files go.
+- `/etc/e5-apn` in the root overrides the card file, like `/etc/e5-wlan-mac`.
 
 ### 2. Boot step `e5-mobile` (Linux, sd rootfs)
 
@@ -110,7 +110,8 @@ Never runs on a LinuxE5 boot.
 ### 3. `mobile` command (`linux/initramfs/e5-mobile.sh` -> `/usr/bin/mobile`)
 
 - `mobile on`: needs the modem running and registered; runs `e5gprs <APN>` (APN
-  `/etc/e5-apn`, else `/run/e5-mobile/e5-apn`, else the default), applies IP,
+  `/etc/e5-apn`, else `/run/e5-mobile/e5-apn`; none: "no APN (write it to
+  E:\linux\e5-apn)"), applies IP,
   adds a default route via `gprs0` with metric 600 (`e5-dhcp` uses 0 for wlan0,
   500 for usb0, so Wi-Fi and the PC link win while up), writes the
   context's DNS to `resolv.conf` only when Wi-Fi has no default route; saves the
@@ -123,6 +124,12 @@ Never runs on a LinuxE5 boot.
 - Root only, like `ssh-server`.
 
 ### 4. Packaging
+
+- Login message (`e5-motd`): `mobile | on | off   3G data (3GLinuxE5; needs
+  E:\linux\e5-imei + e5-apn, see /usr/share/doc/e5/mobile.txt)`.
+- `/usr/share/doc/e5/mobile.txt` = the same guide as `3G-README.txt`: what the
+  two files are, how to find the IMEI (`*#06#`), APN examples are the user's to
+  look up, one line each, no newline needed.
 
 Advanced setup (sd rootfs) only, like `tailnet`: the files are ~1.5 MB and an
 initramfs is RAM for its whole life, so the simple install stays without mobile
