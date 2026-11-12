@@ -12,6 +12,7 @@ OUT="${1:?usage: build.sh <out dir> [kernel build dir]}"
 SYSROOT="$TOP/work/sysroot-alpine"
 "$TOP/linux/initramfs/sysroot.sh" "$SYSROOT"
 mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd)"	# kbuild's M= needs an absolute path
 CC=(clang --target=armv6-alpine-linux-musleabihf -march=armv6kz -mfloat-abi=hard
 	-mfpu=vfp --sysroot="$SYSROOT" --ld-path=/usr/bin/arm-linux-gnu-ld
 	-static -O2 -Wall -Wextra)

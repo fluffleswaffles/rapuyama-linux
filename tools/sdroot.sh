@@ -100,6 +100,23 @@ if [ "$DEV" = e5 ]; then
 	# an apk add away (see the README, "Graphical browser")
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-browser.sh" "$MNT/usr/bin/browser"
 	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5-xorg.conf" "$MNT/etc/X11/xorg.conf.d/10-e5.conf"
+	# 3G mobile data (3GLinuxE5 boots): the boot step, `mobile`, the guide,
+	# and the modem runtime + modules from E5_CELL_OUT (linux/e5-cell/build.sh
+	# <out> <kernel build dir>) and KOUT. missing ones = a warning, the
+	# rootfs is still built (the boot step then reports "unavailable")
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-mobile-boot.sh" "$MNT/usr/libexec/e5/mobile-boot"
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-mobile.sh" "$MNT/usr/bin/mobile"
+	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5-mobile.txt" "$MNT/usr/share/doc/e5/mobile.txt"
+	CELL="${E5_CELL_OUT:-$TOP/work/e5-cell}"
+	for f in "$CELL/e5rt" "$CELL/e5gprs" "$CELL/pnping" "$CELL/e5mem.ko" \
+		"${KOUT:-$TOP/linux/kernel/build-e5}/drivers/misc/rapuyama_sim.ko"; do
+		if [ -f "$f" ]; then
+			case "$f" in *.ko) m=644 ;; *) m=755 ;; esac
+			$SUDO install -D -m $m "$f" "$MNT/usr/libexec/e5/${f##*/}"
+		else
+			echo "warning: $f missing, no mobile data on this rootfs" >&2
+		fi
+	done
 	# the shells go through `login -f root` (init.sh), which prints this
 	# welcome (the helpers) instead of alpine's
 	$SUDO install -m 644 "$TOP/linux/initramfs/e5-motd" "$MNT/etc/motd"
