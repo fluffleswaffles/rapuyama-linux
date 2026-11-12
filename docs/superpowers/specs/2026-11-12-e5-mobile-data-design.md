@@ -167,7 +167,7 @@ logs "mobile data needs the advanced setup" and does nothing.
 - Charging under Linux (bq2415x, not programmed by Linux): a 3G session drains
   the battery faster (e5rt 5-45 % CPU + radio), so long mobile sessions depend
   on it. Static RE first, battery safety review before anything runs.
-- Audio: undecided. Upstream E6 audio goes through the same DSP/ISASW runtime,
+- Audio: NOT part of the beta (user decision 2026-11-12). Upstream E6 audio goes through the same DSP/ISASW runtime,
   so it would need a 3G-style boot too.
 
 ## Open before release (not this design)
