@@ -29,7 +29,9 @@ _LIT(KZImage, "E:\\Image");
 #else
 _LIT(KZImage, "E:\\zImage");
 #endif
-#ifdef RB_E5
+#if defined(RB_3G)
+_LIT(KDtb, "E:\\e5-3g.dtb");	// 3GLinuxE5: e5.dtb + e5.mobile=1 on the bootargs
+#elif defined(RB_E5)
 _LIT(KDtb, "E:\\e5.dtb");
 #else
 _LIT(KDtb, "E:\\e6.dtb");
@@ -235,6 +237,29 @@ static void WlanFiles(){
 	if(!fw){WlanRomFiles();}
 	if(!mac){WlanMacFile();}
 }
+
+#ifdef RB_3G
+// 3GLinuxE5: mobile data needs the IMEI and the APN, both written to the card
+// by the user (nothing is read from Symbian). The setup guide is put next to
+// them once (linux/initramfs/e5-mobile.txt, embedded by build_app.sh); without
+// the two files a Boot/Cancel dialog says so. 0 = boot
+#include "e5_mobile_txt.h"
+_LIT(KImei, "E:\\linux\\e5-imei");
+_LIT(KApn, "E:\\linux\\e5-apn");
+_LIT(KReadme, "E:\\linux\\3G-README.txt");
+static TInt MobileFiles(){
+	TInt r=gFs.MkDirAll(KWlanDir);
+	if(r!=KErrNone && r!=KErrAlreadyExists){Lf(_L8("3g: mkdir E:\\linux=%d\n"), r);}
+	if(!Exists(KReadme)){
+		Lf(_L8("3g: readme write=%d\n"), WriteFile(KReadme, TPtrC8(KMobileTxt, KMobileTxtLen), KNullDesC8));
+	}
+	TBool imei=Exists(KImei), apn=Exists(KApn);
+	Lf(_L8("3g: imei file %d, apn file %d\n"), imei, apn);
+	if(imei && apn){return 0;}
+	return Ask(_L("3G needs E:\\linux\\e5-imei and E:\\linux\\e5-apn"),
+		_L("(see E:\\linux\\3G-README.txt). Boot anyway?"), _L("Boot"), _L("Cancel"));
+}
+#endif
 #endif
 
 #ifdef RB_IMAGE_BOOT
@@ -368,7 +393,11 @@ GLDEF_C TInt E32Main(){
 	if(gLog.Replace(gFs, KLog, EFileWrite)!=KErrNone){
 #ifdef RB_E5
 		// no card in the phone (E: is the card on the E5) or it is read-only
+#ifdef RB_3G
+		Ask(_L("No memory card (E:)."), _L("Linux boots from E:\\Image + E:\\e5-3g.dtb"), _L("OK"), KNullDesC);
+#else
 		Ask(_L("No memory card (E:)."), _L("Linux boots from E:\\Image + E:\\e5.dtb"), _L("OK"), KNullDesC);
+#endif
 #endif
 		FSCLOSE(); return KErrGeneral;
 	}
@@ -398,6 +427,13 @@ GLDEF_C TInt E32Main(){
 #endif
 #ifdef RB_E5
 	WlanFiles();
+#endif
+#ifdef RB_3G
+	if(MobileFiles()!=0){
+		L(_L8("3g: cancelled (no e5-imei / e5-apn)\n"));
+		gLog.Close(); FSCLOSE();
+		return KErrCancel;
+	}
 #endif
 
 	User::FreeLogicalDevice(KRunBlobName);

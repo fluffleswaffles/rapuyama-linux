@@ -249,6 +249,14 @@ CAPTION="LinuxE5" ICON=$PWD/../../../driver/sis/linuxe5.svg \
 ./build_app.sh linuxb boot_app.cpp 0xe1000064
 ```
 
+3GLinuxE5 (Linux with mobile data, uid `0xe100006c`): the same variables plus `-DRB_3G`, its own caption and icon. It boots `E:\Image` with `E:\e5-3g.dtb`, writes the 3G guide to `E:\linux\3G-README.txt` and asks before booting when `E:\linux\e5-imei` or `E:\linux\e5-apn` is missing:
+
+```sh
+RB_DEFS="-DRB_IMAGE_BOOT -DRB_E5 -DRB_E5_ISAH -DRB_3G" \
+CAPTION="3GLinuxE5" ICON=$PWD/../../../driver/sis/linuxe5-3g.svg \
+./build_app.sh linux3g boot_app.cpp 0xe100006c
+```
+
 RAM log reader (`e5logs`, uid `0xe1000056`, writes `E:\klog.bin`, read it with `tools/parse_klog.py`): same variables, but `RB_DEFS="-DRB_E5"` and `./build_app.sh e5logs ramread_app.cpp 0xe1000056`.
 
 ### Kernel, dtb and initramfs

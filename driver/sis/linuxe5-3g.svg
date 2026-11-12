@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" baseProfile="tiny" width="88" height="88" viewBox="0 0 88 88">
+<!-- 3GLinuxE5 menu icon: the LinuxE5 penguin (smaller, to the left) + an antenna mast with two signal arcs. SVG Tiny 1.1: plain shapes, fills, quadratic strokes (no arc commands) -->
+<g transform="translate(-6,4) scale(0.9)">
+<ellipse cx="44" cy="50" rx="27" ry="33" fill="#1a1a1a"/>
+<ellipse cx="44" cy="58" rx="18" ry="23" fill="#ffffff"/>
+<ellipse cx="44" cy="25" rx="17" ry="16" fill="#1a1a1a"/>
+<ellipse cx="37" cy="23" rx="5" ry="6" fill="#ffffff"/>
+<ellipse cx="51" cy="23" rx="5" ry="6" fill="#ffffff"/>
+<circle cx="38" cy="24" r="2.5" fill="#1a1a1a"/>
+<circle cx="50" cy="24" r="2.5" fill="#1a1a1a"/>
+<polygon points="36,31 52,31 44,38" fill="#f5a800"/>
+<ellipse cx="32" cy="83" rx="10" ry="4" fill="#f5a800"/>
+<ellipse cx="56" cy="83" rx="10" ry="4" fill="#f5a800"/>
+</g>
+<polygon points="67,30 71,30 75,82 63,82" fill="#6b7682"/>
+<circle cx="69" cy="27" r="4" fill="#1a6fd1"/>
+<path d="M75,19 Q81,27 75,35" fill="none" stroke="#1a6fd1" stroke-width="3.5" stroke-linecap="round"/>
+<path d="M79,12 Q89,27 79,42" fill="none" stroke="#1a6fd1" stroke-width="3.5" stroke-linecap="round"/>
+</svg>
