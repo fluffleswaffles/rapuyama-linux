@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# E5-00 kernel + dtb: e6.config minus drm, sound, the E6 fbdevs, the E6 modem
+# E5-00 kernel + dtb: e6.config minus sound, the E6 fbdevs, the E6 modem
 # keepalive (blind E6 pmic writes) and the E6 wlan chips; plus the E5 rfbi
-# fbdev + fbcon, keypad, g_cdc usb, the wl1251 on spi2 and the gazoo light
-# pwm; slim() drops the pi/armv7/E6/pc parts. writes the E5 initramfs list
+# KMS display driver (drm + fbdev emulation + fbcon), keypad, g_cdc usb, the
+# wl1251 on spi2 and the gazoo light pwm; slim() drops the pi/armv7/E6/pc parts. writes the E5 initramfs list
 # into the output dir. own output dir, so the E6 trees stay untouched.
 # usage: ./build-e5.sh [config|build]
 # the beta kernel is the cellular build: VMSPLIT_3G25 so the userspace ISASW
@@ -12,7 +12,9 @@
 # e5.dtb (LinuxE5, wifi only) and e5-3g.dtb (= e5.dtb + e5.mobile=1 on the
 # bootargs, 3GLinuxE5). E5_NOCELL=1 = the old wifi-only kernel (own dir
 # build-e5-nocell, dtb from e5.dts). E5_CELL=1 = the same cellular kernel in
-# the development dir build-e5-cell
+# the development dir build-e5-cell. E5_FBDEV=1 = the old E5 fbdev driver
+# (FB_RAPUYAMA_E5, drm off) instead of the KMS one; check-e5-kms-config.sh
+# <KOUT> verifies the resolved .config has the KMS driver
 # E5_WLAN_FW = dir with ti-connectivity/wl1251-{fw,nvs}.bin (see the E5
 # README); without them the kernel builds and boots, just without wlan
 set -euo pipefail
@@ -139,9 +141,17 @@ slim() {
 config() {
 	cp "$HERE/e6.config" "$KOUT/.config"
 	local S="$KSRC/scripts/config --file $KOUT/.config"
-	for o in DRM SOUND RAPUYAMA_MODEM FB_RAPUYAMA FB_SIMPLE; do $S -d "$o"; done
-	# D3 display: rfbi fbdev + fbcon (8x8 font = 40x30 text on 320x240)
-	for o in FB FB_DEVICE FB_RAPUYAMA_E5 FRAMEBUFFER_CONSOLE FONTS FONT_8x8 FONT_8x16; do $S -e "$o"; done
+	for o in SOUND RAPUYAMA_MODEM FB_RAPUYAMA FB_SIMPLE; do $S -d "$o"; done
+	# D3 display: fbcon (8x8 font = 40x30 text on 320x240) on either the KMS
+	# driver (default; drm fbdev emulation, DRM_GEM_SHMEM_HELPER and the
+	# backlight class come from its selects) or, E5_FBDEV=1, the old rfbi fbdev
+	for o in FB FB_DEVICE FRAMEBUFFER_CONSOLE FONTS FONT_8x8 FONT_8x16; do $S -e "$o"; done
+	if [ -n "${E5_FBDEV:-}" ]; then
+		$S -d DRM -d RAPUYAMA_E5_DISPLAY -e FB_RAPUYAMA_E5
+	else
+		for o in DRM DRM_KMS_HELPER DRM_FBDEV_EMULATION RAPUYAMA_E5_DISPLAY; do $S -e "$o"; done
+		$S -d FB_RAPUYAMA_E5
+	fi
 	# more built-in fonts, fbcon=font:<name> (grid on 320x240): MINI4x6 80x40,
 	# 6x8 53x30, 6x10 53x24, ProFont6x11 53x21, 7x14 45x17, 10x18 32x13.
 	# --keep-case: scripts/config upper-cases names (FONT_6X10 doesn't exist)
