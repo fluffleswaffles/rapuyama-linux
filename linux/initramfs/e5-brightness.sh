@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen brightness of the E5 (panel DCS backlight, rapuyama-e5-fb.c:
+# screen brightness of the E5 (panel DCS backlight, e5-display.c:
 # /sys/class/backlight/panel, 0..255), installed as /bin/brightness (initramfs
 # list in linux/kernel/build-e5.sh, copied to the sd rootfs by sdroot.sh).
 # the choice is kept in /etc/e5-brightness and init.sh puts it back at boot

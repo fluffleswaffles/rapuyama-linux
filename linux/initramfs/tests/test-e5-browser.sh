@@ -74,6 +74,8 @@ t_xorg_conf_modesetting() {
 	grep -q 'Driver "modesetting"' "$c" || no "no modesetting driver"
 	grep -q 'Option "kmsdev" "/dev/dri/card0"' "$c" || no "no kmsdev"
 	grep -q 'Option "ShadowFB" "true"' "$c" || no "no ShadowFB"
+	# no gpu: no glamor (it would probe mesa/egl at start)
+	grep -q 'Option "AccelMethod" "none"' "$c" || no "no AccelMethod none"
 	grep -q 'fbdev' "$c" && no "fbdev still mentioned"
 	grep -q 'DefaultDepth' "$c" && no "DefaultDepth still set"
 	return 0

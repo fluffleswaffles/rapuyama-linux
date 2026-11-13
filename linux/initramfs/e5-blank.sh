@@ -45,7 +45,7 @@ case "${1:-}" in
 		echo "  blank              current delay"
 		echo "  blank <minutes>    1..60, kept across reboots"
 		echo "  blank off          never turn the screen off"
-		echo "  blank reset        back to the default (1 minute)." ;;
+		echo "  blank reset        forget the saved delay (default after reboot)." ;;
 	"")	cur ;;
 	apply)	[ -r "$CONF" ] || exit 0; set_min "$(cat "$CONF")" nosave ;;
 	reset)	rm -f "$CONF"; echo "saved delay removed, the dtb default applies at the next boot" ;;

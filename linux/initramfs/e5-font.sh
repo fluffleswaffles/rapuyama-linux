@@ -81,8 +81,8 @@ case "${1:-}" in
 		echo "  font list [pat]     fonts that fit (name, size, grid)"
 		echo "  font set <name>     use it"
 		echo "  font next | prev    step through the list"
-		echo "  font reset          back to the kernel's font"
-		echo "More fonts: apk add kbd-misc font-terminus." ;;
+		echo "  font reset          forget it (kernel font at next boot)"
+		echo "Fonts: kbd-misc + font-terminus, /usr/share/consolefonts." ;;
 	"")	c=$(current); echo "${c:-kernel default (fbcon=font: in the dtb)}" ;;
 	list)	cur=$(current)
 		fonts | while read -r n s g; do

@@ -49,10 +49,14 @@ t_help_each() {
 	done
 }
 
-t_wayland_help_full_comment() {
-	# the seat-backend text (a three-line comment once cut by sed) must be complete
+t_wayland_help_seat() {
+	# the help names what the session runs (seatd, udevd), the backend
+	# override, and no longer the noop retry
 	out=$($SH "$I/e5-wayland.sh" help 2>&1)
-	case "$out" in *"forces one)."*) ;; *) no "wayland help cut before the end of the LIBSEAT text: $out" ;; esac
+	case "$out" in *seatd*udevd*) ;; *) no "wayland help lacks seatd/udevd: $out" ;; esac
+	case "$out" in *"LIBSEAT_BACKEND=<name>"*) ;; *) no "wayland help lacks LIBSEAT_BACKEND: $out" ;; esac
+	case "$out" in *noop*|*builtin*) no "wayland help still names noop/builtin: $out" ;; esac
+	return 0
 }
 
 t_motd() {

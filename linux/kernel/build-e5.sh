@@ -22,6 +22,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KSRC="$HERE/linux"
 E5_NOCELL="${E5_NOCELL:-}"
+KOUT_GIVEN="${KOUT:-}"	# for the config hint in build
 if [ -n "$E5_NOCELL" ]; then KOUT="${KOUT:-$HERE/build-e5-nocell}"; DTS=e5
 elif [ -n "${E5_FBDEV:-}" ]; then KOUT="${KOUT:-$HERE/build-e5-fbdev}"; DTS=e5-cell
 elif [ -n "${E5_CELL:-}" ]; then KOUT="${KOUT:-$HERE/build-e5-cell}"; DTS=e5-cell
@@ -197,7 +198,13 @@ case "${1:-build}" in
 	build)  [ -f "$KOUT/.config" ] || config
 		if { [ -n "${E5_FBDEV:-}" ] && grep -qx CONFIG_RAPUYAMA_E5_DISPLAY=y "$KOUT/.config"; } ||
 		   { [ -z "${E5_FBDEV:-}" ] && grep -qx CONFIG_FB_RAPUYAMA_E5=y "$KOUT/.config"; }; then
-			echo "WARNING: $KOUT/.config is for the other display driver than E5_FBDEV='${E5_FBDEV:-}' asks for: run '$0 config' first" >&2
+			# the exact command, with the variables that pick the kernel
+			env=
+			for v in E5_FBDEV E5_NOCELL E5_CELL KOUT_GIVEN; do
+				val=${!v:-}
+				[ -z "$val" ] || env="$env${v%_GIVEN}=$val "
+			done
+			echo "WARNING: $KOUT/.config is for the other display driver than E5_FBDEV='${E5_FBDEV:-}' asks for: run '$env$0 config' first" >&2
 		fi
 		initramfs_list
 		"${MAKE[@]}" -j"$(nproc)" Image

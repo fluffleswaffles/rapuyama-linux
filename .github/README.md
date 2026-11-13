@@ -173,10 +173,10 @@ grep '^file' linux/kernel/build-e5/initramfs.list | while read -r _ dst src mode
 X and the browsers need about 240 MB on the card (mostly Mesa libraries that X depends on but does not load here). With WLAN up:
 
 ```sh
-apk add xorg-server xf86-video-fbdev xf86-input-evdev xinit font-misc-misc dillo font-dejavu links-graphics
+apk add xorg-server xf86-input-evdev xinit font-misc-misc dillo font-dejavu links-graphics
 ```
 
-`browser` starts X on the framebuffer (about 30 s) with Dillo, `browser links` with `links -g`; a URL can follow. Quitting the browser returns to the console. X uses the keypad directly (`/etc/X11/xorg.conf.d/10-e5.conf`), with OpenGL and video overlays switched off (there is no GPU). In use: about 25 MB of RAM in total.
+`browser` starts X on the KMS display (`modesetting` driver, about 30 s) with Dillo, `browser links` with `links -g`; a URL can follow. Quitting the browser returns to the console. X uses the keypad directly (`/etc/X11/xorg.conf.d/10-e5.conf`), with OpenGL and video overlays switched off (there is no GPU). In use: about 25 MB of RAM in total.
 
 | Key | In X |
 | --- | --- |
@@ -324,7 +324,7 @@ The E5 has the same RapuYama SoC as the E6. It differs in the timer, display, ke
 | CPU idle | `e6.idle=1`: Symbian's shallow WFI between interrupts (`mach-rapuyama/idle.c`) |
 | Watchdogs | SoC/PMIC watchdog with the E6 driver; PA_SWD secure watchdog via the bridge's `nokia,e5` entry (`e6.swd=1`) |
 | Memory | `e6.lowmem=2` gives back the RAM below the loader block, keeping only what Symbian's leftovers still use. With the trimmed kernel (`slim()` in `build-e5.sh`: no Pi/E6/PC drivers, no zswap/memcg/btrfs) that is about 210 MB (`e6.lowmem=1` leaves about 30 MB more to Symbian) |
-| Display | 320x240 fbdev + fbcon over RFBI (`rapuyama-e5-fb.c`). DISPC + RFBI DMA push as Symbian does it: a full frame in about 20 ms with the CPU free, instead of 36-57 ms of CPU byte writes. `rapuyama_e5_fb.dma=0` (command line or `/sys/module/rapuyama_e5_fb/parameters/dma`) goes back to the CPU path. Panel DCS backlight (`/sys/class/backlight/panel`), panel sleep on console blank, an overlay for the bottom half (used by `e5-keyd` for the fn picture) |
+| Display | 320x240 KMS device (`/dev/dri/card0`) + fbdev emulation and fbcon over RFBI (`e5-display.c`; `E5_FBDEV=1 linux/kernel/build-e5.sh` builds the old fbdev driver `rapuyama-e5-fb.c` instead). DISPC + RFBI DMA push as Symbian does it: a full frame in about 20 ms with the CPU free, instead of 36-57 ms of CPU byte writes. `e5_display.dma=0` (command line or `/sys/module/e5_display/parameters/dma`) goes back to the CPU path. Panel DCS backlight (`/sys/class/backlight/panel`), panel sleep on console blank, an overlay for the bottom half (used by `e5-keyd` for the fn picture) |
 | Keyboard | Polled 8x8 matrix (`rapuyama-e5-keypad.c`). The layers come from one table (`tools/e5_keys.py`) through `e5-kmap.py` and `e5-xkb.py` (`linux/initramfs/e5.kmap`, `e5.xkb`). `e5-keyd` draws the fn picture with the phone's own console fonts and toggles the screen on the end key |
 | End key | `KEY_POWER` from the Gazoo PMIC latch, polled every 150 ms (`rapuyama_wdt.c`, `nokia,power-key`) |
 | Keyboard light | Gazoo PMIC PWM 0, `/sys/class/backlight/gazoo-pwm0` (0..127) |
@@ -356,7 +356,8 @@ Kernel (`linux/kernel/linux`, branch `e5`):
 | File | What |
 | --- | --- |
 | `drivers/clocksource/timer-rapuyama-e5.c` | System tick |
-| `drivers/video/fbdev/rapuyama-e5-fb.c` | Framebuffer, brightness, panel sleep, overlay |
+| `drivers/soc/rapuyama/e5-display.c` | KMS display (fbdev emulation), brightness, panel sleep, overlay |
+| `drivers/video/fbdev/rapuyama-e5-fb.c` | Old fbdev driver (`E5_FBDEV=1`) |
 | `drivers/input/keyboard/rapuyama-e5-keypad.c` | Keyboard matrix |
 | `drivers/video/backlight/rapuyama-e5-bl.c` | Keyboard light |
 | `drivers/dma/rapuyama-gdma.c` | General DMA controller |
