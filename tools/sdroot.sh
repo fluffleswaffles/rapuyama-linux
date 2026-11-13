@@ -100,6 +100,13 @@ if [ "$DEV" = e5 ]; then
 	# an apk add away (see the README, "Graphical browser")
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-browser.sh" "$MNT/usr/bin/browser"
 	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5-xorg.conf" "$MNT/etc/X11/xorg.conf.d/10-e5.conf"
+	# weston + foot on the KMS display: the launcher, the weston.ini template
+	# (`wayland` fills in the colour format) and the keyboard layout (symbols
+	# for libxkbcommon, from tools/e5-xkb.py); weston and foot are an apk add
+	# away (`wayland help`)
+	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-wayland.sh" "$MNT/usr/bin/wayland"
+	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5-weston.ini" "$MNT/etc/xdg/weston/weston.ini"
+	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5.symbols" "$MNT/etc/xkb/symbols/e5"
 	# 3G mobile data (3GLinuxE5 boots): the boot step, `mobile`, the guide,
 	# and the modem runtime + modules from E5_CELL_OUT (linux/e5-cell/build.sh
 	# <out> <kernel build dir>) and KOUT. missing ones = a warning, the

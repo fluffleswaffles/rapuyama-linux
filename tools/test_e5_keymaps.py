@@ -29,10 +29,13 @@ def read_kmap(path):
     return maps
 
 
-def generate(script, suffix):
+def generate(script, suffix, extra=None):
+    """run a generator into a temp file; extra = suffix of a second output
+    (written next to the first as <out><extra>)"""
     fd, out = tempfile.mkstemp(suffix=suffix)
     os.close(fd)
-    subprocess.run([sys.executable, '-I', os.path.join(TOOLS, script), out], check=True)
+    args = [out, out + extra] if extra else [out]
+    subprocess.run([sys.executable, '-I', os.path.join(TOOLS, script)] + args, check=True)
     return out
 
 
@@ -129,6 +132,36 @@ class XKeymap(unittest.TestCase):
         self.assertIn('MovePtr(x=+0,y=-@STEP@)', up.replace(' ', ''))
 
 
+class WestonSymbols(unittest.TestCase):
+    """the xkb symbols file for weston (keymap_layout=e5)"""
+    @classmethod
+    def setUpClass(cls):
+        cls.path = generate('e5-xkb.py', '.xkb', extra='.symbols')
+        cls.text = open(cls.path + '.symbols').read()
+
+    def test_only_standard_includes(self):
+        inc = re.findall(r'include "([^"]*)"', self.text)
+        self.assertEqual(inc, ['us(basic)'])
+
+    def test_no_x_only_bits(self):
+        self.assertNotIn('@STEP@', self.text)
+        self.assertNotIn('MovePtr', self.text)
+        self.assertNotIn('Pointer_EnableKeys', self.text)
+
+    def test_compiles_as_layout(self):
+        d = tempfile.mkdtemp()
+        os.mkdir(os.path.join(d, 'symbols'))
+        with open(os.path.join(d, 'symbols', 'e5'), 'w') as f:
+            f.write(self.text)
+        src = ('xkb_keymap { xkb_keycodes { include "evdev+aliases(qwerty)" };'
+               ' xkb_types { include "complete" }; xkb_compat { include "complete" };'
+               ' xkb_symbols { include "pc+e5+inet(evdev)" }; };')
+        r = subprocess.run(['xkbcomp', '-w', '0', '-I' + d, '-I/usr/share/X11/xkb', '-', os.path.join(d, 'o.xkm')],
+                           input=src.encode(), capture_output=True)
+        self.assertEqual(r.returncode, 0, r.stderr.decode())
+        self.assertTrue(os.path.getsize(os.path.join(d, 'o.xkm')) > 0)
+
+
 class Generated(unittest.TestCase):
     """the committed generated files match their generators"""
     ROOT = os.path.dirname(TOOLS)
@@ -143,6 +176,11 @@ class Generated(unittest.TestCase):
 
     def test_xkb(self):
         self.same('e5-xkb.py', 'linux/initramfs/e5.xkb', '.xkb')
+
+    def test_symbols(self):
+        fresh = generate('e5-xkb.py', '.xkb', extra='.symbols') + '.symbols'
+        self.assertEqual(open(os.path.join(self.ROOT, 'linux/initramfs/e5.symbols'), 'rb').read(),
+                         open(fresh, 'rb').read(), 'e5.symbols is stale: run tools/e5-xkb.py')
 
     def test_keyd_layer(self):
         self.same('e5-keyd-layer.py', 'linux/initramfs/e5-keyd/layer.h', '.h')
