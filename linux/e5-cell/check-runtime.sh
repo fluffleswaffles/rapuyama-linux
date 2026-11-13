@@ -1,12 +1,12 @@
 #!/bin/sh
 # runs the e5rt offline selftests (qemu-arm user) on a build.sh output dir:
 # pass = exit 0 and no mismatch/fail line
-# usage: ./check-runtime.sh <out dir> [dump dir]
-# dump dir = the five ISASW images (default ~/e5/dump-linux-1110);
-# QEMU = qemu-arm-static (default: on PATH, else ~/e5/cell/qemu/x/usr/bin)
-OUT="${1:?usage: $0 <out dir> [dump dir]}"
-DUMP="${2:-$HOME/e5/dump-linux-1110}"
-QEMU="${QEMU:-$(command -v qemu-arm-static || echo "$HOME/e5/cell/qemu/x/usr/bin/qemu-arm-static")}"
+# usage: ./check-runtime.sh <out dir> <dump dir>
+# dump dir = the five ISASW images of one boot (private, not in the repo);
+# QEMU = the qemu-arm user binary (default: qemu-arm-static on PATH)
+OUT="${1:?usage: $0 <out dir> <dump dir>}"
+DUMP="${2:?usage: $0 <out dir> <dump dir>}"
+QEMU="${QEMU:-qemu-arm-static}"
 fail=0
 for t in os-timer kasumi sim sim-reset dsp dsp-tx; do
 	if timeout 300 "$QEMU" "$OUT/e5rt" "$DUMP" "--$t-selftest" > "$OUT/selftest-$t.log" 2>&1 &&

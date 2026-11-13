@@ -273,9 +273,9 @@ t_off_twice() {
 }
 t_apn_crlf() {
 	mob_setup apn_crlf; fast
-	printf 'internet.a1.bg\r\n' > "$T/run/e5-mobile/e5-apn"
+	printf 'internet.example\r\n' > "$T/run/e5-mobile/e5-apn"
 	mob on
-	grep -q '^e5gprs 1 \[internet.a1.bg\]$' "$T/calls" || no "e5gprs argv: $(grep ^e5gprs "$T/calls" | od -c | head -3)"
+	grep -q '^e5gprs 1 \[internet.example\]$' "$T/calls" || no "e5gprs argv: $(grep ^e5gprs "$T/calls" | od -c | head -3)"
 }
 t_apn_override() {
 	mob_setup apn_override; fast
