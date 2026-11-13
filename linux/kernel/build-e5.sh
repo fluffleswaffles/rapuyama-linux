@@ -13,7 +13,8 @@
 # bootargs, 3GLinuxE5). E5_NOCELL=1 = the old wifi-only kernel (own dir
 # build-e5-nocell, dtb from e5.dts). E5_CELL=1 = the same cellular kernel in
 # the development dir build-e5-cell. E5_FBDEV=1 = the old E5 fbdev driver
-# (FB_RAPUYAMA_E5, drm off) instead of the KMS one; check-e5-kms-config.sh
+# (FB_RAPUYAMA_E5, drm off) instead of the KMS one, in build-e5-fbdev (build
+# warns if an existing .config is for the other driver: run config); check-e5-kms-config.sh
 # <KOUT> verifies the resolved .config has the KMS driver
 # E5_WLAN_FW = dir with ti-connectivity/wl1251-{fw,nvs}.bin (see the E5
 # README); without them the kernel builds and boots, just without wlan
@@ -22,6 +23,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 KSRC="$HERE/linux"
 E5_NOCELL="${E5_NOCELL:-}"
 if [ -n "$E5_NOCELL" ]; then KOUT="${KOUT:-$HERE/build-e5-nocell}"; DTS=e5
+elif [ -n "${E5_FBDEV:-}" ]; then KOUT="${KOUT:-$HERE/build-e5-fbdev}"; DTS=e5-cell
 elif [ -n "${E5_CELL:-}" ]; then KOUT="${KOUT:-$HERE/build-e5-cell}"; DTS=e5-cell
 else KOUT="${KOUT:-$HERE/build-e5}"; DTS=e5-cell; fi
 export ARCH=arm CROSS_COMPILE=arm-linux-gnu-
@@ -150,7 +152,8 @@ config() {
 		$S -d DRM -d RAPUYAMA_E5_DISPLAY -e FB_RAPUYAMA_E5
 	else
 		for o in DRM DRM_KMS_HELPER DRM_FBDEV_EMULATION RAPUYAMA_E5_DISPLAY; do $S -e "$o"; done
-		$S -d FB_RAPUYAMA_E5
+		# e6.config's simpledrm: the E5 has no simple-framebuffer node
+		$S -d DRM_SIMPLEDRM -d FB_RAPUYAMA_E5
 	fi
 	# more built-in fonts, fbcon=font:<name> (grid on 320x240): MINI4x6 80x40,
 	# 6x8 53x30, 6x10 53x24, ProFont6x11 53x21, 7x14 45x17, 10x18 32x13.
@@ -175,7 +178,7 @@ config() {
 		$S --set-str EXTRA_FIRMWARE_DIR "$E5_WLAN_FW"
 	fi
 	# P1: gazoo light pwm as backlight class devices (not the screen; the
-	# screen backlight is in the fbdev driver, /sys/class/backlight/panel)
+	# screen backlight is in the display driver, /sys/class/backlight/panel)
 	for o in BACKLIGHT_CLASS_DEVICE BACKLIGHT_RAPUYAMA_E5; do $S -e "$o"; done
 	# sd card dma: the general dma (gdma)
 	for o in DMADEVICES RAPUYAMA_GDMA; do $S -e "$o"; done
@@ -192,6 +195,10 @@ config() {
 case "${1:-build}" in
 	config) config ;;
 	build)  [ -f "$KOUT/.config" ] || config
+		if { [ -n "${E5_FBDEV:-}" ] && grep -qx CONFIG_RAPUYAMA_E5_DISPLAY=y "$KOUT/.config"; } ||
+		   { [ -z "${E5_FBDEV:-}" ] && grep -qx CONFIG_FB_RAPUYAMA_E5=y "$KOUT/.config"; }; then
+			echo "WARNING: $KOUT/.config is for the other display driver than E5_FBDEV='${E5_FBDEV:-}' asks for: run '$0 config' first" >&2
+		fi
 		initramfs_list
 		"${MAKE[@]}" -j"$(nproc)" Image
 		dtc -I dts -O dtb -o "$KOUT/e5.dtb" "$HERE/../boot/$DTS.dts"

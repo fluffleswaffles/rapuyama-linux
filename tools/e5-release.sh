@@ -28,6 +28,7 @@ CPIO="$KOUT/usr/initramfs_data.cpio"
 [ -f "$SIS" ] || { echo "no $SIS"; exit 1; }
 [ -f "$SIS3G" ] || { echo "no $SIS3G"; exit 1; }
 
+[ -z "${E5_FBDEV:-}" ] || { echo "NOT RELEASING: E5_FBDEV is set (a release ships the KMS driver)"; exit 1; }
 export KBUILD_BUILD_USER=e5 KBUILD_BUILD_HOST=rapuyama
 KOUT="$KOUT" E5_WLAN_FW=/none "$TOP/linux/kernel/build-e5.sh" config
 KOUT="$KOUT" "$TOP/linux/kernel/build-e5.sh" build
@@ -43,6 +44,7 @@ grep -aq "$(id -un)@$(hostname)" "$IMAGE" && fail "$(id -un)@$(hostname) in the 
 # e5-3g.dtb = the same + e5.mobile=1
 dtc -q -I dts -O dtb "$TOP/linux/boot/e5-cell.dts" | cmp -s - "$DTB" || fail "$DTB doesn't match linux/boot/e5-cell.dts"
 "$TOP/linux/kernel/check-e5-dtbs.sh" "$KOUT" || fail "dtb check"
+"$TOP/linux/kernel/check-e5-kms-config.sh" "$KOUT" || fail "kms config"
 
 # only what this script makes (the out dir may be given)
 mkdir -p "$OUT"
