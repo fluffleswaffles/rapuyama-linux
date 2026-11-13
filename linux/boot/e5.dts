@@ -219,6 +219,7 @@
 			compatible = "nokia,rapuyama-e5-rfbi";
 			reg = <0x20025800 0x100>, <0x20024800 0x200>;
 			clocks = <&cgc 0x18>;
+			interrupts = <146>;
 		};
 
 		/* qwerty 8x8 matrix, polled (rapuyama-e5-keypad.c, ekeyb.dll scan):
