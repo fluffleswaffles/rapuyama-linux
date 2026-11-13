@@ -28,6 +28,14 @@ status() {
 }
 
 case "$1" in
+help)
+	echo "tailnet: reach the phone and your devices over Tailscale."
+	echo "  tailnet       status and the tailnet address"
+	echo "  tailnet on    connect (first time: open the login link"
+	echo "                on another device)"
+	echo "  tailnet off   disconnect, frees memory"
+	echo "Needs: apk add tailscale (wifi first). Off at every boot."
+	;;
 '')
 	status
 	;;

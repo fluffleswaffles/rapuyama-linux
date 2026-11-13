@@ -76,6 +76,13 @@ step() {
 PAT=
 case "${1:-}" in list|next|prev) PAT="${2:-}" ;; esac
 case "${1:-}" in
+	help)	echo "font: the console font, kept across reboots."
+		echo "  font                current font"
+		echo "  font list [pat]     fonts that fit (name, size, grid)"
+		echo "  font set <name>     use it"
+		echo "  font next | prev    step through the list"
+		echo "  font reset          back to the kernel's font"
+		echo "More fonts: apk add kbd-misc font-terminus." ;;
 	"")	c=$(current); echo "${c:-kernel default (fbcon=font: in the dtb)}" ;;
 	list)	cur=$(current)
 		fonts | while read -r n s g; do

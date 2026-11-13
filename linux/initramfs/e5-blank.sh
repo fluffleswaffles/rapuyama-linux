@@ -41,6 +41,11 @@ set_min() {
 }
 
 case "${1:-}" in
+	help)	echo "blank: when the screen turns off (any key wakes it)."
+		echo "  blank              current delay"
+		echo "  blank <minutes>    1..60, kept across reboots"
+		echo "  blank off          never turn the screen off"
+		echo "  blank reset        back to the default (1 minute)." ;;
 	"")	cur ;;
 	apply)	[ -r "$CONF" ] || exit 0; set_min "$(cat "$CONF")" nosave ;;
 	reset)	rm -f "$CONF"; echo "saved delay removed, the dtb default applies at the next boot" ;;

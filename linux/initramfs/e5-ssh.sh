@@ -105,6 +105,14 @@ firewall() {
 }
 
 case "$1" in
+help)
+	echo "ssh-server: log in to the phone from a PC."
+	echo "  ssh-server       status and the phone's address"
+	echo "  ssh-server on    start the server (root + root's password)"
+	echo "  ssh-server off   stop it"
+	echo "Needs: apk add openssh-server nftables (wifi first)."
+	echo "Off at every boot. scp and sftp work too."
+	;;
 '')
 	status
 	;;

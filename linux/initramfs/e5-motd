@@ -1,18 +1,11 @@
 
- Linux on the Nokia E5 (alpha)
+ Linux on the Nokia E5 (beta)
 
  wifi 'name' 'password'    connect
- wifi                      status
  apk add <package>         install
- ssh-server on | off       ssh in from a pc
- tailnet on | off          tailscale
- mobile | mobile on | off  3G data
- mobile setup              IMEI + APN, once
-   (then start Linux with 3GLinuxE5)
  brightness 50% | up | down
- blank <minutes> | off     screen off
- font list | font set <name>
- dmesg                     kernel log
- poweroff                  phone off
- reboot                    to Symbian
+ poweroff | reboot         off | Symbian
 
+ more: ssh-server  tailnet  mobile
+       wayland  browser  font  blank
+ (<name> help explains each)

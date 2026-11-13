@@ -8,6 +8,16 @@
 # pointer mode (XKB MouseKeys), then the navi key moves the pointer and Enter
 # (= navi centre) clicks; off, the keys are plain arrows/Enter.
 # E5_PTR_STEP = pointer step in pixels (default 2).
+if [ "$1" = "help" ]; then
+	echo "browser: dillo or links in X on the screen."
+	echo "  browser                 dillo, lite.duckduckgo.com"
+	echo "  browser [dillo|links] [url]"
+	echo "Takes about 30 s to start; closing it returns to the console."
+	echo "Mail key = pointer mode: navi key moves, Enter clicks."
+	echo "Not preinstalled: apk add xorg-server xf86-input-evdev xinit"
+	echo "font-misc-misc dillo font-dejavu (or links-graphics)."
+	exit 0
+fi
 if [ "$1" = "--session" ]; then
 	shift
 	s=${E5_PTR_STEP:-2}

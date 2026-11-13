@@ -2,7 +2,7 @@
 # E5: weston (drm backend, pixman) with the foot terminal on the KMS display,
 # back to the console when weston exits.
 #   wayland          start weston + foot
-#   wayland help     this text
+#   wayland help     short explanation
 # weston and foot are not preinstalled:
 #   apk add weston weston-backend-drm weston-shell-desktop foot font-dejavu
 # Keys: the e5 layers as a layout (/etc/xkb/symbols/e5, from tools/e5-xkb.py):
@@ -15,7 +15,14 @@
 APK="apk add weston weston-backend-drm weston-shell-desktop foot font-dejavu"
 case "$1" in
 help | -h | --help)
-	sed -n '2,/^# LIBSEAT/s/^# \{0,1\}//p' "$0"
+	echo "wayland: weston + the foot terminal on the screen."
+	echo "  wayland        start it (Ctrl+D in foot goes back)"
+	echo "  wayland help   this text"
+	echo "Not preinstalled: $APK."
+	echo "Keys: sym = printed symbols, Fn layer for one key, the"
+	echo "right soft key is Ctrl for one key. No pointer or touch."
+	echo "Seat backend: builtin; one retry with noop if weston dies"
+	echo "within 5 s (LIBSEAT_BACKEND=<name> forces one)."
 	exit 0
 	;;
 "") ;;

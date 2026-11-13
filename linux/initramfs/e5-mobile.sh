@@ -246,6 +246,14 @@ apn_cmd() {
 }
 
 case "$1" in
+help)
+	say "mobile: 3G data, only after starting Linux with 3GLinuxE5."
+	say "  mobile              status"
+	say "  mobile on | off     data on / off"
+	say "  mobile setup        IMEI and APN, once (saved on the card)"
+	say "  mobile apn <name>   change only the APN"
+	say "Wi-Fi wins while it is up. After 'off' the modem keeps running."
+	;;
 '') status ;;
 on) on ;;
 off) off ;;
