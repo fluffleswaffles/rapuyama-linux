@@ -22,14 +22,18 @@ dillo|links) app=$1; shift ;;
 *) app=dillo ;;
 esac
 url=${1:-https://lite.duckduckgo.com}
+# overrides for the tests (tests/test-e5-browser.sh)
+SYS=${SYS:-/sys}
+BINDIR=${BINDIR:-/usr/bin}
+LOG=${LOG:-/tmp/browser-x.log}
 
 case "$app" in
-dillo) bin=/usr/bin/dillo; set -- -g 320x240+0+0 "$url" ;;
-links) bin=/usr/bin/links; set -- -g -mode 320x240 "$url" ;;
+dillo) bin=$BINDIR/dillo; set -- -g 320x240+0+0 "$url" ;;
+links) bin=$BINDIR/links; set -- -g -mode 320x240 "$url" ;;
 esac
 
 if ! command -v xinit > /dev/null; then
-	echo "browser: X is not installed: apk add xorg-server xf86-video-fbdev xf86-input-evdev xinit font-misc-misc" >&2
+	echo "browser: X is not installed: apk add xorg-server xf86-input-evdev xinit font-misc-misc" >&2
 	exit 1
 fi
 if [ ! -x "$bin" ]; then
@@ -38,10 +42,14 @@ if [ ! -x "$bin" ]; then
 fi
 # the keypad's event node depends on probe order (the power key may be
 # event0): give X a stable name, found by the device name
-for d in /sys/class/input/event*; do
+for d in $SYS/class/input/event*; do
 	if [ "$(cat "$d/device/name" 2>/dev/null)" = "Nokia E5 keyboard" ]; then
 		ln -sfn "${d##*/}" /dev/input/e5-keypad
 	fi
 done
+# the colour depth follows the kernel's display mode: rgb565 -> 16, else 24
+# (also an old fbdev kernel without the e5_display module)
+depth=24
+[ "$(cat "$SYS/module/e5_display/parameters/rgb565" 2>/dev/null)" = Y ] && depth=16
 echo "starting $app in X (about 30 s)..."
-exec xinit "$0" --session "$bin" "$@" -- :0 vt2 -nolisten tcp > /tmp/browser-x.log 2>&1
+exec xinit "$0" --session "$bin" "$@" -- :0 vt2 -nolisten tcp -depth $depth > "$LOG" 2>&1
