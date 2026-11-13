@@ -9,7 +9,9 @@
 # sym = printed symbols, fn = the Fn layer, one key each; the right soft key
 # is Ctrl for one key. Not in weston: pointer mode (Mail), the arrows stay
 # arrows. No touch screen, no pointer.
-# LIBSEAT_BACKEND = seat backend (default builtin: weston runs as root).
+# Exiting foot (Ctrl+D) ends weston and returns to the console.
+# LIBSEAT_BACKEND = seat backend (default builtin: weston runs as root; if
+# weston dies within 5 s, one retry with noop; an explicit value is kept).
 APK="apk add weston weston-backend-drm weston-shell-desktop foot font-dejavu"
 case "$1" in
 help | -h | --help)
@@ -24,10 +26,9 @@ help | -h | --help)
 esac
 # overrides for the tests (tests/test-e5-wayland.sh)
 SYS=${SYS:-/sys}
-BINDIR=${BINDIR:-/usr/bin}
 TEMPLATE=${TEMPLATE:-/etc/xdg/weston/weston.ini}
 
-if ! command -v weston > /dev/null || [ ! -x "$BINDIR/foot" ]; then
+if ! command -v weston > /dev/null || ! command -v foot > /dev/null; then
 	echo "wayland: weston/foot not installed: $APK" >&2
 	exit 1
 fi
@@ -43,10 +44,23 @@ else
 	gbm=
 fi
 sed "s/^#@GBM@\$/$gbm/" "$TEMPLATE" > "$XDG_RUNTIME_DIR/weston.ini" || exit 1
-export SHELL=${SHELL:-/bin/sh} LIBSEAT_BACKEND=${LIBSEAT_BACKEND:-builtin}
+export SHELL=${SHELL:-/bin/sh}
 echo "starting weston + foot..."
-weston --backend=drm --config="$XDG_RUNTIME_DIR/weston.ini"
+conf="$XDG_RUNTIME_DIR/weston.ini"
+if [ -n "$LIBSEAT_BACKEND" ]; then
+	weston --backend=drm --config="$conf"
+	exit $?
+fi
+# libseat's builtin backend needs root and the vt; a weston that dies right
+# away (libseat error) gets one more try without seat management, as the
+# e6 init does
+t=$(date +%s)
+LIBSEAT_BACKEND=builtin weston --backend=drm --config="$conf"
 rc=$?
-# weston gives the vt back to the console itself
+if [ $rc != 0 ] && [ $(($(date +%s) - t)) -lt 5 ]; then
+	echo "wayland: weston exited with $rc right away, retrying with LIBSEAT_BACKEND=noop" >&2
+	LIBSEAT_BACKEND=noop weston --backend=drm --config="$conf"
+	rc=$?
+fi
 [ $rc = 0 ] || echo "wayland: weston exited with $rc" >&2
 exit $rc

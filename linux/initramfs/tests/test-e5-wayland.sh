@@ -16,7 +16,8 @@ setup() {
 	mkdir -p "$T/bin" "$T/sys/class/input" "$T/run"
 	# stubs: weston logs its argv and environment (the script execs or runs
 	# it), foot only has to exist
-	printf '#!/bin/sh\necho "$*" > "%s/weston.argv"\necho "$LIBSEAT_BACKEND" > "%s/weston.seat"\n' "$T" "$T" > "$T/bin/weston"
+	# (fail_backend = a backend name it dies on at once, exit 1)
+	printf '#!/bin/sh\necho "$*" > "%s/weston.argv"\necho "$LIBSEAT_BACKEND" > "%s/weston.seat"\necho "$LIBSEAT_BACKEND" >> "%s/weston.calls"\n[ "$LIBSEAT_BACKEND" = "$(cat "%s/fail_backend" 2>/dev/null)" ] && exit 1\nexit 0\n' "$T" "$T" "$T" "$T" > "$T/bin/weston"
 	printf '#!/bin/sh\n' > "$T/bin/foot"
 	chmod +x "$T/bin/weston" "$T/bin/foot"
 }
@@ -26,7 +27,7 @@ check() { [ "$@" ] || no "check failed: [ $* ]"; }
 run() {
 	TEMPLATE=$I/e5-weston.ini; export TEMPLATE
 	p=$1; shift
-	out=$(PATH="$p" SYS="$T/sys" BINDIR="$T/bin" XDG_RUNTIME_DIR="$T/run" $SH "$I/e5-wayland.sh" "$@" 2>&1)
+	out=$(PATH="$p" SYS="$T/sys" XDG_RUNTIME_DIR="$T/run" $SH "$I/e5-wayland.sh" "$@" 2>&1)
 	rc=$?
 }
 fake_rgb565() {
@@ -87,6 +88,29 @@ t_libseat_builtin() {
 	run "$T/bin:$PATH"
 	check "$(cat "$T/weston.seat" 2>/dev/null)" = builtin
 }
+t_libseat_retry_noop() {
+	setup libseat_retry_noop
+	echo builtin > "$T/fail_backend"
+	run "$T/bin:$PATH"
+	check $rc = 0
+	check "$(cat "$T/weston.calls" 2>/dev/null | tr '\n' ' ')" = "builtin noop "
+	case "$out" in *noop*) ;; *) no "no retry message: $out" ;; esac
+}
+t_libseat_both_fail() {
+	setup libseat_both_fail
+	printf '#!/bin/sh\necho "$LIBSEAT_BACKEND" >> "%s/weston.calls"\nexit 3\n' "$T" > "$T/bin/weston"
+	run "$T/bin:$PATH"
+	check $rc = 3
+	check "$(cat "$T/weston.calls" | tr '\n' ' ')" = "builtin noop "
+}
+t_libseat_explicit_kept() {
+	setup libseat_explicit_kept
+	echo seatd > "$T/fail_backend"
+	out=$(LIBSEAT_BACKEND=seatd PATH="$T/bin:$PATH" SYS="$T/sys" TEMPLATE="$I/e5-weston.ini" XDG_RUNTIME_DIR="$T/run" $SH "$I/e5-wayland.sh" 2>&1)
+	rc=$?
+	check $rc = 1
+	check "$(cat "$T/weston.calls" | tr '\n' ' ')" = "seatd "
+}
 t_help() {
 	setup help
 	run "$T/bin:$PATH" help
@@ -94,8 +118,10 @@ t_help() {
 	case "$out" in *"apk add"*) ;; *) no "help lacks apk add: $out" ;; esac
 	check ! -f "$T/weston.argv"
 	rm "$T/bin/weston"
-	run "$T/bin" help
+	mkdir "$T/sedbin"; ln -s "$(command -v sed)" "$T/sedbin/sed"
+	run "$T/sedbin" help
 	check $rc = 0
+	case "$out" in *"apk add weston"*) ;; *) no "help without weston lacks apk add: $out" ;; esac
 }
 t_template() {
 	c="$I/e5-weston.ini"
@@ -105,6 +131,7 @@ t_template() {
 	grep -q '^path=/usr/bin/foot$' "$c" || no "no foot autolaunch"
 	grep -q '^backend=drm$' "$c" || no "no drm"
 	grep -q '^renderer=pixman$' "$c" || no "no pixman"
+	grep -q '^watch=true$' "$c" || no "no watch=true"
 	grep -q 'animation=none' "$c" || no "animations on"
 	return 0
 }
