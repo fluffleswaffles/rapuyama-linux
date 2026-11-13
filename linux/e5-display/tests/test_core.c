@@ -177,6 +177,47 @@ static void test_partial_rows(void)
 	CHECK(ch.y0 == 100 && ch.y1 == 103);
 }
 
+static void test_partial_columns(void)
+{
+	/* a damage clip: columns 13..101 of rows 7..50, into both dst formats */
+	static u32 src[W * H], d32[W * H];
+	static u16 d16[W * H];
+	static u8 tmp[W * 4];
+	struct e5d_band ch = { 0, 0 };
+	const u32 x0 = 13, x1 = 101, y0 = 7, y1 = 50;
+	int bad = 0;
+
+	fill_xrgb(src, W, H);
+	memset(d32, 0x5a, sizeof(d32));
+	memset(d16, 0x5a, sizeof(d16));
+	e5d_copy_rows((u8 *)d32, W * 4, 4, (u8 *)src, W * 4, 4, x0, x1, y0, y1, tmp, &ch);
+	CHECK(ch.y0 == y0 && ch.y1 == y1);
+	ch = (struct e5d_band){ 0, 0 };
+	e5d_copy_rows((u8 *)d16, W * 2, 2, (u8 *)src, W * 4, 4, x0, x1, y0, y1, tmp, &ch);
+	CHECK(ch.y0 == y0 && ch.y1 == y1);
+	for (u32 y = 0; y < H; y++)
+		for (u32 x = 0; x < W; x++) {
+			bool in = x >= x0 && x < x1 && y >= y0 && y < y1;
+			u32 i = y * W + x;
+
+			if (d32[i] != (in ? src[i] : 0x5a5a5a5a) ||
+			    d16[i] != (in ? e5d_xrgb_to_565(src[i]) : 0x5a5a))
+				bad++;
+		}
+	CHECK(bad == 0);
+
+	/* a change outside the clip columns is not seen, one inside is */
+	ch = (struct e5d_band){ 0, 0 };
+	src[20 * W + 5] ^= 0x00ffffff;
+	src[30 * W + x1] ^= 0x00ffffff;
+	e5d_copy_rows((u8 *)d32, W * 4, 4, (u8 *)src, W * 4, 4, x0, x1, y0, y1, tmp, &ch);
+	CHECK(ch.y0 >= ch.y1);
+	src[40 * W + x1 - 1] ^= 0x00ffffff;
+	e5d_copy_rows((u8 *)d32, W * 4, 4, (u8 *)src, W * 4, 4, x0, x1, y0, y1, tmp, &ch);
+	CHECK(ch.y0 == 40 && ch.y1 == 41);
+	CHECK(d32[40 * W + x1 - 1] == src[40 * W + x1 - 1]);
+}
+
 static void test_overlay_rgb565_size(void)
 {
 	/* an XRGB8888 overlay of 120 rows into a 565 region of 120 rows */
@@ -208,6 +249,7 @@ int main(void)
 	RUN(test_copy_565_to_xrgb);
 	RUN(test_no_change_no_push);
 	RUN(test_partial_rows);
+	RUN(test_partial_columns);
 	RUN(test_overlay_rgb565_size);
 	if (fails) {
 		printf("%d of %d checks FAILED\n", fails, runs);
