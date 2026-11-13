@@ -78,7 +78,8 @@ The network and the installed packages are gone after a reboot, so run `wifi` ag
 ## What doesn't work
 
 - **Charging** under Linux. With the cable in, the battery reads "Not charging" and keeps draining. Charge in Symbian, then start Linux.
-- **Calls, SMS, mobile data** (the cellular modem is planned for a later version), **sound**, **camera**, **Bluetooth**, **suspend**.
+- **Calls, SMS**, **sound**, **camera**, **Bluetooth**, **suspend**.
+- **Mobile data** works but is experimental and not in a release yet, see [Mobile data (experimental)](#mobile-data-experimental).
 - **Saving anything in simple mode.** Use the advanced setup for that (Alpine on the card's own partition, changes are kept), see [Advanced: Alpine on the memory card](#advanced-alpine-on-the-memory-card).
 - **The real clock.** There is no RTC: the time is wrong until `wifi` sets it over NTP, and TLS (so `apk`) fails until then.
 
@@ -218,6 +219,32 @@ apk add tailscale
 | `tailnet` | On or off, the phone's tailnet address and your devices |
 
 It is a real tunnel (`tailscale0`), so every program can use it. Use the devices' 100.x addresses: Tailscale DNS is off, the phone keeps the DNS server from WLAN. Tailscale uses about 14 MB of RAM (plus its 36 MB program file, which the kernel can drop and reload). `tailnet on` takes about 7 s. v0.03-e5 kernels print a health warning about "connmark rules" in `tailnet`: harmless for the tunnel, gone with the next kernel.
+
+### Mobile data (experimental)
+
+The E5's own 3G modem now works under Linux: the modem firmware runs as a Linux process (`e5rt`), registers on the network with your SIM, and carries data on 3G, including HSDPA. Tested on the phone: pings, DNS, downloads at 1.2-2.2 Mbit/s, turning data off and on, Wi-Fi keeping priority while both are up.
+
+**Not ready for everyday use, and not in a release yet.** It needs the advanced setup and a build from this branch: the cellular kernel (now the default `build-e5.sh` kernel), `e5-3g.dtb` and the second launcher, `3GLinuxE5.sis` (see [Build](#build)). Known problems:
+
+- The modem firmware sometimes resets within the first minutes after boot (about half of the test boots). `mobile` then says "modem stopped": reboot and start 3GLinuxE5 again. The cause is not found yet.
+- In one test, data stalled after about 6 minutes (the modem kept running).
+- The modem can start only once per boot and only in the first 90 s. It uses 5-45 % of the CPU and drains the battery faster, and Linux does not charge the phone yet.
+
+Start Linux with **3GLinuxE5** (LinuxE5 stays Wi-Fi only and never starts the modem). Once, in Linux:
+
+| Command | What |
+| --- | --- |
+| `mobile setup` | Asks for the phone's IMEI (dial `*#06#` in Symbian) and your operator's APN, checks the IMEI and saves both on the card (`E:\linux\e5-imei`, `E:\linux\e5-apn`). Linux never reads them from Symbian and never shows the IMEI |
+| `mobile apn <name>` | Change only the APN |
+
+After that, data comes up by itself about 2 minutes after a 3GLinuxE5 boot:
+
+| Command | What |
+| --- | --- |
+| `mobile` | Modem, network, data (IP, bytes), APN, battery |
+| `mobile off` / `mobile on` | Data off (routes and DNS back) / on again. The modem keeps running |
+
+Allow 3G and HSDPA in Symbian's network settings for fast data. Wi-Fi wins when both are up; if Wi-Fi goes away while data is on, run `mobile off`, then `mobile on`, for working DNS. How it works, what was fixed and what is still open: [`linux/e5-cell/README.md`](../linux/e5-cell/README.md).
 
 ## Build
 
