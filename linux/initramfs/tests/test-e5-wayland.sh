@@ -96,6 +96,19 @@ t_weston_args() {
 	case " $(cat "$T/weston.argv" 2>/dev/null) " in *" --config=$T/run/weston.ini "*) ;; *) no "no --config: $(cat "$T/weston.argv" 2>/dev/null)" ;; esac
 	case "$(cat "$T/weston.argv")" in *--backend=drm*) ;; *) no "no drm backend: $(cat "$T/weston.argv")" ;; esac
 }
+# foot's default window (700x500 px) is bigger than the 320x240 screen:
+# weston autolaunches a wrapper that starts foot fullscreen
+t_foot_fullscreen() {
+	setup foot_fullscreen
+	printf '#!/bin/sh\necho "$*" > "%s/foot.argv"\n' "$T" > "$T/bin/foot"
+	run "$T/bin:$PATH"
+	check $rc = 0
+	w="$T/run/foot-fullscreen"
+	grep -q "^path=$w\$" "$T/run/weston.ini" || no "autolaunch not the wrapper: $(grep '^path=' "$T/run/weston.ini")"
+	check -x "$w"
+	PATH="$T/bin:$PATH" $SH "$w" -e top
+	check "$(cat "$T/foot.argv" 2>/dev/null)" = "--fullscreen -e top"
+}
 t_no_seatd_hint() {
 	setup no_seatd_hint
 	rm "$T/bin/seatd"

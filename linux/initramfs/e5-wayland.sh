@@ -64,8 +64,12 @@ if [ "$(cat "$SYS/module/e5_display/parameters/rgb565" 2>/dev/null)" = Y ]; then
 else
 	gbm=
 fi
+# foot's default window (700x500 px) is bigger than the 320x240 screen and
+# weston's autolaunch takes no arguments: a wrapper starts it fullscreen
+foot="$XDG_RUNTIME_DIR/foot-fullscreen"
+printf '#!/bin/sh\nexec foot --fullscreen "$@"\n' > "$foot" && chmod 755 "$foot" || exit 1
 conf="$XDG_RUNTIME_DIR/weston.ini"
-sed "s/^#@GBM@\$/$gbm/" "$TEMPLATE" > "$conf" || exit 1
+sed -e "s/^#@GBM@\$/$gbm/" -e "s|^path=/usr/bin/foot\$|path=$foot|" "$TEMPLATE" > "$conf" || exit 1
 export SHELL=${SHELL:-/bin/sh}
 
 # what this script started, stopped again on the way out
