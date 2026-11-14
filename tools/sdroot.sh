@@ -106,6 +106,8 @@ if [ "$DEV" = e5 ]; then
 	# away (`wayland help`)
 	$SUDO install -D -m 755 "$TOP/linux/initramfs/e5-wayland.sh" "$MNT/usr/bin/wayland"
 	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5-weston.ini" "$MNT/etc/xdg/weston/weston.ini"
+	# `wayland sway`: its config template (alpine's sway owns /etc/sway/config)
+	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5-sway.conf" "$MNT/etc/xdg/e5/sway.conf"
 	$SUDO install -D -m 644 "$TOP/linux/initramfs/e5.symbols" "$MNT/etc/xkb/symbols/e5"
 	# 3G mobile data (3GLinuxE5 boots): the boot step, `mobile`, the guide,
 	# and the modem runtime + modules from E5_CELL_OUT (linux/e5-cell/build.sh

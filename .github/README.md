@@ -188,6 +188,29 @@ apk add xorg-server xf86-input-evdev xinit font-misc-misc dillo font-dejavu link
 
 `links -g` works from the keyboard alone. Dillo needs pointer mode to follow links. Alpine's NetSurf framebuffer build and `links` without X can't draw on the E5 screen.
 
+### Wayland (weston or sway)
+
+With WLAN up, one of:
+
+```sh
+apk add weston weston-backend-drm weston-shell-desktop foot font-dejavu seatd eudev
+apk add sway foot font-dejavu seatd eudev
+```
+
+`wayland` starts weston with one fullscreen foot terminal; leaving foot (Ctrl+D) returns to the console. `wayland sway` starts sway instead: tiling, a status bar (battery, clock), two foot terminals to begin with. Both draw in software (pixman) and follow the display depth (16 bpp with `e5_display.rgb565=1`). The keys are the console layout (`/etc/xkb/symbols/e5`); there is no pointer.
+
+| Key (sway) | Does |
+| --- | --- |
+| Right soft key, then Enter | New terminal |
+| Right soft key, then q | Close the window |
+| Right soft key, then arrows | Move the focus |
+| Right soft key, then e / s / t | Split direction / stacked / tabbed |
+| Right soft key, then f | Fullscreen |
+| Right soft key, then . or , | Next / previous workspace |
+| Right soft key, then x | Back to the console |
+
+The sway config is `/etc/xdg/e5/sway.conf`, read at every `wayland sway` (edit it there; the `#@DEPTH@` line is filled in for 16 bpp). `wayland help` lists the keys too.
+
 ### SSH server
 
 Log in to the phone from a PC (commands, `scp`, `sftp`) over WLAN. It is off at boot and runs only when you start it. With WLAN up, once:

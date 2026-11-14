@@ -1,10 +1,14 @@
 #!/bin/sh
 # E5: weston (drm backend, pixman) with the foot terminal on the KMS display,
-# back to the console when weston exits.
+# or sway (tiling, several terminals), back to the console when it exits.
 #   wayland          start weston + foot
+#   wayland sway     start sway (config /etc/xdg/e5/sway.conf, mod = Ctrl)
 #   wayland help     short explanation
-# weston, foot, seatd and eudev are not preinstalled:
+# weston, sway, foot, seatd and eudev are not preinstalled:
 #   apk add weston weston-backend-drm weston-shell-desktop foot font-dejavu seatd eudev
+#   apk add sway foot font-dejavu seatd eudev
+# sway: wlroots draws with pixman (WLR_RENDERER), 16 bpp kernel = the config
+# gets render_bit_depth 6; Ctrl+x (right soft key, x) exits.
 # (foot pulls ncurses-terminfo, its TERM=foot entry)
 # Keys: the e5 layers as a layout (/etc/xkb/symbols/e5, from tools/e5-xkb.py):
 # sym = printed symbols, fn = the Fn layer, one key each; the right soft key
@@ -23,33 +27,44 @@
 # devices get an add event first. weston.ini has require-input=true: no
 # keypad seen = weston exits, back to the console.
 APK="apk add weston weston-backend-drm weston-shell-desktop foot font-dejavu seatd eudev"
+APK_SWAY="apk add sway foot font-dejavu seatd eudev"
 case "$1" in
 help | -h | --help)
 	echo "wayland: weston + the foot terminal on the screen."
 	echo "  wayland        start it (Ctrl+D in foot goes back)"
+	echo "  wayland sway   tiling, several terminals: Ctrl, then"
+	echo "    Enter terminal, q close, arrows focus, e/s/t layouts,"
+	echo "    f fullscreen, . , workspaces, x back to the console"
 	echo "  wayland help   this text"
 	echo "Not preinstalled: $APK."
+	echo "For sway: $APK_SWAY."
 	echo "Keys: sym = printed symbols, Fn layer for one key, the"
 	echo "right soft key is Ctrl for one key. No pointer or touch."
-	echo "Runs seatd (screen and keys) and udevd (finds the keypad)"
-	echo "while weston runs; LIBSEAT_BACKEND=<name> picks another"
-	echo "seat backend."
+	echo "Runs seatd (screen, keys) and udevd (keypad) meanwhile;"
+	echo "LIBSEAT_BACKEND=<name> picks another seat backend."
 	exit 0
 	;;
-"") ;;
+"") mode=weston ;;
+sway) mode=sway ;;
 *)
-	echo "usage: wayland [help]" >&2
+	echo "usage: wayland [sway|help]" >&2
 	exit 1
 	;;
 esac
 # overrides for the tests (tests/test-e5-wayland.sh)
 SYS=${SYS:-/sys}
 TEMPLATE=${TEMPLATE:-/etc/xdg/weston/weston.ini}
+SWAY_TEMPLATE=${SWAY_TEMPLATE:-/etc/xdg/e5/sway.conf}
 SEATD_SOCKET=${SEATD_SOCKET:-/run/seatd.sock}
 
-for c in weston foot seatd udevd udevadm; do
+if [ $mode = sway ]; then
+	need="sway foot seatd udevd udevadm" hint="sway/foot/seatd/udevd not installed: $APK_SWAY"
+else
+	need="weston foot seatd udevd udevadm" hint="weston/foot/seatd/udevd not installed: $APK"
+fi
+for c in $need; do
 	if ! command -v $c > /dev/null; then
-		echo "wayland: weston/foot/seatd/udevd not installed: $APK" >&2
+		echo "wayland: $hint" >&2
 		exit 1
 	fi
 done
@@ -60,16 +75,21 @@ chmod 700 "$XDG_RUNTIME_DIR"
 # the colour format follows the kernel's display mode: rgb565 -> weston draws
 # 565 itself, else its default (also an old fbdev kernel without e5_display)
 if [ "$(cat "$SYS/module/e5_display/parameters/rgb565" 2>/dev/null)" = Y ]; then
-	gbm=gbm-format=rgb565
+	gbm=gbm-format=rgb565 depth='output * render_bit_depth 6'
 else
-	gbm=
+	gbm= depth=
 fi
 # foot's default window (700x500 px) is bigger than the 320x240 screen and
 # weston's autolaunch takes no arguments: a wrapper starts it fullscreen
-foot="$XDG_RUNTIME_DIR/foot-fullscreen"
-printf '#!/bin/sh\nexec foot --fullscreen "$@"\n' > "$foot" && chmod 755 "$foot" || exit 1
-conf="$XDG_RUNTIME_DIR/weston.ini"
-sed -e "s/^#@GBM@\$/$gbm/" -e "s|^path=/usr/bin/foot\$|path=$foot|" "$TEMPLATE" > "$conf" || exit 1
+if [ $mode = sway ]; then
+	conf="$XDG_RUNTIME_DIR/sway.conf"
+	sed "s/^#@DEPTH@\$/$depth/" "$SWAY_TEMPLATE" > "$conf" || exit 1
+else
+	foot="$XDG_RUNTIME_DIR/foot-fullscreen"
+	printf '#!/bin/sh\nexec foot --fullscreen "$@"\n' > "$foot" && chmod 755 "$foot" || exit 1
+	conf="$XDG_RUNTIME_DIR/weston.ini"
+	sed -e "s/^#@GBM@\$/$gbm/" -e "s|^path=/usr/bin/foot\$|path=$foot|" "$TEMPLATE" > "$conf" || exit 1
+fi
 export SHELL=${SHELL:-/bin/sh}
 
 # what this script started, stopped again on the way out
@@ -107,8 +127,13 @@ if [ "$seat" = seatd ] && [ ! -e "$SEATD_SOCKET" ]; then
 	fi
 fi
 
-echo "starting weston + foot..."
-LIBSEAT_BACKEND=$seat weston --backend=drm --config="$conf"
+if [ $mode = sway ]; then
+	echo "starting sway (Ctrl+x goes back)..."
+	LIBSEAT_BACKEND=$seat WLR_RENDERER=pixman sway -c "$conf"
+else
+	echo "starting weston + foot..."
+	LIBSEAT_BACKEND=$seat weston --backend=drm --config="$conf"
+fi
 rc=$?
-[ $rc = 0 ] || echo "wayland: weston exited with $rc" >&2
+[ $rc = 0 ] || echo "wayland: $mode exited with $rc" >&2
 exit $rc

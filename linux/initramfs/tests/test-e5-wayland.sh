@@ -21,17 +21,20 @@ setup() {
 	# udevadm only log; pidof finds udevd if $T/udevd_running exists
 	printf '#!/bin/sh\necho "$*" > "%s/weston.argv"\necho "$LIBSEAT_BACKEND" > "%s/weston.seat"\necho "$LIBSEAT_BACKEND" >> "%s/weston.calls"\n[ -e "$SEATD_SOCKET" ] && echo "weston sock" >> "%s/log" || echo "weston nosock" >> "%s/log"\n[ "$LIBSEAT_BACKEND" = "$(cat "%s/fail_backend" 2>/dev/null)" ] && exit 1\nexit 0\n' "$T" "$T" "$T" "$T" "$T" "$T" > "$T/bin/weston"
 	printf '#!/bin/sh\n' > "$T/bin/foot"
+	# sway logs argv, renderer, seat backend; exits with $T/sway_rc (default 0)
+	printf '#!/bin/sh\necho "$*" > "%s/sway.argv"\necho "$WLR_RENDERER $LIBSEAT_BACKEND" > "%s/sway.env"\nexit $(cat "%s/sway_rc" 2>/dev/null || echo 0)\n' "$T" "$T" "$T" > "$T/bin/sway"
 	printf '#!/bin/sh\necho "seatd $*" >> "%s/log"\necho $$ > "%s/seatd.pid"\n: > "$SEATD_SOCKET"\nexec sleep 30\n' "$T" "$T" > "$T/bin/seatd"
 	printf '#!/bin/sh\necho "udevd $*" >> "%s/log"\n' "$T" > "$T/bin/udevd"
 	printf '#!/bin/sh\necho "udevadm $*" >> "%s/log"\n' "$T" > "$T/bin/udevadm"
 	printf '#!/bin/sh\n[ "$1" = udevd ] && [ -e "%s/udevd_running" ] && { echo 99; exit 0; }\nexit 1\n' "$T" > "$T/bin/pidof"
-	chmod +x "$T/bin/weston" "$T/bin/foot" "$T/bin/seatd" "$T/bin/udevd" "$T/bin/udevadm" "$T/bin/pidof"
+	chmod +x "$T/bin/weston" "$T/bin/sway" "$T/bin/foot" "$T/bin/seatd" "$T/bin/udevd" "$T/bin/udevadm" "$T/bin/pidof"
 }
 no() { echo "  $cur: $*"; bad=1; }
 check() { [ "$@" ] || no "check failed: [ $* ]"; }
 # $1 = PATH for the script, rest = arguments
 run() {
 	TEMPLATE=$I/e5-weston.ini; export TEMPLATE
+	SWAY_TEMPLATE=$I/e5-sway.conf; export SWAY_TEMPLATE
 	p=$1; shift
 	out=$(PATH="$p" SYS="$T/sys" XDG_RUNTIME_DIR="$T/run" SEATD_SOCKET="$T/seatd.sock" $SH "$I/e5-wayland.sh" "$@" 2>&1)
 	rc=$?
@@ -219,6 +222,78 @@ t_template() {
 	grep -q '^watch=true$' "$c" || no "no watch=true"
 	grep -q 'animation=none' "$c" || no "animations on"
 	return 0
+}
+
+# `wayland sway`: sway (wlroots, pixman) with the e5 config, same seat setup
+t_sway_args() {
+	setup sway_args
+	run "$T/bin:$PATH" sway
+	check $rc = 0
+	check ! -f "$T/weston.argv"
+	check "$(cat "$T/sway.argv" 2>/dev/null)" = "-c $T/run/sway.conf"
+	check "$(cat "$T/sway.env" 2>/dev/null)" = "pixman seatd"
+	grep -q '^xkb_layout e5$\|^	xkb_layout e5$' "$T/run/sway.conf" || no "no e5 layout in the config"
+	seatd_stopped
+}
+t_sway_rgb565_depth() {
+	setup sway_rgb565_depth; fake_rgb565 Y
+	run "$T/bin:$PATH" sway
+	grep -q '^output \* render_bit_depth 6$' "$T/run/sway.conf" || no "no render_bit_depth 6: $(grep -n render "$T/run/sway.conf")"
+	grep -q '@DEPTH@' "$T/run/sway.conf" && no "placeholder left"
+	return 0
+}
+t_sway_xrgb_no_depth() {
+	setup sway_xrgb_no_depth; fake_rgb565 N
+	run "$T/bin:$PATH" sway
+	grep -q '^[^#]*render_bit_depth' "$T/run/sway.conf" && no "render_bit_depth at 32 bpp"
+	grep -q '@DEPTH@' "$T/run/sway.conf" && no "placeholder left"
+	return 0
+}
+t_sway_rc() {
+	setup sway_rc; echo 3 > "$T/sway_rc"
+	run "$T/bin:$PATH" sway
+	check $rc = 3
+	case "$out" in *"sway exited with 3"*) ;; *) no "no exit message: $out" ;; esac
+	seatd_stopped
+}
+t_sway_missing_hint() {
+	setup sway_missing_hint
+	rm "$T/bin/sway"
+	run "$T/bin:$PATH" sway
+	check $rc = 1
+	case "$out" in *"apk add sway foot font-dejavu seatd eudev"*) ;; *) no "hint wrong: $out" ;; esac
+	check ! -f "$T/weston.argv"
+}
+# sway mode does not need weston installed
+t_sway_without_weston() {
+	setup sway_without_weston
+	rm "$T/bin/weston"
+	run "$T/bin:$PATH" sway
+	check $rc = 0
+	check -f "$T/sway.argv"
+}
+t_bad_arg() {
+	setup bad_arg
+	run "$T/bin:$PATH" foo
+	check $rc = 1
+	case "$out" in *usage*sway*) ;; *) no "usage lacks sway: $out" ;; esac
+	check ! -f "$T/weston.argv"
+	check ! -f "$T/sway.argv"
+}
+t_sway_template() {
+	c="$I/e5-sway.conf"
+	grep -q '^set \$mod Control$' "$c" || no "mod not Control"
+	grep -q '^xwayland disable$' "$c" || no "xwayland not off"
+	grep -q '^bindsym \$mod+x exit$' "$c" || no "no exit key"
+	grep -q '^bindsym \$mod+Return exec foot$' "$c" || no "no terminal key"
+	grep -q '^exec foot$' "$c" || no "no foot at start"
+	grep -q '^#@DEPTH@$' "$c" || no "no depth marker"
+	return 0
+}
+t_help_sway() {
+	setup help_sway
+	run "$T/bin:$PATH" help
+	case "$out" in *"wayland sway"*"apk add sway"*) ;; *) no "help lacks sway: $out" ;; esac
 }
 
 ALL="${*:-$(sed -n 's/^t_\([a-z0-9_]*\)() {$/\1/p' "$0")}"
