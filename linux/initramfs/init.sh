@@ -49,6 +49,10 @@ if [ -z "$E6_ROOT" ]; then
 	mount -t devtmpfs dev /dev 2>/dev/null
 	mkdir -p /dev/pts
 	mount -t devpts devpts /dev/pts
+	# posix shm (shm_open): wlroots/sway put the keymap there and crash
+	# without it; moves to the sd rootfs with /dev
+	mkdir -p /dev/shm
+	mount -t tmpfs -o mode=1777,nosuid,nodev shm /dev/shm
 	mount -t tmpfs tmp /tmp
 fi
 # /run lives on the card there, a stale seatd.sock would keep seatd from starting
