@@ -14,6 +14,7 @@
 #include <time.h>
 #include <ucontext.h>
 #include <poll.h>
+#include "address_space.h"
 #include "sim_bridge.h"
 #include "sim_runtime.h"
 #include "thumb_mmio.h"
@@ -143,6 +144,7 @@ int isi_sim_open(const char *path,int embedded){
 }
 
 int isi_sim_map(void){
+	isi_window_release(0xc6038000,4096);
 	return mmap((void *)0xc6038000,4096,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED_NOREPLACE,-1,0)==MAP_FAILED ? -1 : 0;
 }
 

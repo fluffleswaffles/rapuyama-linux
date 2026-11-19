@@ -1,0 +1,176 @@
+#!/bin/sh
+# explicit packet session
+set -eu
+umask 077
+lib=${LIB:-/usr/libexec/rapuyama-modem}
+state=${STATE:-/run/rapuyama-data}
+owner_dir=${OWNER_DIR:-/tmp}
+proc=${PROC:-/proc}
+runtime=${RUNTIME:-$lib/runtime}
+ip=${IP:-ip}
+pause=${SLEEP:-sleep}
+apns=${APNS:-/usr/share/rapuyama-modem/apns.tsv}
+resolv=${RESOLV:-/etc/resolv.conf}
+test "$#" -le 1 || { echo 'usage: modem-data-connect [PROFILE]' >&2; exit 2; }
+profile=${1:-}
+test "$(id -u)" = 0
+read owner < "$owner_dir/isasw.pid"
+case "$owner" in ''|*[!0-9]*) exit 1;; esac
+healthy(){
+	test ! -e "$owner_dir/isasw.exit" &&
+	test "$(cat "$owner_dir/isasw.pid")" = "$owner" &&
+	kill -0 "$owner" 2>/dev/null &&
+	test "$(readlink "$proc/$owner/exe")" = "$runtime"
+}
+healthy
+test -x "$lib/modem-gprs"
+test ! -e "$state" || { echo 'data session state exists; refusing replacement' >&2; exit 1; }
+mkdir "$state"
+client= iface= address= family= prefix=
+address_added= route_added= rule_added= link_raised= default_added= resolver_installed=
+table=182
+priority=18201
+cleanup(){
+	result=$?
+	trap - 0 HUP INT TERM
+	failed=0
+	rm -f "$state/ready" || failed=1
+	if test -n "$resolver_installed" && cmp -s "$resolv" "$state/resolv.conf"; then
+		if test -e "$state/resolv.conf.saved"; then
+			mv "$state/resolv.conf.saved" "$resolv" || failed=1
+		else
+			rm -f "$resolv" || failed=1
+		fi
+	fi
+	rm -f "$state/resolv.conf" || failed=1
+	if test -n "$rule_added"; then
+		"$ip" "$family" rule del priority "$priority" from "$address/$prefix" table "$table" || failed=1
+	fi
+	if test -n "$iface" && "$ip" link show dev "$iface" > /dev/null 2>&1; then
+		if test -n "$default_added"; then
+			"$ip" "$family" route del default dev "$iface" metric 100 || failed=1
+		fi
+		if test -n "$route_added"; then
+			"$ip" "$family" route del table "$table" default dev "$iface" || failed=1
+		fi
+		if test -n "$address_added"; then
+			"$ip" "$family" addr del "$address/$prefix" dev "$iface" || failed=1
+		fi
+		if test -n "$link_raised"; then "$ip" link set "$iface" down || failed=1; fi
+	fi
+	if test -n "$client"; then
+		kill -TERM "$client" 2>/dev/null || true
+		for attempt in $(seq 1 95); do
+			kill -0 "$client" 2>/dev/null || break
+			"$pause" 1
+		done
+		if kill -0 "$client" 2>/dev/null; then
+			echo 'client still running; preserve state, do not retry' >&2
+			failed=1
+		else
+			wait "$client" 2>/dev/null || true
+		fi
+	fi
+	healthy || failed=1
+	if test "$failed" != 0; then
+		echo 'cleanup incomplete; preserve state, no retry' >&2
+		result=1
+	else
+		rmdir "$state/lock" || result=1
+	fi
+	printf 'exit_status=%s\ncleanup_status=%s\nowner=%s\n' "$result" "$failed" "$owner" > "$state/result"
+	exit "$result"
+}
+mkdir "$state/lock"
+trap cleanup 0
+trap 'exit 1' HUP INT TERM
+printf '%s\n' "$owner" > "$state/owner"
+if test -z "$profile"; then
+	reply=$(PHONET_LOCAL_OBJECT=0xa8 "$lib/phonet-test" --send c8 0000 2>/dev/null || true)
+	plmn=$(printf '%s\n' "$reply" | sed -n 's/.*res c8: //p' | awk '{
+		if ($1 != "42" || $2 != "01") exit
+		for (i = 5; i + 1 <= NF; i += len) {
+			len = 16 * (index("0123456789abcdef", substr($(i + 1), 1, 1)) - 1)
+			len += index("0123456789abcdef", substr($(i + 1), 2, 1)) - 1
+			if (len < 2) exit
+			if ($i == "00" && $(i + 2) == "01") { print "roaming"; exit }
+			if ($i == "00" && $(i + 2) != "00") exit
+			if ($i == "09" && i + 10 <= NF) {
+				a = $(i + 8); b = $(i + 9); c = $(i + 10)
+				mnc3 = substr(b, 1, 1) == "f" ? "" : substr(b, 1, 1)
+				print substr(a, 2, 1) substr(a, 1, 1) substr(b, 2, 1), substr(c, 2, 1) substr(c, 1, 1) mnc3
+				exit
+			}
+		}
+	}' len=0)
+	case "$plmn" in
+	roaming) echo 'roaming: give an explicit profile' >&2; exit 1;;
+	[0-9][0-9][0-9]\ [0-9][0-9]|[0-9][0-9][0-9]\ [0-9][0-9][0-9]) ;;
+	*) echo 'home network not registered; no automatic profile' >&2; exit 1;;
+	esac
+	set -- $plmn
+	line=$(awk -F '\t' -v mcc="$1" -v mnc="$2" '$1 == mcc && $2 == mnc { print; exit }' "$apns")
+	test -n "$line" || { echo "no apn known for $1 $2; give an explicit profile" >&2; exit 1; }
+	printf '%s\n' "$line" | awk -F '\t' '{
+		printf "apn=%s\nauth=%s\n", $3, $4
+		if ($4 == "pap") printf "username=%s\npassword=%s\n", $5, $6
+		printf "data_compression=default\nheader_compression=default\n"
+	}' > "$state/profile"
+	profile=$state/profile
+	printf '%s\n' "$line" | awk -F '\t' '{ printf "profile: %s (%s %s) apn %s\n", $7, $1, $2, $3 }'
+fi
+"$lib/modem-gprs" --profile "$profile" > "$state/client.log" 2>&1 < /dev/null &
+client=$!
+# up to three attaches (gprs.c retries ACCESS_BARRED), ~110 s each when refused
+for attempt in $(seq 1 400); do
+	healthy
+	grep -qx 'CONTEXT ACTIVE' "$state/client.log" && break
+	kill -0 "$client" 2>/dev/null || { wait "$client"; exit 1; }
+	"$pause" 1
+done
+grep -qx 'CONTEXT ACTIVE' "$state/client.log"
+iface=$(sed -n 's/^IFNAME //p' "$state/client.log")
+case "$iface" in gprs[0-9]) ;; *) echo 'unexpected interface' >&2; exit 1;; esac
+address=$(sed -n 's/^IP //p' "$state/client.log")
+ipv6=$(sed -n 's/^IPV6 //p' "$state/client.log")
+if test -n "$address" && test -z "$ipv6"; then family=-4; prefix=32
+elif test -z "$address" && test -n "$ipv6"; then family=-6; prefix=128; address=$ipv6
+else echo 'missing or ambiguous negotiated family' >&2; exit 1
+fi
+case "$address" in ''|*[!0-9a-fA-F.:]*) exit 1;; esac
+# Fresh client interface only. Refuse to adopt someone else's IP configuration.
+test -z "$("$ip" "$family" addr show dev "$iface" | grep -E ' inet6? ' || true)"
+test -z "$("$ip" "$family" route show table "$table")"
+test -z "$("$ip" "$family" rule show | grep -E "^[[:space:]]*$priority:" || true)"
+"$ip" "$family" addr add "$address/$prefix" dev "$iface"
+address_added=1
+"$ip" link set "$iface" up
+link_raised=1
+"$ip" "$family" route add table "$table" default dev "$iface"
+route_added=1
+"$ip" "$family" rule add priority "$priority" from "$address/$prefix" table "$table"
+rule_added=1
+printf '# modem-data-connect session DNS\n' > "$state/resolv.conf.new"
+for dns in $(sed -n 's/^DNS[12] //p' "$state/client.log"); do
+	case "$dns" in ''|*[!0-9a-fA-F.:]*) exit 1;; esac
+	case "$family:$dns" in -4:*:*) continue;; -6:*.*) continue;; esac
+	printf 'nameserver %s\n' "$dns" >> "$state/resolv.conf.new"
+done
+mv "$state/resolv.conf.new" "$state/resolv.conf"
+# while mobile data is up it is the phone's network: default route and system DNS,
+# both removed again by cleanup
+"$ip" "$family" route add default dev "$iface" metric 100
+default_added=1
+if test -e "$resolv"; then cp -p "$resolv" "$state/resolv.conf.saved"; fi
+cp "$state/resolv.conf" "$resolv.new" && mv "$resolv.new" "$resolv"
+resolver_installed=1
+healthy
+kill -0 "$client"
+printf 'owner=%s\ninterface=%s\naddress=%s/%s\ntable=%s\nresolver=%s\n' \
+	"$owner" "$iface" "$address" "$prefix" "$table" "$resolv" > "$state/ready"
+cat "$state/ready"
+while kill -0 "$client" 2>/dev/null; do
+	healthy
+	"$pause" 1
+done
+wait "$client"

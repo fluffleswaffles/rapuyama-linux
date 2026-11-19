@@ -45,6 +45,7 @@ cp "$HERE/../initramfs/initramfs.list" "$KOUT/initramfs.list"
 	printf 'file /usr/bin/vctri %s 755 0 0\n' "$KOUT/vc-khrn/vctri"
 	printf 'file /usr/bin/vcwl %s 755 0 0\n' "$KOUT/vc-khrn/vcwl"
 	printf 'file /usr/bin/rapuyama-charge %s 755 0 0\n' "$KOUT/charging/rapuyama-charge"
+	printf 'file /usr/bin/rapuyama-charge-calibrate %s 755 0 0\n' "$HERE/../charging/calibrate.sh"
 	if [ -n "${CHARGE_CALIBRATION:-}" ]; then
 		printf 'file /etc/rapuyama-charge.cal %s 600 0 0\n' "$(realpath "$CHARGE_CALIBRATION")"
 	fi
@@ -120,7 +121,9 @@ make -C "$KSRC" O="$KOUT" scripts_dtc
 for v in vc vc-565 vc-565-gpu vc-565-gpu-dma vc-565-gpu-dma-nohlt vc-565-charger vc-khrn vc-gl; do
 	"$KOUT/scripts/dtc/dtc" -I dts -O dtb -i "$HERE/../boot" \
 		-o "$KOUT/e6-$v.dtb" "$HERE/../boot/e6-$v.dts"
-	if [ -n "${CHARGE_CALIBRATION:-}" ]; then
+	# the charge controller's lease calibrates itself per phone (charging/calibrate.sh),
+	# so this no longer waits for a calibration file. CHARGE_CONTROL=0 leaves it out
+	if [ "${CHARGE_CONTROL:-1}" = 1 ]; then
 		node=/soc/i2c@20032500/charger@6b
 		phandle=$(fdtget -t u "$KOUT/e6-$v.dtb" /soc/gpio@20031900 phandle)
 		fdtput "$KOUT/e6-$v.dtb" "$node" nokia,em-control

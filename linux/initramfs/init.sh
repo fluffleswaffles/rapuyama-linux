@@ -68,8 +68,13 @@ if [ -n "$root" ] && [ -z "$E6_ROOT" ]; then
 	log "no rootfs on $root, staying in the initramfs"
 fi
 
-if [ -x /usr/bin/rapuyama-charge ] && [ -r /etc/rapuyama-charge.cal ]; then
-	/usr/bin/rapuyama-charge /etc/rapuyama-charge.cal > /run/rapuyama-charge.log 2>&1 &
+cal=/etc/rapuyama-charge.cal
+if [ ! -r "$cal" ] && [ -x /usr/bin/rapuyama-charge-calibrate ]; then
+	cal=/run/rapuyama-charge.cal
+	(umask 077; /usr/bin/rapuyama-charge-calibrate > "$cal" 2> /run/rapuyama-charge.log) || rm -f "$cal"
+fi
+if [ -x /usr/bin/rapuyama-charge ] && [ -r "$cal" ]; then
+	/usr/bin/rapuyama-charge "$cal" >> /run/rapuyama-charge.log 2>&1 &
 fi
 
 # swap: compressed zram first (the card is slow), then /swapfile on the card

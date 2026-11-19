@@ -1,9 +1,19 @@
 #!/bin/sh
 set -eu
 umask 077
-lib=/usr/libexec/rapuyama-modem
+lib=${LIB:-/usr/libexec/rapuyama-modem}
 test "$(id -u)" = 0 || { echo 'run as root' >&2; exit 1; }
 test ! -e /tmp/isasw-base && test ! -e /tmp/isasw-base.new || { echo 'fresh Linux boot required; refusing modem restart' >&2; exit 1; }
+for attempt in $(seq 1 20); do
+	bells=$("$lib/doorbells" 2>/dev/null || true)
+	test "$bells" = 0x00000004 || test -z "$bells" && break
+	sleep 1
+done
+if test -z "$bells"; then echo 'DSP doorbells unreadable; starting without the check' >&2
+elif test "$bells" != 0x00000004; then
+	echo "DSP not ready (doorbells $bells); modem not started, restart the phone to use it" >&2
+	exit 3
+fi
 if test ! -r /etc/rapuyama/imei && test -c /dev/rapuyama-identity; then modem-import-identity;fi
 test -r /etc/rapuyama/imei || { echo 'missing private factory IMEI handoff' >&2; exit 1; }
 ifconfig phonet0 up

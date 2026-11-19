@@ -14,11 +14,12 @@ case "${1:-}" in
 esac
 mkdir "$state/watcher" 2>/dev/null || exit 0
 echo "$$" > "$state/watcher/pid"
-listener=;failed=1;reason=activation
+listener=;data=;failed=1;reason=activation
 printf '%s\n' starting > "$state/status"
 finish(){
  trap - 0 HUP INT TERM
  if test -n "$listener"; then kill "$listener" 2>/dev/null || true;wait "$listener" 2>/dev/null || true;fi
+ if test -n "$data"; then kill "$data" 2>/dev/null || true;wait "$data" 2>/dev/null || true;fi
  rm -f "$state/sms-listener.pid" "$state/signal" "$state/call" "$state/calls" "$state/watcher/pid"
  rmdir "$state/watcher" 2>/dev/null || true
  if test "$failed" = 1; then
@@ -31,7 +32,7 @@ trap finish 0
 trap 'failed=0;exit 0' HUP INT TERM
 if test "${1:-}" != --attach; then
  mkdir "$state/start-once" 2>/dev/null || { failed=0;exit 0; }
- modem-start > /tmp/modem-startup.log 2>&1 || exit 1
+ modem-start > /tmp/modem-startup.log 2>&1 || { test "$?" = 3 && reason=dsp;exit 1; }
 fi
 test ! -e /tmp/isasw.exit
 read owner < /tmp/isasw.pid
@@ -47,6 +48,9 @@ mkdir -p "$MODEM_SMS_INBOX"
 PHONET_LOCAL_OBJECT=0xa7 "$lib/phonet-client" --sms-listen > /tmp/modem-receive.log 2>&1 &
 listener=$!
 echo "$listener" > "$state/sms-listener.pid"
+# mobile data follows its setting from here on
+modem-data "$owner" > /tmp/modem-data.log 2>&1 &
+data=$!
 rm -f "$state/failed"
 printf '%s\n' ready > "$state/status"
 reason=runtime

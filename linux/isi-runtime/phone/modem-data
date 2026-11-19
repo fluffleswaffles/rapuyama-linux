@@ -1,0 +1,73 @@
+#!/bin/sh
+# mobile data for one modem owner. one modem-data-connect while the mobile_data setting is on,
+# reconnected after a drop or a failed attach, and the clock from NTP once it is up.
+set -u
+umask 077
+owner=${1:?usage: modem-data OWNER_PID}
+case "$owner" in ''|*[!0-9]*) exit 2;; esac
+state=/run/rapuyama-modem
+session=/run/rapuyama-data
+settings=${XDG_CONFIG_HOME:-${HOME:-/root}/.config}/yamashell/settings.conf
+child= apn= clock= delay=10
+setting(){ sed -n "s/^$1=//p" "$settings" 2>/dev/null | head -n 1; }
+status(){ printf '%s\n' "$*" > "$state/data.new" && mv "$state/data.new" "$state/data"; }
+alive(){ test ! -e /tmp/isasw.exit && kill -0 "$owner" 2>/dev/null; }
+# modem-boot writes "uptime percent rat" every 10 s; rat is 2 or 3 only while registered
+registered(){
+	rat=0
+	read stamp percent rat < "$state/signal" 2>/dev/null || return 1
+	test "$rat" = 2 || test "$rat" = 3
+}
+stop(){
+	test -n "$child" || return 0
+	kill -TERM "$child" 2>/dev/null
+	wait "$child" 2>/dev/null
+	child=
+}
+finish(){ trap - 0 HUP INT TERM; stop; status off; exit 0; }
+trap finish 0 HUP INT TERM
+# the next attempt waits, but a setting turned off still takes effect within 2 s
+pause(){
+	left=$1
+	while test "$left" -gt 0 && alive && test "$(setting mobile_data)" = 1; do sleep 2; left=$((left - 2)); done
+}
+status off
+while alive; do
+	if test "$(setting mobile_data)" != 1; then
+		stop; status off; delay=10; sleep 2; continue
+	fi
+	if test -n "$child" && kill -0 "$child" 2>/dev/null; then
+		if test -e "$session/ready"; then
+			status "connected $(sed -n 's/^address=\(.*\)\/.*/\1/p' "$session/ready")"
+			delay=10
+			# no rtc: without this https fails on every boot
+			if test -z "$clock" && timeout 30 ntpd -n -q -p pool.ntp.org > /dev/null 2>&1; then clock=1; fi
+		fi
+		# a new access point takes effect on the next session
+		if test "$(setting apn)" != "$apn"; then stop; delay=0; fi
+		sleep 2; continue
+	fi
+	if test -n "$child"; then
+		wait "$child" 2>/dev/null
+		child=
+		if test "$delay" -gt 0; then status "retry $delay"; pause "$delay"; fi
+		delay=$((delay < 30 ? delay * 2 : 60))
+		test "$delay" -gt 0 || delay=10
+		continue
+	fi
+	# modem-data-connect keeps its lock when cleanup was incomplete: never paper over that
+	if test -d "$session/lock"; then status failed; sleep 2; continue; fi
+	# an attempt before registration only fails; waiting for it is not a failure
+	if ! registered; then status waiting; sleep 2; continue; fi
+	rm -rf "$session"
+	apn=$(setting apn)
+	set --
+	if test -n "$apn"; then
+		case "$apn" in *[!A-Za-z0-9._-]*) status failed; sleep 2; continue;; esac
+		printf 'apn=%s\nauth=none\ndata_compression=default\nheader_compression=default\n' "$apn" > "$state/data-profile"
+		set -- "$state/data-profile"
+	fi
+	status connecting
+	modem-data-connect "$@" > "$state/data.log" 2>&1 < /dev/null &
+	child=$!
+done

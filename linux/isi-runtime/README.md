@@ -23,6 +23,8 @@ The ALSA frontend uses the standard loopback card and default plug/dmix configur
 
 On E6, `snd-aloop` must be loaded with `coherent_buffers=1`. The opt-in buffer allocator uses the platform device's coherent DMA allocation and mmap APIs; unrelated platforms retain the normal vmalloc default. Without coherent mappings, an E6 mmap client reproducibly read thousands of stale samples after a kernel silence reset. The generic dmix mixer interpreted stale nonzero destinations as active sums and mixed old audio into new data. Coherent allocation made all four silence-reset checks read zero, restored bit-exact full-source transfer through plug/dmix and passed a two-client mixing test. No global cache disable, guessed physical address or modem register change is involved. The lifecycle helper refuses a loopback missing this requirement rather than silently starting a noisy backend.
 
+The silent microphone after media playback may be related to audio-server item `01`: `audio_start` sets it to `0x0d` with operation `06` (resource `0x0b`, message `0x14`), but cleanup does not restore it and `modem-call`/`modem-answer` do not set it. The cause is still unconfirmed.
+
 Clean full-phrase loudspeaker playback through the ordinary ALSA default device has been confirmed by the user. Five consecutive production-backend streams and a 16-second OGG ringtone completed with acknowledged cleanup on the same modem owner. These checks do not establish arbitrary-duration playback, microphone capture or media/call handoff reliability.
 
 ## Kernel
@@ -32,6 +34,8 @@ The original firmware addresses start at `0xc6200000`. Select the optional RapuY
 A separate configuration can be supplied to the canonical kernel build with `KCONFIG_FRAGMENT=/path/to/config.fragment`; `INITRAMFS_EXTRA=/path/to/initramfs.list` adds an optional userspace file list. Use a separate `KOUT` for experiments.
 
 The packet endpoint `/dev/rapuyama-isi` allows one privileged backend opener. One read returns one outgoing ISI frame; one write submits one incoming frame. The media byte is `0x15`; the two-byte length at offset 4 is little endian and counts bytes after the first six. The network interface uses standard big endian Phonet headers. Short reads and failed copies into caller memory retain the outgoing packet. Carrier follows backend ownership.
+
+The runtime reserves `0xc6000000-0xc7200000` before allocating other memory so the host heap cannot occupy firmware addresses. Fixed mappings replace only their own part of that reservation. The SIM adapter also checks kernel-address signatures and must be rebound when the kernel layout changes; matching module vermagic is not enough.
 
 ## Run
 
@@ -43,6 +47,39 @@ rapuyama-isi-runtime /path/to/private-images --mdi /dev/rapuyama-mdi --backend /
 
 The first command tests 100 MTC version transactions entirely inside the process. `--dsp-selftest` and `--dsp-tx-selftest` run 100 simulated DSP deliveries or 100 publishes with DSP acknowledgements against anonymous ring memory; they need the 3G25 kernel too. The second serves Phonet packets from the kernel endpoint. The interface needs a host Phonet address, normally `0x6c`. A firmware fault or unsupported privileged operation terminates the process and disconnects the backend; it does not execute firmware in kernel mode.
 
+On the phone, `init.sh` calls `modem-boot`, which runs `modem-start` once per boot. The MDI doorbell register `0x20040280` must read 4 after the Symbian handoff. A value of 0 means the DSP is no longer ready; starting against it can panic the runtime and reset the phone. `modem-start` uses the `doorbells` helper to wait up to 20 s, then exits with status 3. `modem-boot` records `failed`/`dsp`, shown in Settings as "Not started: DSP not ready, restart the phone". An unreadable register does not block startup.
+
+Once the modem is ready, `modem-boot` starts `modem-data`. With `mobile_data=1` in Yamashell, it waits for network registration and keeps one `modem-data-connect` session running. The `apn` setting selects an explicit profile; an empty setting uses automatic APN selection. Failed sessions reconnect after 10 s, doubling up to 1 min. The service sets the clock once through NTP for HTTPS certificate validation and ends the session within 2 s of disabling mobile data. `/run/rapuyama-modem/data` publishes `off`, `waiting`, `connecting`, `connected ADDRESS`, `retry SECONDS` or `failed` for the status bar and Settings.
+
+## Packet data
+
+The build also produces `modem-gprs`. `--probe` reads the GPDS version and status; `--data APN` attaches, creates a pipe and activates a PDP context. Attach requests use `FOLLOW_ON` and proceed directly to context setup. An attach can take up to 120 s. The client retries `ACCESS_BARRED` (`cause fd`) up to three attaches in total, 10 s apart; `modem-data-connect` allows up to 400 s for setup. A client timeout does not cancel a pending firmware radio operation.
+
+`modem-data-connect [PROFILE]` runs one session. Without a profile, it reads the registered network's MCC/MNC and selects its internet APN from `/usr/share/rapuyama-modem/apns.tsv`. `apn-table.py` generates this table from GNOME's public-domain `mobile-broadband-provider-info`. Automatic selection refuses roaming and unknown networks; supply an explicit profile in those cases. The session installs a default route through `gprs0` (metric 100), a policy rule using table 182 and the network's DNS in `/etc/resolv.conf`. Cleanup removes the session's routes and rule and restores the previous resolver configuration.
+
+GSM data works, including DNS, TCP/HTTP and HTTPS with certificate validation using an automatic Beeline profile. UMTS DNS, HTTP and 1000-byte ICMP packets also work after the CELL_DCH downlink-buffer fix. UMTS still has intermittent attach refusals and multi-minute outages after RRC reconfiguration; long sessions are not reliable yet. The failed attach traces show unanswered RRC connection requests despite a normal DSP signal report. The cause is unresolved. GSM is not forced automatically.
+
+### Connection profiles
+
+`modem-gprs --symbian-data APN` uses the context layout from `CMmPacketContextMessHandler::GpdsContextConfigureReq`: a DNS request, explicit compression defaults (`ff/ff`), APN and radio-activity notification. `--data APN` keeps the existing wire format.
+
+`modem-gprs --profile FILE` reads an owner-only regular file. Symlinks, group/other access, duplicate keys and unknown keys are rejected; values are not expanded by a shell. An unauthenticated IPv4 profile looks like this (replace `internet` with your operator's APN):
+
+```ini
+apn=internet
+auth=none
+data_compression=default
+header_compression=default
+```
+
+PAP requires `auth=pap`, `username=` and `password=`. CHAP requires `auth=chap`, `username=`, `challenge_hex=`, a 16-byte `response_hex=` and decimal `identifier=`. The client expects CHAP values from the caller; it does not negotiate the challenge or generate a response. Authentication is sent after configuration acceptance and before activation, and requires a matching response. PAP/CHAP with real credentials has not been verified on hardware.
+
+Credentials are refused unless the running modem process can be inspected and has no nonempty `ISI_TRACE`, since full packet traces can expose them. The client does not restart the modem to disable tracing. It wipes secret file contents and outgoing request buffers after use and does not print them in errors.
+
+`qos=r99-subscribed` adds a separate R99 QoS configure exchange before activation, after any authentication. It sends requested/minimum QoS subblocks `0x06`/`0x07` (20 bytes each), a DNS request and radio-activity notification. Classified fields use `SUBSCRIBED` (zero), with all numeric requests and minima zero. This requests subscribed defaults rather than importing the active Symbian QoS policy. `qos=none`, the default, omits this exchange. Setup stops on rejection, a short reply or a mismatched context ID.
+
+IPv6 context encoding exists, but Linux IPv6 address and interface setup are not implemented. Operator-profile import and recovery across radio-mode changes are also unfinished.
+
 ## DSP transport development
 
 `CONFIG_SOC_RAPUYAMA_MDI` provides the optional MCU/DSP descriptor controller and `/dev/rapuyama-mdi`. No device node is enabled in the normal device tree. The driver adopts existing ring headers, handles RX/TX interrupts and transfers one 16-byte little endian descriptor per read or write. It does not boot or reset the DSP. The runtime attaches with `--mdi`, maintains private shadow rings and replays pending descriptors from the hardware consumer position.
@@ -52,6 +89,12 @@ The status ioctl reports both headers and interrupt counters; `POLLPRI` indicate
 `rapuyama-isi-runtime /path/to/private-images --dsp-selftest` injects 100 synthetic DSP replies with distinct allocation tags into anonymous memory and exercises the original firmware RX interrupt handler, scheduler, host routing, ring index wrapping and packet freeing. It has no hardware access and does not establish radio operation.
 
 Live mode needs `/dev/mem` read access during setup for the reserved DSP windows at physical `0x101ff000`, `0x11400000` and `0x115a0000`; it closes the descriptor before installing the sandbox. These mappings are read-only, while incoming packet buffers are copied by the MDI driver. Firmware assertions and reset requests terminate the process with diagnostics. Use one long-lived runtime so outstanding DSP allocation tags can be returned in their original groups of three.
+
+HSUPA MAC-e responses (`PN_WCDMA`, object `0x3b`, message `0x61`) reference payloads outside the message envelope. Before publishing a nonempty response, the runtime validates the DSP address and copies the word-rounded payload out of its private shadow with `RAPUYAMA_MDI_DSP_PUT`. Copies are limited to the DSP buffer window and 4096 bytes. The updated MDI driver is required; an unsupported ioctl stops publication.
+
+CELL_DCH downlink messages (object `0x3c`, message `0x00`) likewise reference transport blocks in DSP memory rather than carrying them inline. A big-endian 16-bit count at offset 16 precedes entries containing a 16-bit ID and 32-bit DSP address. Before the firmware RX interrupt, `isi_dsp_dl_buffers` fetches each block with `RAPUYAMA_MDI_DSP_GET`, at most 2 KiB per entry and below `0x1b0000`. Without this copy the firmware reads stale shadow memory, loses downlink STATUS/RESET ACK messages and repeatedly re-establishes the bearer. CELL_FACH blocks arrive inline in `0x3b`/`0x1e` and do not need this fetch.
+
+There is also an unresolved SI copy-length discrepancy: the original packer can append 18 SI bits to a 690-bit PDU, while the current decoder copies 88 bytes (704 bits), leaving four bits outside the copy. Hardware occurrence is unconfirmed. The `harq_copy_span.h` planner calculates a guarded full span but does not change runtime copy sizes.
 
 ## Standalone SIM probe
 
@@ -63,11 +106,24 @@ The bridge exposes bounded register transfers and six one-shot IRQ events, with 
 
 The private runtime selects the firmware's existing software KASUMI f9 path for short messages as well as long ones. This computes the original integrity MAC without accessing the unmapped hardware accelerator or its semaphore. The original wrapper ABI is retained. The software path matches the first three integrity vectors in [ETSI TS135203](https://www.etsi.org/deliver/etsi_TS/135200_135299/135203/19.00.00_60/ts_135203v190000p.pdf); the embedded backend selftest also checks the 189-bit vector in the native sandbox. Other hardware accelerator paths remain unadapted. This does not establish network or call operation.
 
+GPRS LLC GEA3 uses the firmware's software path at `c62f2ba6` for all lengths, with the same key schedule and block functions as f8. This avoids the unmapped cipher engine at `c6024c00`, which the original wrapper at `c62f2274` used for requests below 5120 bits. GEA3 has not been verified on hardware because the observed network has not negotiated it.
+
 UMTS f8 scatter/gather requests use the original software KASUMI key expansion and block cipher with the UMTS nonce format. The adapter bounds packet and segment counts and preserves the stream across segments. The native selftest checks the public 120-bit ETSI vector, fragmented input and output bounds.
 
 Set `ISI_TRACE` to a new private file to retain complete MDI descriptors and copied long-message payloads, plus host requests and initial ring headers. The runtime opens the file before dropping privileges, records monotonic timestamps and stops tracing after 8MiB or an I/O error while leaving transport running. Existing files are never overwritten. Each little endian record has nine 32-bit words: magic `0x54495349`, kind (1 RX, 2 TX, 3 host request, 4 initial status), payload length, four descriptor words and the low/high halves of monotonic microseconds, followed by the payload. The trace may contain subscriber and message data; keep it private.
 
 Raw per-descriptor text logging is disabled by default; set `ISI_MDI_VERBOSE=1` for short diagnostic sessions. Fatal diagnostics and DSP panic descriptors remain visible. The binary trace is independent of this switch. Avoid external truncation loops, which can erase the final failure report.
+
+`ISI_GPRS_DIAG=1` adds GPDS and pipe replies as trace kind 5 and up to 4096 f8 metadata records as kind 6. The latter contain nine little-endian 32-bit words: sequence, batch count, item index, bearer, direction, segment count, total bit length, COUNT-C and the two bytes before the first ciphered segment (bit 16 marks readable bytes). Older records have only the first seven words. Metadata is also printed to stderr as `F8` lines, without keys, addresses or ciphered packet contents.
+
+Optional HARQ diagnostics are disabled by default:
+
+- `ISI_HARQ_VERIFY=1` reads back up to 64 payloads after `DSP_PUT`, before publication. It requires `DSP_GET`; a read failure or mismatch stops the runtime. Records go to stderr and, with tracing, kind 7 (ten little-endian 32-bit words, last reserved). They contain correlation, tags, lengths, difference counts and errors, not payloads or addresses. Equal readback confirms the copy, not radio delivery.
+- `ISI_HARQ_STATE=1` requires `ISI_HARQ_VERIFY=1` and pairs readbacks with read-only HARQ process and flow state, including E-TFC indices and saved/table values.
+- `ISI_HARQ_PDU=1` requires `ISI_HARQ_STATE=1` and compares response byte 21 and bit length with the selected process and native PDU table entry.
+- `ISI_HARQ_PACK=1` requires `ISI_HARQ_PDU=1` and captures metadata at native packer call sites, limited to 64 packing captures and eight allocation records. Generation, buffer, tags, index, length and attempt correlate publications with snapshots. Buffer steps come from the native initializer, not independent DSP heap inspection; allocation bounds remain unresolved.
+
+These options only observe state; they do not repair descriptors, expand copies or restart the DSP.
 
 Optional factory identity provider: `ISI_DEVICE_IMEI_FILE` names a private file containing this E6's original 15-digit IMEI, optionally followed by one newline. The runtime validates its checksum and loads it before sandboxing; it never prints the value. This narrowly replaces the firmware identity-read operation, preserving the original allocation, event, padding and IMEI/IMEISV conversion paths. It does not emulate arbitrary secure calls, translate private buffers into physical addresses, or generate an identity. Without this opt-in file the firmware identity path is unchanged and may still enter an unsupported Symbian service. Keep the file private and do not provision another device's identifier. `--identity-selftest` exercises the original reader in an isolated process without MDI or SIM hardware; fictional vectors belong only in this test, never in live mode. The working call configuration combined this provider with the OS timer adapter; the relative contribution of each was not isolated.
 

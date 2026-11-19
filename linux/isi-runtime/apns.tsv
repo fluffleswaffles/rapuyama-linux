@@ -1,0 +1,803 @@
+202	01	internet	none			Cosmote
+202	05	internet	none			Vodafone
+202	09	gint.b-online.gr	none			Wind
+202	10	gint.b-online.gr	none			Wind
+204	02	data.tele2.nl	none			Tele2
+204	04	live.vodafone.com	none			Vodafone
+204	08	portalmmm.nl	none			Hi
+204	09	data.lycamobile.nl	none			Lycamobile
+204	10	portalmmm.nl	none			MEDIONmobile
+204	12	multimedia.lebara.nl	none			Lebara
+204	16	internet	none			T-Mobile
+204	20	internet	none			Orange
+206	01	telenetwap.be	none			Telenet
+206	05	telenetwap.be	none			Telenet
+206	06	data.lycamobile.be	none			Lycamobile
+206	10	mworld.be	none			Neibo
+206	14	internet	none			Telavox
+206	20	gprs.base.be	none			Base
+208	00	orange.fr	none			Orange
+208	01	orange.fr	none			Orange
+208	10	fr.lebara.mobi	none			Lebara
+208	11	websfr	none			SFR
+208	15	free	none			Free Mobile
+208	20	a2bouygtel.com	none			Bouygues Telecom
+208	21	a2bouygtel.com	none			Bouygues Telecom
+208	22	netgprs.com	none			Transatel Telecom
+208	25	data.lycamobile.fr	none			Lycamobile
+208	26	fnetnrj	none			Simplus
+208	260	fnetnrj	none			Simplus
+208	28	DATAPRO	none			AIF
+208	38	fr.lebara.mobi	none			Lebara
+213	03	internetand	none			Andorra Telecom (Mobiland)
+214	01	ac.vodafone.es	none			Vodafone
+214	03	internetmas	none			Másmovil
+214	04	internet	none			Yoigo
+214	05	telefonica.es	none			Movistar (Telefónica)
+214	06	gprs.pepephone.com	none			Pepephone
+214	07	telefonica.es	none			Movistar (Telefónica)
+214	08	internet.euskaltel.mobi	none			Euskaltel
+214	09	internet	none			Orange
+214	16	internet.telecable.es	none			Telecable
+214	17	internet.mundo-r.com	none			móbil R (Mundo-R)
+214	18	internet.ono.com	none			ONO
+214	19	gprs-service.com	none			Simyo
+214	21	jazzinternet	none			Jazztel
+214	24	gprs.eroskimovil.es	none			Eroski Móvil
+214	25	data.lycamobile.es	none			Lycamobile
+216	01	net	none			Telenor
+216	30	internet	none			T-Mobile
+216	70	standardnet.vodafone.net	none			Vodafone
+218	03	gprs.eronet.ba	none			HT-ERONET
+218	05	mtelgprs1	none			m:tel
+219	01	web.htgprs	none			T-Mobile
+219	02	carnet.tele2.hr	none			CARNet Tele2
+219	10	data.vip.hr	none			VIPNET
+220	01	internet	none			Telenor
+220	03	gprsinternet	none			Telekom Srbija
+220	05	vipmobile	none			VIP Mobile
+221	02	ipko	none			IPKO
+222	01	ibox.tim.it	none			TIM
+222	07	web.noverca.it	none			Nòverca
+222	10	mobile.vodafone.it	none			Vodafone
+222	35	data.lycamobile.it	none			Lycamobile
+222	50	iliad	none			Iliad
+222	53	internet.coopvoce.it	none			WEB CoopVoce
+222	54	rabona.it	none			Rabona Mobile
+222	88	internet.wind	none			Wind
+222	99	tre.it	none			3
+226	01	live.vodafone.com	none			Vodafone RO
+226	05	internet	none			Digi.Net Mobil
+226	10	net	none			Orange
+226	16	data.lycamobile.ro	none			Lycamobile
+228	01	gprs.swisscom.ch	none			Swisscom
+228	02	internet	none			Sunrise
+228	03	internet	none			Salt
+228	54	data.lycamobile.ch	none			Lycamobile
+230	01	internet.t-mobile.cz	none			T-Mobile
+230	02	internet	none			O2
+230	03	internet	none			Vodafone
+231	01	internet	none			Orange
+231	02	internet	none			Slovak Telekom
+231	04	internet	none			Slovak Telekom
+231	06	o2internet	none			O2
+232	01	a1.net	none			A1/Telekom Austria
+232	03	gprsinternet	none			T-Mobile
+232	05	drei.at	none			Drei (3)
+232	07	webaut	none			HoT
+232	08	data.lycamobile.at	none			Lycamobile
+232	10	drei.at	none			Drei (3)
+232	11	bob.at	none			Bob
+232	12	web.yesss.at	none			Yesss
+232	17	web	none			Spusu
+234	00	btmobile.bt.com	none			BT Mobile
+234	02	mobile.o2.co.uk	none			O2
+234	03	airtel-ci-gprs.com	none			Airtel-Vodaphone
+234	10	mobile.o2.co.uk	none			O2
+234	11	mobile.o2.co.uk	none			O2
+234	15	uk.lebara.mobi	none			Lebara UK
+234	20	superdrug.net	none			Superdrug
+234	26	data.lycamobile.co.uk	none			Lycamobile
+234	30	everywhere	none			EE
+234	31	vdata	none			Virgin Mobile
+234	32	vdata	none			Virgin Mobile
+234	33	everywhere	none			EE
+234	34	everywhere	none			EE
+234	36	internet	none			Sure (Cable & Wireless)
+234	50	pepper	none			Wave Telecom
+234	54	id	none			iD Mobile
+234	55	internet	none			Sure (Cable & Wireless)
+234	58	3gpronto	none			Manx Telecom
+234	86	everywhere	none			EE
+238	01	internet	none			TDC
+238	02	internet	none			Telenor
+238	06	bredband.tre.dk	none			3
+238	12	data.lycamobile.dk	none			Lycamobile
+238	20	www.internet.mtelia.dk	none			Telia IOT
+238	30	www.internet.mtelia.dk	none			Telia
+238	77	internet	none			Telenor
+240	01	halebop.telia.se	none			Halebop
+240	02	data.tre.se	none			3
+240	04	data.tre.se	none			3
+240	05	internet.tele2.se	none			Tele2
+240	06	internet.telenor.se	none			Telenor
+240	07	internet.tele2.se	none			Tele2
+240	08	internet.telenor.se	none			Telenor
+240	09	internet.djuice.se	none			djuice
+240	12	data.lycamobile.se	none			Lycamobile
+240	14	internet.se	none			TDC
+240	50	internet	none			Telavox
+242	01	telenor.smart	none			Telenor
+242	02	telia	none			Telia
+242	05	internet	none			OneCall
+242	14	ice.net	none			Ice
+242	15	internet	none			Telavox
+242	23	data.lyca-mobile.no	none			Lycamobile
+244	05	internet	none			Elisa
+244	12	internet	none			DNA
+244	21	internet.saunalahti	none			Saunalahti
+244	31	kuirinet	none			Kuiri
+244	91	internet	none			Telia
+246	01	omnitel	none			Telia LT
+246	02	banga	none			Bite
+246	03	internet.tele2.lt	none			TELE2 GPRS
+247	01	internet.lmt.lv	none			LMT
+247	02	internet.tele2.lv	none			Tele2
+247	05	wap	none			Bite
+248	01	internet.emt.ee	none			EMT
+248	02	internet	none			Elisa
+248	03	internet.tele2.ee	none			Tele2
+250	01	internet.mts.ru	none			MTS
+250	02	internet	none			Megafon
+250	08	vtk	none			Vainah Telecom
+250	11	internet.yota	none			Yota
+250	16	internet.ntc	none			NTC
+250	20	internet.tele2.ru	none			Tele2
+250	26	VTB	none			VTB Mobile
+250	27	internet.letai.ru	none			Letai
+250	28	internet.beeline.ru	none			Beeline
+250	32	internet	none			Win Mobile
+250	33	internet.sts.ru	none			STS
+250	34	internet.ktkru.ru	none			Krymtelekom
+250	35	inet.ycc.ru	none			Motiv
+250	45	gpb	none			Gazprombank Mobile
+250	50	internet.sberbank-tele.com	none			SberMobile
+250	60	internet	none			Volna mobile
+250	62	m.tinkoff	none			Tinkoff Mobile
+250	96	internet	none			+7Telecom
+250	97	internet	none			Phoenix
+250	99	internet.beeline.ru	none			Beeline
+255	01	www.jeans.ua	none			Jeans
+255	02	internet.beeline.ua	none			Beeline
+255	03	www.ab.kyivstar.net	none			kyivstar
+255	06	internet	none			life:)
+255	07	3g.utel.ua	none			Utel
+257	01	web.velcom.by	none			velcom
+257	02	internet.mts.by	none			MTS
+257	04	internet.life.com.by	none			life:)
+259	01	internet	none			Orange
+259	02	internet	none			Moldcell
+259	05	internet.unite.md	none			Unité
+260	01	internet	none			Plus
+260	02	internet	none			T-Mobile
+260	03	internet	none			Orange
+260	06	internet	none			Play
+260	09	data.lycamobile.pl	none			Lycamobile
+260	12	multi.internet	none			Cyfrowy Polsat
+260	17	darmowy	none			aero2
+262	01	internet.t-d1.de	none			T-Mobile(Telekom)
+262	02	web.vodafone.de	none			Bild Mobil
+262	03	internet.eplus.de	none			AldiTalk/MedionMobile
+262	04	web.vodafone.de	none			Vodafone
+262	05	internet.eplus.de	none			AldiTalk/MedionMobile
+262	06	internet.t-d1.de	none			T-Mobile(Telekom)
+262	07	pinternet.interkom.de	none			O2
+262	08	pinternet.interkom.de	none			O2
+262	09	web.vodafone.de	none			Vodafone
+262	11	pinternet.interkom.de	none			O2
+262	23	web.vodafone.de	none			Willkommen
+262	33	sipgate	none			sipgate
+262	43	data.lycamobile.de	none			Lycamobile
+262	77	internet.eplus.de	none			AldiTalk/MedionMobile
+266	01	www.gibtele.com	none			Gibtelcom
+268	01	internet.vodafone.pt	none			Vodafone
+268	02	internet	none			Digi PT
+268	03	utms	none			NOS
+268	04	data.lycamobile.pt	none			Lycamobile
+268	06	internet	none			MEO
+268	07	inet	none			LigaT
+270	01	web.pt.lu	none			LUXGSM
+270	77	internet	none			Tango
+270	99	orange.lu	none			Orange
+272	01	hs.vodafone.ie	none			Vodafone
+272	02	open.internet	none			O2
+272	03	broadband.eircommbb.ie	none			E-Mobile
+272	05	3ireland.ie	none			Three Ireland
+272	13	data.lycamobile.ie	none			Lycamobile
+274	01	internet	none			Síminn
+274	02	vmc.gprs.is	none			Vodafone
+274	03	vmc.gprs.is	none			Vodafone
+274	11	internet.nova.is	none			Nova
+276	01	Internet	none			Albania Mobile Communications (AMC)
+276	02	Twa	none			Vodafone
+278	01	Internet	none			Vodafone
+278	21	gosurfing	none			GO Mobile
+278	77	web.melita	none			Melita
+280	01	internet	none			Cytamobile-Vodafone
+280	10	internet	none			MTN
+282	01	Internet	none			Geocell
+283	01	internet.beeline.am	none			Beeline
+283	04	connect.kt.am	none			Karabakh Telecom
+283	05	connect.vivacell.am	none			VivaCell/MTS
+283	10	internet.orange	none			Orange
+284	01	inet-gprs.mtel.bg	none			M-Tel
+284	03	internet.vivacom.bg	none			Vivacom
+284	05	internet.globul.bg	none			GloBul
+286	01	internet	none			Turkcell
+286	02	internet	none			Vodafone
+286	03	internet	none			Avea
+286	04	internet	none			Avea
+288	02	vmc.vodafone.fo	none			Vodafone FO
+293	40	internet.simobil.si	none			Vodafone / Simobil
+293	41	internet	none			Mobitel
+293	64	internet.t-2.net	none			T-2
+293	70	internet	none			Telemach
+294	01	internet	none			T-Mobile
+294	02	datacard	none			One
+294	03	vipoperator	none			Vodafone
+294	04	data.lycamobile.mk	none			Lycamobile
+295	05	datamobile.ag	none			Datamobile
+297	01	gprs.promonte.com	none			ProMonte GSM
+297	02	tmcg-data	none			T-Mobile
+297	03	gprsinternet	none			m:tel
+302	220	isp.telus.com	none			Telus Mobility
+302	320	wap.davewireless.com	none			Mobilicity
+302	370	ltemobile.apn	none			Fido
+302	490	internet.freedommobile.ca	none			Freedom Mobile
+302	500	media.videotron	none			Vidéotron
+302	510	media.videotron	none			Vidéotron
+302	610	inet.bell.ca	none			Bell Mobility
+302	640	inet.bell.ca	none			Bell Mobility
+302	651	inet.bell.ca	none			Bell Mobility
+302	680	inet.stm.sk.ca	none			SaskTel Mobility
+302	720	ltemobile.apn	none			Rogers
+302	750	inet.stm.sk.ca	none			SaskTel Mobility
+302	780	inet.stm.sk.ca	none			SaskTel Mobility
+302	860	isp.telus.com	none			Telus Mobility
+302	880	inet.bell.ca	none			Bell Mobility
+310	010	vzwims	none			Verizon
+310	011	vzwims	none			Verizon
+310	012	vzwims	none			Verizon
+310	026	fast.t-mobile.com	none			T-Mobile
+310	160	fast.t-mobile.com	none			T-Mobile
+310	200	fast.t-mobile.com	none			T-Mobile
+310	210	fast.t-mobile.com	none			T-Mobile
+310	220	fast.t-mobile.com	none			T-Mobile
+310	230	fast.t-mobile.com	none			T-Mobile
+310	240	fast.t-mobile.com	none			T-Mobile
+310	250	fast.t-mobile.com	none			T-Mobile
+310	260	fast.t-mobile.com	none			T-Mobile
+310	270	fast.t-mobile.com	none			T-Mobile
+310	280	ereseller	none			US Mobile (Dark Star)
+310	310	fast.t-mobile.com	none			T-Mobile
+310	410	NXTGENPHONE	none			AweSIM
+310	420	wap.gocbw.com	none			Cincinnati Bell Wireless
+310	490	fast.t-mobile.com	none			T-Mobile
+310	570	wapgw.chinookwireless.net	none			MTPCS (Cellular One)
+310	580	fast.t-mobile.com	none			T-Mobile
+310	660	fast.t-mobile.com	none			T-Mobile
+310	800	fast.t-mobile.com	none			T-Mobile
+311	480	vzwims	none			Verizon
+311	481	vzwims	none			Verizon
+311	482	vzwims	none			Verizon
+311	483	vzwims	none			Verizon
+311	484	vzwims	none			Verizon
+311	485	vzwims	none			Verizon
+311	486	vzwims	none			Verizon
+311	487	vzwims	none			Verizon
+311	488	vzwims	none			Verizon
+311	489	vzwims	none			Verizon
+311	570	ISP	none			BendBroadband
+311	588	wbdata	none			Webbing
+311	960	data.lycamobile.com	none			Lycamobile
+334	02	internet.itelcel.com	none			Telcel
+334	03	internet.movistar.mx	none			Movistar
+338	020	wap	none			Cable & Wireless
+338	050	web.digiceljamaica.com	none			Digicel
+342	750	isp.digicelbarbados.com	none			Digicel
+350	00	web.c1.bm	none			CellOne
+358	110	internet	none			Cable & Wireless
+360	070	wap.digiceloecs.com	none			Digicel
+364	390	internet.btcbahamas.com	none			Batelco
+364	49	pda.newcomobile.com	none			Aliv
+370	01	orangenet.com.do	none			Orange
+370	02	internet.ideasclaro.com.do	none			Claro
+370	04	edge.viva.net.do	none			Viva
+374	12	internet	none			bmobile / TSTT
+374	13	wap.digiceltt.com	none			Digicel
+400	01	internet	none			Azercell
+400	02	mms	none			Bakcell
+400	04	azerfon	none			Azerfon
+401	01	internet.beeline.kz	none			Beeline
+401	02	internet	none			K'CELL
+401	77	internet	none			Tele2
+404	01	internet	none			V! (Vodafone Idea)
+404	02	airtelgprs.com	none			Airtel
+404	03	airtelgprs.com	none			Airtel
+404	04	internet	none			V! (Vodafone Idea)
+404	05	internet	none			V! (Vodafone Idea)
+404	06	airtelgprs.com	none			Airtel
+404	07	internet	none			V! (Vodafone Idea)
+404	10	airtelgprs.com	none			Airtel
+404	11	internet	none			V! (Vodafone Idea)
+404	13	internet	none			V! (Vodafone Idea)
+404	14	internet	none			V! (Vodafone Idea)
+404	15	internet	none			V! (Vodafone Idea)
+404	19	internet	none			V! (Vodafone Idea)
+404	20	internet	none			V! (Vodafone Idea)
+404	22	internet	none			V! (Vodafone Idea)
+404	24	internet	none			V! (Vodafone Idea)
+404	27	internet	none			V! (Vodafone Idea)
+404	28	airtelgprs.com	none			Airtel
+404	30	internet	none			V! (Vodafone Idea)
+404	31	airtelgprs.com	none			Airtel
+404	34	bsnlnet	none			BSNL/CellOne
+404	37	airtelgprs.com	none			Airtel
+404	38	bsnlnet	none			BSNL/CellOne
+404	40	airtelgprs.com	none			Airtel
+404	41	airtelgprs.com	none			Airtel
+404	42	airtelgprs.com	none			Airtel
+404	43	internet	none			V! (Vodafone Idea)
+404	44	internet	none			V! (Vodafone Idea)
+404	45	airtelgprs.com	none			Airtel
+404	46	internet	none			V! (Vodafone Idea)
+404	49	airtelgprs.com	none			Airtel
+404	51	bsnlnet	none			BSNL/CellOne
+404	53	bsnlnet	none			BSNL/CellOne
+404	54	bsnlnet	none			BSNL/CellOne
+404	55	bsnlnet	none			BSNL/CellOne
+404	56	internet	none			V! (Vodafone Idea)
+404	57	bsnlnet	none			BSNL/CellOne
+404	58	bsnlnet	none			BSNL/CellOne
+404	59	bsnlnet	none			BSNL/CellOne
+404	60	internet	none			V! (Vodafone Idea)
+404	62	bsnlnet	none			BSNL/CellOne
+404	64	bsnlnet	none			BSNL/CellOne
+404	66	bsnlnet	none			BSNL/CellOne
+404	68	mtnl.net	none			MTNL
+404	69	mtnl.net	none			MTNL
+404	70	airtelgprs.com	none			Airtel
+404	71	bsnlnet	none			BSNL/CellOne
+404	72	bsnlnet	none			BSNL/CellOne
+404	73	bsnlnet	none			BSNL/CellOne
+404	74	bsnlnet	none			BSNL/CellOne
+404	75	bsnlnet	none			BSNL/CellOne
+404	76	bsnlnet	none			BSNL/CellOne
+404	77	bsnlnet	none			BSNL/CellOne
+404	78	internet	none			V! (Vodafone Idea)
+404	80	bsnlnet	none			BSNL/CellOne
+404	81	bsnlnet	none			BSNL/CellOne
+404	82	internet	none			V! (Vodafone Idea)
+404	84	internet	none			V! (Vodafone Idea)
+404	86	internet	none			V! (Vodafone Idea)
+404	87	internet	none			V! (Vodafone Idea)
+404	88	internet	none			V! (Vodafone Idea)
+404	89	internet	none			V! (Vodafone Idea)
+404	90	airtelgprs.com	none			Airtel
+404	92	airtelgprs.com	none			Airtel
+404	93	airtelgprs.com	none			Airtel
+404	95	airtelgprs.com	none			Airtel
+404	96	airtelgprs.com	none			Airtel
+404	97	airtelgprs.com	none			Airtel
+404	98	airtelgprs.com	none			Airtel
+405	51	airtelgprs.com	none			Airtel
+405	52	airtelgprs.com	none			Airtel
+405	54	airtelgprs.com	none			Airtel
+405	56	airtelgprs.com	none			Airtel
+405	66	internet	none			V! (Vodafone Idea)
+405	67	internet	none			V! (Vodafone Idea)
+405	70	internet	none			V! (Vodafone Idea)
+405	750	internet	none			V! (Vodafone Idea)
+405	751	internet	none			V! (Vodafone Idea)
+405	752	internet	none			V! (Vodafone Idea)
+405	753	internet	none			V! (Vodafone Idea)
+405	754	internet	none			V! (Vodafone Idea)
+405	755	internet	none			V! (Vodafone Idea)
+405	756	internet	none			V! (Vodafone Idea)
+405	799	internet	none			V! (Vodafone Idea)
+405	840	jionet	none			Reliance Jio
+405	854	jionet	none			Reliance Jio
+405	855	jionet	none			Reliance Jio
+405	856	jionet	none			Reliance Jio
+405	857	jionet	none			Reliance Jio
+405	858	jionet	none			Reliance Jio
+405	859	jionet	none			Reliance Jio
+405	860	jionet	none			Reliance Jio
+405	861	jionet	none			Reliance Jio
+405	862	jionet	none			Reliance Jio
+405	863	jionet	none			Reliance Jio
+405	864	jionet	none			Reliance Jio
+405	865	jionet	none			Reliance Jio
+405	866	jionet	none			Reliance Jio
+405	867	jionet	none			Reliance Jio
+405	868	jionet	none			Reliance Jio
+405	869	jionet	none			Reliance Jio
+405	870	jionet	none			Reliance Jio
+405	871	jionet	none			Reliance Jio
+405	872	jionet	none			Reliance Jio
+405	873	jionet	none			Reliance Jio
+405	874	jionet	none			Reliance Jio
+410	01	connect.mobilinkworld.com	none			Mobilink
+410	03	ufone.internet	none			Ufone
+410	04	zonginternet	none			ZONG
+410	06	internet	none			Telenor
+410	07	warid	none			Warid
+412	01	internet	none			AWCC
+413	01	isp	none			Mobitel
+413	02	www.dialogsl.com	none			Dialog GSM
+413	03	wap	none			Tigo
+413	05	www.wap.airtel.lk	none			Airtel
+413	08	htwap	none			Hutch
+414	01	mptnet	none			MPT
+414	05	internet	none			Ooredoo
+414	06	internet	none			Telenor
+415	03	gprs.mtctouch.com.lb	none			MTC Touch
+416	01	zain	none			Zain
+416	77	net.orange.jo	none			Orange
+418	40	net.korek.com	none			Korek
+418	50	net.asiacell.com	none			Asia Cell
+419	02	pps	none			Zain
+419	03	action.wataniya.com	none			Wataniya
+419	04	viva	none			Viva
+420	01	jawalnet.com.sa	none			STC
+420	03	web1	none			Mobily
+420	04	zain	none			Zain
+422	02	taif	none			Oman Mobile
+422	03	isp.nawras.com.om	none			Nawras
+424	02	mnet	none			Etisalat
+424	03	du	none			du
+425	01	uinternet	none			Partner
+425	02	internetg	none			CellCom
+425	03	internet.pelephone.net.il	none			Pelephone
+425	04	wbdata	none			Webbing
+425	07	net.hotm	none			Hot Mobile
+425	08	internet.golantelecom.net.il	none			GolanTelecom
+425	09	we	none			We4G
+425	14	data.youphone.co.il	none			YouPhone 3G
+425	15	hcminternet	none			Home Cellular
+425	16	internet.rl	none			Rami Levi
+426	01	internet.batelco.com	none			Batelco
+426	02	internet	none			Zain BH
+426	04	viva.bh	none			STC
+427	01	gprs.qtel	none			Q-Tel
+427	02	web.vodafone.com.qa	none			Vodafone
+428	99	internet	none			MobiCom
+429	01	ntnet	none			Nepal Telecom
+429	02	mero	none			Mero Mobile
+432	11	mcinet	none			همراه اول
+432	35	mtnirancell	none			ایرانسل
+434	04	internet.beeline.uz	none			Beeline
+434	05	internet	none			Ucell
+434	07	net.ums.uz	none			UMS
+436	01	tcell	none			Tcell
+436	02	tcell	none			Tcell
+436	03	internet	none			Megafon
+436	04	babilon	none			Babilon Mobile
+436	05	internet.beeline.tj	none			Beeline TJ
+436	10	babilon	none			Babilon Mobile
+436	12	tcell	none			Tcell
+437	01	internet.beeline.kg	none			Beeline
+437	05	internet	none			MegaCom
+437	09	internet	none			O!
+440	00	emb.ne.jp	none			e-mobile
+440	01	mopera.ne.jp	none			NTTdocomo
+440	02	mopera.ne.jp	none			NTTdocomo
+440	03	mopera.ne.jp	none			NTTdocomo
+440	04	softbank	none			Softbank Mobile
+440	06	softbank	none			Softbank Mobile
+440	09	mopera.ne.jp	none			NTTdocomo
+440	10	dm.jplat.net	none			b-mobile
+440	11	mopera.ne.jp	none			NTTdocomo
+440	12	mopera.ne.jp	none			NTTdocomo
+440	13	mopera.ne.jp	none			NTTdocomo
+440	14	mopera.ne.jp	none			NTTdocomo
+440	15	mopera.ne.jp	none			NTTdocomo
+440	16	mopera.ne.jp	none			NTTdocomo
+440	17	mopera.ne.jp	none			NTTdocomo
+440	18	mopera.ne.jp	none			NTTdocomo
+440	19	mopera.ne.jp	none			NTTdocomo
+440	20	softbank	none			Softbank Mobile
+440	21	mopera.ne.jp	none			NTTdocomo
+440	22	mopera.ne.jp	none			NTTdocomo
+440	23	mopera.ne.jp	none			NTTdocomo
+440	24	mopera.ne.jp	none			NTTdocomo
+440	25	mopera.ne.jp	none			NTTdocomo
+440	26	mopera.ne.jp	none			NTTdocomo
+440	27	mopera.ne.jp	none			NTTdocomo
+440	28	mopera.ne.jp	none			NTTdocomo
+440	29	mopera.ne.jp	none			NTTdocomo
+440	30	mopera.ne.jp	none			NTTdocomo
+440	31	mopera.ne.jp	none			NTTdocomo
+440	32	mopera.ne.jp	none			NTTdocomo
+440	33	mopera.ne.jp	none			NTTdocomo
+440	34	mopera.ne.jp	none			NTTdocomo
+440	35	mopera.ne.jp	none			NTTdocomo
+440	36	mopera.ne.jp	none			NTTdocomo
+440	37	mopera.ne.jp	none			NTTdocomo
+440	38	mopera.ne.jp	none			NTTdocomo
+440	39	mopera.ne.jp	none			NTTdocomo
+440	40	softbank	none			Softbank Mobile
+440	41	softbank	none			Softbank Mobile
+440	42	softbank	none			Softbank Mobile
+440	43	softbank	none			Softbank Mobile
+440	44	softbank	none			Softbank Mobile
+440	45	softbank	none			Softbank Mobile
+440	46	softbank	none			Softbank Mobile
+440	47	softbank	none			Softbank Mobile
+440	48	softbank	none			Softbank Mobile
+440	49	mopera.ne.jp	none			NTTdocomo
+440	51	vmobile.jp	none			Excite
+440	53	rakuten.jp	none			楽天モバイル
+440	58	mopera.ne.jp	none			NTTdocomo
+440	60	mopera.ne.jp	none			NTTdocomo
+440	61	mopera.ne.jp	none			NTTdocomo
+440	62	mopera.ne.jp	none			NTTdocomo
+440	63	mopera.ne.jp	none			NTTdocomo
+440	64	mopera.ne.jp	none			NTTdocomo
+440	65	mopera.ne.jp	none			NTTdocomo
+440	66	mopera.ne.jp	none			NTTdocomo
+440	67	mopera.ne.jp	none			NTTdocomo
+440	68	mopera.ne.jp	none			NTTdocomo
+440	69	mopera.ne.jp	none			NTTdocomo
+440	87	mopera.ne.jp	none			NTTdocomo
+440	90	softbank	none			Softbank Mobile
+440	92	softbank	none			Softbank Mobile
+440	93	softbank	none			Softbank Mobile
+440	94	softbank	none			Softbank Mobile
+440	95	softbank	none			Softbank Mobile
+440	96	softbank	none			Softbank Mobile
+440	97	softbank	none			Softbank Mobile
+440	98	softbank	none			Softbank Mobile
+440	99	mopera.ne.jp	none			NTTdocomo
+450	05	web.sktelecom.com	none			SK Telecom
+450	06	internet.lguplus.co.kr	none			LG U+
+450	08	alwayson.ktfwing.com	none			KT
+452	01	m-wap	none			MobiFone
+452	02	m3-world	none			Vinaphone
+452	04	v-internet	none			Viettel Mobile
+452	05	internet	none			Vietnamobile
+452	07	internet	none			Beeline VN
+452	08	e-internet	none			EVNTelecom/E-Mobile
+454	00	internet	none			CSL
+454	02	internet	none			CSL
+454	03	mobile.three.com.hk	none			3
+454	04	web.orangehk.com	none			Orange
+454	06	internet	none			SmarTone
+454	10	internet	none			New World
+454	12	peoples.net	none			China Mobile
+454	16	internet	none			PCCW (Sunday)
+454	19	internet	none			PCCW (Sunday)
+454	23	data.lycamobile.hk	none			Lycamobile
+454	35	wbdata	none			Webbing
+455	01	ctm-mobile	none			CTM
+455	03	web.hutchisonmacau.com	none			3 / Hutchison
+455	04	ctm-mobile	none			CTM
+455	05	web.hutchisonmacau.com	none			3 / Hutchison
+456	01	cellcard	none			Cellcard
+456	02	hellowww	none			Hello
+456	04	WAP	none			qb
+456	06	smart	none			Smart Mobile
+456	08	metfone	none			Metfone
+456	09	gprs.beeline.com.kh	none			Beeline
+456	18	Mfone	none			Mfone
+457	01	ltcnet	none			Lao Telecom
+457	02	etlnet	none			ETL
+457	03	startelecom	none			Unitel
+457	08	beelinenet	none			Beeline (Tigo)
+460	00	cmnet	none			China Mobile
+460	01	3gnet	none			China Unicom
+460	02	cmnet	none			China Mobile
+460	11	ctnet	none			China Telecom
+466	01	internet	none			Far EasTone / KGT
+466	89	vibo	none			Vibo Telecom / Aurora
+466	92	emome	none			Chunghwa Telecom (emome)
+466	97	internet	none			TransAsia
+466	99	internet	none			TW Mobile
+470	01	gpinternet	none			GrameenPhone
+470	02	internet	none			Robi (AKTel)
+470	03	blweb	none			Banglalink
+470	04	wap	none			Teletalk
+470	07	internet	none			Airtel (Warid)
+472	01	internet.dhimobile	none			Dhiraagu
+472	02	WataniyaNet	none			Wataniya
+502	12	maxisbb	none			Maxis
+502	13	celcom.net.my	none			Celcom
+502	16	diginet	none			DiGi
+502	17	maxisbb	none			Maxis
+502	19	celcom.net.my	none			Celcom
+505	01	telstra.wap	none			Telstra
+505	02	internet	none			Amaysim
+505	03	purtona.net	none			Crazy John's
+505	06	3netaccess	none			Three
+505	19	data.lycamobile.com.au	none			Lycamobile
+505	38	purtona.net	none			Crazy John's
+510	01	indosatgprs	none			Indosat
+510	08	AXIS	none			AXIS
+510	10	telkomsel	none			Telkomsel
+510	11	www.xlgprs.net	none			Excelcomindo (XL)
+510	20	telkomsel	none			Telkomsel
+510	21	indosatgprs	none			Indosat
+510	89	3gprs	none			3
+515	02	internet.globe.com.ph	none			Globe Telecom
+515	03	internet	none			Smart
+515	05	minternet	none			Digitel (Sun Cellular)
+520	01	internet	none			AIS
+520	03	internet	none			AIS (AWN)
+520	15	internet	none			TOT 3G
+520	18	www.dtac.co.th	none			DTAC
+520	99	internet	none			True Move
+525	01	internet	none			SingTel
+525	02	internet	none			SingTel
+525	03	sunsurf	none			M1
+525	05	shppd	none			Starhub
+528	02	bmobilewap	none			B-Mobile
+528	11	dst.wap	none			DSTCOM
+530	00	internet.telecom.co.nz	none			Telecom New Zealand
+530	01	live.vodafone.com	none			Vodafone
+530	05	internet.telecom.co.nz	none			Telecom New Zealand
+530	24	internet	none			2-Degrees
+537	03	internet.digicelpng.com	none			Digicel
+542	01	vfinternet.fj	none			Vodafone / Kidanet
+547	20	internet	none			Vini
+602	01	mobinilweb	none			MobiNil
+602	02	internet.vodafone.net	none			Vodafone
+602	03	etisalat	none			Etisalat
+603	01	internet	none			Mobilis
+603	02	djezzy.internet	none			Djezzy
+603	03	internet	none			Nedjma
+604	00	internet1.meditel.ma	none			Medi Telecom
+604	01	www.iamgprs1.ma	none			Ittissalat Al Maghrib (IAM)
+604	02	www.wana.ma	none			WANA
+605	01	weborange	none			Orange
+605	02	gprs.tn	none			Tunisie Télécom / TUNTEL
+605	03	internet.tunisiana.com	none			Tunisiana
+608	02	wap.sentelgsm.com	none			Tigo
+610	01	web.malitel3.ml	none			Malitel
+610	02	iew	none			Orange
+611	01	internetogn	none			Orange
+611	05	internet.cellcom.com	none			Cellcom
+612	05	internet	none			MTN
+613	02	internet	none			Airtel 3G
+617	10	WEB	none			Emtel
+620	01	internet	none			MTN
+620	02	browse	none			Vodafone
+620	03	web.tigo.com.gh	none			Tigo
+620	06	internet	none			Airtel
+620	07	internet	none			GloGhana
+621	20	internet.ng.airtel.com.ng	none			Airtel NG
+621	30	web.gprs.mtnnigeria.net	none			MTN
+621	50	glosecure	none			Glo Mobile
+621	60	web.gprs.mtnnigeria.net	none			MTN
+621	70	glosecure	none			Glo Mobile
+621	80	internet.ng.airtel.com.ng	none			Airtel NG
+621	90	etisalat	none			Etisalat
+624	01	INTERNET	none			MTN
+624	02	orangecmgprs	none			Orange
+630	01	vodanet	none			Vodacom
+631	02	internet.unitel.co.ao	none			Unitel
+634	01	internet	none			Zain
+634	02	internet	none			MTN
+634	07	sudaninet	none			Sudani
+635	10	internet.mtn	none			MTN
+635	13	web.tigo.rw	none			Tigo
+636	01	etc.com	none			Ethio Telecom
+639	02	safaricom	none			Safaricom
+639	03	ke.celtel.com	none			Airtel
+639	05	internet.econet.co.ke	none			yu (Econet)
+639	07	bew.orange.co.ke	none			Orange
+640	02	internet	none			tiGO
+640	03	znet	none			Zantel
+640	04	internet	none			Vodacom
+640	05	internet	none			Airtel Tanzania
+641	01	web.ug.zain.com	none			Zain
+641	10	yellopix.mtn.co.ug	none			MTN
+641	11	utbroadband	none			UTL
+641	14	orange.ug	none			Orange
+641	22	web.waridtel.co.ug	none			Warid
+642	02	internet	none			Tempo/Africell
+642	03	ucnet	none			Leo/UCom
+643	01	isp.mcel.mz	none			MCel
+643	03	default	none			Movitel
+643	04	internet	none			Vodacom
+646	01	internet	none			Airtel
+646	02	orangeworld	none			Orange
+646	04	internet	none			Telma
+647	10	websfr	none			SFR Réunion
+649	01	ppsinternet	none			MTC
+649	03	internet	none			Leo
+650	01	Internet	none			TNM
+650	10	internet	none			Airtel MW
+651	01	internet	none			Vodacom Lesotho
+652	01	internet.mascom	none			Mascom Wireless
+652	02	internet.orange.co.bw	none			Orange
+653	02	internet	none			Eswatini Mobile
+653	10	mymtn.co.sz	none			MTN Eswatini
+655	01	internet	none			Vodacom
+655	02	internet	none			8.ta
+655	07	internet	none			Cell-c
+655	10	internet	none			MTN
+704	01	internet.ideasclaro	none			Claro
+704	02	Wap.tigo.gt	none			Comcel / Tigo
+704	03	internet.movistar.gt	none			Movistar
+706	01	internet.ideasclaro	none			Claro
+706	02	wap.digicelsv.com	none			digicel
+706	03	internet.tigo.sv	none			Tigo
+706	04	internet.movistar.sv	none			Movistar
+708	02	internet.tigo.hn	none			Tigo
+710	21	web.emovil	none			Claro
+710	30	internet.movistar.ni	none			Movistar
+710	73	web.emovil	none			Claro
+712	01	icecelular	none			IceCelular
+712	02	icecelular	none			IceCelular
+712	03	kolbi3g	none			Kolbi
+714	01	apn01.cwpanama.com.pa	none			Cable and Wireless
+714	02	internet.movistar.pa	none			Movistar
+716	06	movistar.pe	none			Movistar
+716	07	datacard.nextel.com.pe	none			Nextel
+716	10	tim.pe	none			Claro
+722	010	internet.gprs.unifon.com.ar	none			Movistar
+722	070	internet.gprs.unifon.com.ar	none			Movistar
+722	310	igprs.claro.com.ar	none			Claro
+722	320	igprs.claro.com.ar	none			Claro
+722	330	igprs.claro.com.ar	none			Claro
+722	34	gprs.personal.com	none			Personal
+722	340	arnet.personal.com	none			Arnet
+722	341	gprs.personal.com	none			Personal
+724	02	tim.br	none			TIM
+724	03	tim.br	none			TIM
+724	04	tim.br	none			TIM
+724	05	claro.com.br	none			Claro
+724	06	zap.vivo.com.br	none			Vivo
+724	07	ctbc.br	none			CTBC
+724	08	tim.br	none			TIM
+724	10	zap.vivo.com.br	none			Vivo
+724	11	zap.vivo.com.br	none			Vivo
+724	16	brt.br	none			Brasil Telecom
+724	18	wbdata	none			Webbing
+724	23	zap.vivo.com.br	none			Vivo
+724	24	gprs.oi.com.br	none			Oi
+724	31	gprs.oi.com.br	none			Oi
+724	32	ctbc.br	none			CTBC
+724	33	ctbc.br	none			CTBC
+724	34	ctbc.br	none			CTBC
+730	01	imovil.entelpcs.cl	none			Entel PCS
+730	02	web.tmovil.cl	none			Movistar
+730	03	bam.clarochile.cl	none			Claro Chile
+730	07	web.gtdmovil.cl	none			GTD Movil
+730	08	movil.vtr.com	none			VTR Movil
+730	09	internet	none			Wom
+732	101	internet.comcel.com.co	none			Claro
+732	102	internet.movistar.com.co	none			Movistar
+732	103	web.colombiamovil.com.co	none			Tigo
+732	111	web.colombiamovil.com.co	none			Tigo
+732	123	internet.movistar.com.co	none			Movistar
+734	01	gprsweb.digitel.ve	none			Digitel TIM
+734	02	gprsweb.digitel.ve	none			Digitel TIM
+734	03	gprsweb.digitel.ve	none			Digitel TIM
+734	04	internet.movistar.ve	none			Movistar
+734	06	int.movilnet.com.ve	none			Movilnet
+736	01	internet.nuevatel.com	none			Viva
+736	02	4g.entel	none			Entel
+736	03	internet.tigo.bo	none			Tigo
+738	01	internet	none			DigiCel
+738	02	wap.cellinkgy.com	none			GT&T Cellink Plus
+740	00	navega.movistar.ec	none			Movistar UMTS
+740	01	internet.porta.com.ec	none			Porta 3G
+744	01	vox.wap	none			VOX
+744	02	gprs.claro.com.py	none			Claro
+744	04	internet.tigo.py	none			Tigo
+744	05	internet	none			Personal
+748	00	adslmovil	none			Ancel
+748	01	adslmovil	none			Ancel
+748	07	apnumt.movistar.com.uy	none			Movistar
+748	10	gprs.claro.com.uy	none			Claro
