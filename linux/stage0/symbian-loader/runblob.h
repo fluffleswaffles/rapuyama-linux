@@ -33,6 +33,23 @@ const TInt KTimerProbeWords=41;
 const TUint32 KTimerProbeMagic=0x7e570001u;
 const TInt KRegProbeMax=64;
 
+const TInt KBootZonesMax=16;
+struct TBootZone{
+	TUint32 iId;
+	TUint32 iBase;
+	TUint32 iEnd;
+};
+struct TBootZones{
+	TUint32 iCount;
+	TBootZone iZone[KBootZonesMax];
+};
+
+// dsp sram snapshot taken in Boot right before the handoff (irqs off)
+const TUint32 KDspSnapPhys=0x1f0f6000u;
+const TUint32 KDspSnapMagic=0x53505344u; // 'DSPS', written last
+const TInt KDspSnapHeader=0x20; // 0 magic, 1 version, 2 fast counter, 3 bytes, 4 0x200330a0, 5 result
+const TInt KDspSnapBytes=0x2000-KDspSnapHeader;
+
 // booter params
 // copy iLen bytes from user iSrc into boot chunk + iOffset
 struct TLoadChunk{
@@ -59,7 +76,7 @@ class RRunBlob : public RBusLogicalChannel{
 			EControlHookCbus, EControlHookCbusRead, EControlHookCbusRemove,
 			EControlModemReset, EControlPeek,
 			EControlHookBeac8, EControlHookBeac8Read, EControlHookBeac8Remove,
-			EControlWatchService, EControlFactoryIdentity};
+			EControlWatchService, EControlFactoryIdentity, EControlBootZones, EControlBootAllocLog};
 	#ifndef __KERNEL_MODE__
 		TInt Open(){return DoCreate(KRunBlobName, TVersion(1,0,0), KNullUnit, NULL, NULL);}
 		TInt FactoryIdentity(const TDesC8& aValue){
@@ -163,6 +180,10 @@ class RRunBlob : public RBusLogicalChannel{
 			c.iOffset=aOffset; c.iSrc=(TUint32)aSrc; c.iLen=aLen;
 			return DoControl(EControlLoadChunk, (TAny*)&c);
 		}
+		// e6bfix: zones AllocBoot may empty in its last round (aZones = TBootZones)
+		TInt BootZones(const TDesC8& aZones){return DoControl(EControlBootZones, (TAny*)aZones.Ptr(), (TAny*)aZones.Length());}
+		// e6bfix: what the last AllocBoot tried (TBootAllocLog from boot_alloc.h)
+		TInt BootAllocLog(TDes8& aBuf){return DoControl(EControlBootAllocLog, (TAny*)&aBuf);}
 		// never returns if it works
 		TInt Boot(TUint32 aZImageOff, TUint32 aDtbOff, TUint32 aMach, TUint32 aWdog){
 			TBootParams b;

@@ -12,6 +12,8 @@ trampoline tests, the fb/watchdog experiments and the zImage booter.
 | `boot_app.cpp` | boot.exe: streams `E:\zImage` + `E:\e6.dtb` and calls `Boot` |
 | `runblob_app.cpp` | takeover launcher: calls `Takeover` (one-way) |
 | `wdfind_app.cpp` | timer/watchdog finder: `TimedDiff` over `0x30000000` |
+| `boot_alloc.h` | e6bfix block policy (which RAM block Linux boots in), no Symbian calls |
+| `test_boot_alloc.cpp` / `test_boot_alloc.sh` | host test of that policy with a fake allocator (ASan/UBSan) |
 | `build_boot.sh` / `build_runblob.sh` / `build_wdfind.sh` | build ldd + exe, differ only in which `*_app.cpp` goes in |
 
 The asm payloads (`blob.S`, `stub2.S`, `tramp3.S`, `fakekern.S`, `takeover.S`,
@@ -30,6 +32,13 @@ driver includes. The build scripts run `make` themselves.
 | `AllocBoot` / `LoadChunk` / `Boot` | zImage booter, see `../../boot/README.md` | boots; PA_SWD reset fixed on E6 (22.10.2026) |
 | `TimedDiff` | read A, spin, read B -> free-running counters | built, not run yet |
 | `SecureTrace` | one-way watchdog-fed loop; logs fast-counter gaps to reserved RAM | build/run below |
+
+## DSP snapshot at the handoff
+Right before the jump (interrupts off) `Boot` copies the first 8 KB of the DSP SRAM page
+(`0x30000000`) to `0x1f0f6000` (ramcon reservation, after the ISAH block, before the flight
+recorder): header `'DSPS'`, version, fast counter, bytes, `0x200330a0`, mapping result, then the
+data at `+0x20`. Linux reads it with `peek 0x1f0f6000 0x2000 1 0`, `work/tools/dsp-snap.py`
+decodes it.
 
 ## Build
 Standalone apps (own package uid, exe, ldd and icon, they install side by side):

@@ -11,7 +11,10 @@
 #include <f32file.h>
 #include "runblob.h"
 #ifdef RB_IMAGE_BOOT
+#include <e32svr.h> // UserSvr::HalFunction
+#include <u32hal.h> // ram zone hal
 #include "factory_identity.h"
+#include "boot_alloc.h"
 #endif
 
 _LIT(KLog, "E:\\boot.log");
@@ -48,7 +51,17 @@ static void Lf(TRefByValue<const TDesC8> f, ...){
 	L(b);
 }
 
-static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC& aBut1, const TDesC& aBut2){
+static TBool gHeadless=EFalse;
+
+static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC& aBut1, const TDesC& aBut2, TInt aHeadless){
+	if(gHeadless){
+		TBuf8<64> l1, l2, a;
+		l1.Copy(aLine1.Left(64));
+		l2.Copy(aLine2.Left(64));
+		a.Copy((aHeadless ? aBut2 : aBut1).Left(64));
+		Lf(_L8("headless: %S / %S -> %S\n"), &l1, &l2, &a);
+		return aHeadless;
+	}
 	RNotifier n;
 	if(n.Connect()!=KErrNone){return KErrGeneral;}
 	TInt button=-1;
@@ -67,7 +80,7 @@ static void FactoryIdentityDiag(TInt resource,TInt received,TInt matched,TInt re
 static void Fail(const TDesC& aWhat, TInt aErr){
 	TBuf<32> e;
 	e.Format(_L("error %d"), aErr);
-	Ask(aWhat, e, _L("OK"), KNullDesC);
+	Ask(aWhat, e, _L("OK"), KNullDesC, 0);
 }
 
 #ifdef RB_IMAGE_BOOT
@@ -81,6 +94,54 @@ static TInt CheckBootFile(const TDesC& aName, TInt aMax){
 	if(r!=KErrNone){return r;}
 	if(size<=0){return KErrCorrupt;}
 	return size<=aMax ? KErrNone : KErrTooBig;
+}
+#endif
+
+#ifdef RB_IMAGE_BOOT
+
+static void BootZones(RRunBlob& aDev){
+	TUint count=0;
+	TInt r=UserSvr::HalFunction(EHalGroupRam, ERamHalGetZoneCount, &count, NULL);
+	Lf(_L8("ram zones: %d (%d)\n"), count, r);
+	if(r!=KErrNone){return;}
+	TBootZones zones;
+	zones.iCount=0;
+	for(TUint i=0; i<count && i<64; ++i){
+		SRamZoneConfig c;
+		SRamZoneUtilisation u;
+		if(UserSvr::HalFunction(EHalGroupRam, ERamHalGetZoneConfig, (TAny*)i, &c)!=KErrNone){continue;}
+		TInt ru=UserSvr::HalFunction(EHalGroupRam, ERamHalGetZoneUtilisation, (TAny*)i, &u);
+		Lf(_L8("  zone id %u %08x-%08x pref %u flags %x"), c.iZoneId, c.iPhysBase, c.iPhysEnd, c.iPref, c.iFlags);
+		if(ru==KErrNone){
+			Lf(_L8(" pages %u free %u fixed %u movable %u discardable %u unknown %u other %u\n"),
+				u.iPhysPages, u.iFreePages, u.iAllocFixed, u.iAllocMovable, u.iAllocDiscardable, u.iAllocUnknown, u.iAllocOther);
+		}
+		else{L(_L8("\n"));}
+		if(c.iPhysEnd>=KBootLo && c.iPhysBase<KBootHi+0x2000000u && zones.iCount<(TUint32)KBootZonesMax){
+			TBootZone& z=zones.iZone[zones.iCount++];
+			z.iId=c.iZoneId; z.iBase=c.iPhysBase; z.iEnd=c.iPhysEnd;
+		}
+	}
+	TPtrC8 p((const TUint8*)&zones, sizeof(zones));
+	Lf(_L8("ram zones near the boot window: %u, BootZones=%d\n"), zones.iCount, aDev.BootZones(p));
+}
+
+static TUint32 BootAllocReport(RRunBlob& aDev){
+	static TBootAllocLog log;
+	TPtr8 p((TUint8*)&log, 0, sizeof(log));
+	TInt r=aDev.BootAllocLog(p);
+	if(r!=KErrNone || p.Length()!=(TInt)sizeof(log)){Lf(_L8("alloc log unavailable: %d\n"), r); return 0xffffffffu;}
+	static const char* const KVerdict[]={"taken", "too high", "too low", "past ramcon", "no block", "dropped", "compact"};
+	TUint32 n=log.iCount<(TUint32)KBootLogMax ? log.iCount : (TUint32)KBootLogMax;
+	for(TUint32 i=0; i<n; ++i){
+		const TBootAllocEntry& e=log.iEntry[i];
+		TPtrC8 v((const TUint8*)(e.iVerdict<=EBootCompact ? KVerdict[e.iVerdict] : "?"));
+		if(e.iVerdict==EBootCompact){Lf(_L8("  round %u compact zone %u at %08x: %d\n"), e.iRound, e.iSize, e.iPhys, e.iResult);}
+		else{Lf(_L8("  round %u %3u mb: %08x %S (%d)\n"), e.iRound, e.iSize>>20, e.iPhys, &v, e.iResult);}
+	}
+	if(log.iCount>n){Lf(_L8("  ... %u more attempts not logged\n"), log.iCount-n);}
+	Lf(_L8("lowest block offered: %08x (window %08x-%08x)\n"), log.iLowest, KBootLo, KBootHi);
+	return log.iLowest;
 }
 #endif
 
@@ -196,10 +257,16 @@ static void Calibrate(RRunBlob& aDev){
 }
 #endif
 
+const TUint KSidInstaller=0x1020473f;
+
 GLDEF_C TInt E32Main(){
+	if(User::CreatorSecureId().iId==KSidInstaller){return KErrNone;}
 	if(gFs.Connect()!=KErrNone){return KErrGeneral;}
 	if(gLog.Replace(gFs, KLog, EFileWrite)!=KErrNone){gFs.Close(); return KErrGeneral;}
-	L(_L8("boot: started\n"));
+	TBuf<32> arg;
+	if(User::CommandLineLength()<=arg.MaxLength()){User::CommandLine(arg);}
+	gHeadless=(arg.Find(_L("headless"))>=0);
+	L(gHeadless ? _L8("boot: started, headless\n") : _L8("boot: started\n"));
 
 #ifdef RB_IMAGE_BOOT
 	TInt check=CheckBootFile(KZImage, KDtbOff-KZOff);
@@ -237,12 +304,23 @@ GLDEF_C TInt E32Main(){
 
 	TUint32 phys=0;
 	for(;;){
+#ifdef RB_IMAGE_BOOT
+		BootZones(dev);
+#endif
 		r=dev.AllocBoot(KChunkSz, phys);
 		Lf(_L8("AllocBoot=%d phys=%08x\n"), r, phys);
+#ifdef RB_IMAGE_BOOT
+		TUint32 lowest=BootAllocReport(dev);
+#endif
 		if(r==KErrNone){break;}
 		TBuf<48> m;
+#ifdef RB_IMAGE_BOOT
+		if(r==KErrNoMemory && lowest!=0xffffffffu){m.Format(_L("lowest ram block %08x"), lowest);}
+		else{m.Format(_L("no free ram block (%d)"), r);}
+#else
 		m.Format(_L("no free ram block (%d)"), r);
-		if(Ask(m, _L("close apps and retry?"), _L("Retry"), _L("Cancel"))!=0){
+#endif
+		if(Ask(m, _L("close apps and retry?"), _L("Retry"), _L("Cancel"), 1)!=0){
 			User::Free(buf); dev.Close(); gLog.Close(); gFs.Close();
 			return r;
 		}
@@ -266,7 +344,7 @@ GLDEF_C TInt E32Main(){
 #endif
 	TBuf<48> m;
 	m.Format(_L("ram %08x, kernel %d kb"), phys, zsz>>10);
-	if(Ask(m, _L("boot linux?"), _L("Boot"), _L("Cancel"))!=0){
+	if(Ask(m, _L("boot linux?"), _L("Boot"), _L("Cancel"), 0)!=0){
 		L(_L8("cancelled\n"));
 		dev.Close(); gLog.Close(); gFs.Close();
 		return KErrCancel;

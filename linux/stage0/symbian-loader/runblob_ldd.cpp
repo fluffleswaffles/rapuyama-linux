@@ -10,6 +10,7 @@
 #include <kernel/cache.h>
 #include <platform.h> // DPlatChunkHw, Epoc::AllocPhysicalRam, EMapAttr*
 #include "runblob.h"
+#include "boot_alloc.h"
 #include "blob.hdr" // KStage0Blob[], KStage0BlobLen
 #include "stub2.hdr" // KStub2[], KStub2Len (mmu-off trampoline stub)
 #include "tramp3.hdr" // KTramp3[], KTramp3Len (full handoff trampoline)
@@ -143,6 +144,7 @@ static TUint32 Va2Pa(TUint32 aVa){
 // ramcon ends at 0x1f0f0008, the flight recorder starts at 0x1f0f8000
 const TUint32 KIsaHandoffPhys=0x1f0f1000;
 const TInt KIsaHandoffSz=0x5000;
+const TInt KHandoffMapSz=KDspSnapPhys+0x2000-KIsaHandoffPhys;
 const TUint32 KIsaMagic=0x48415349; // 'ISAH'
 const TUint32 KKarapIsaCb=0xc8004068; // karap hook table, 6 words
 const TUint32 KSisaObj=0xc800a6e0; // sisa_wrapper object, +8 = isasw object
@@ -184,6 +186,20 @@ static void SaveIsaHandoff(volatile TUint32* h){
 	SafeCopy(h+0x400, pd, 0x4000);
 	h[1]=1;
 	h[0]=KIsaMagic; // last, so a half-written block never looks valid
+}
+
+static void SaveDspSnap(volatile TUint32* aDst, const volatile TUint32* aSram, TInt aErr){
+	aDst[0]=0;
+	aDst[1]=1;
+	aDst[2]=FastCounter();
+	aDst[3]=aSram ? (TUint32)KDspSnapBytes : 0;
+	aDst[4]=*(volatile TUint32*)0xc60330a0u;
+	aDst[5]=(TUint32)aErr;
+	for(TInt i=6; i<KDspSnapHeader/4; ++i){aDst[i]=0;}
+	if(aSram){
+		for(TInt i=0; i<KDspSnapBytes/4; ++i){aDst[KDspSnapHeader/4+i]=aSram[i];}
+	}
+	aDst[0]=KDspSnapMagic;
 }
 
 // identity-maps a 1 mb section covering phys aP as normal executable in TTBR0.
@@ -263,7 +279,12 @@ static void PrepareHw(){
 static void IdentityErase(TUint8* p,TInt size){volatile TUint8* v=p;while(size--){*v++=0;}}
 class DRunBlobChan : public DLogicalChannelBase{
 	public:
-		DRunBlobChan() : iBootChunk(NULL), iBootPhys(0), iBootVirt(0), iBootSize(0), iBootAlloc(0), iHaveIdentity(EFalse){IdentityErase(iIdentity,15);}
+		DRunBlobChan() : iBootChunk(NULL), iBootPhys(0), iBootVirt(0), iBootSize(0), iBootAlloc(0), iHaveIdentity(EFalse){
+			IdentityErase(iIdentity,15);
+			iZones.iCount=0;
+			iAllocLog.iCount=0;
+			iAllocLog.iLowest=0xffffffffu;
+		}
 		// a booter that quits after AllocBoot must give the block back, else
 		// it stays held until reboot and every next try finds less ram
 		virtual ~DRunBlobChan(){
@@ -279,10 +300,39 @@ class DRunBlobChan : public DLogicalChannelBase{
 		TUint32 iBootAlloc; // allocated, >= iBootSize (e6bfix holds more)
 		TUint8 iIdentity[15];
 		TBool iHaveIdentity;
+		TBootZones iZones;
+		TBootAllocLog iAllocLog;
 	protected:
 		virtual TInt DoCreate(TInt, const TDesC8*, const TVersion&){return KErrNone;}
 		virtual TInt Request(TInt aFunction, TAny* a1, TAny* a2);
 };
+
+#ifdef RB_IMAGE_BOOT
+
+static TInt BootAllocFn(TAny*, TUint32 aSize, TUint32& aPhys){
+	TPhysAddr p=0;
+	TInt r=Epoc::AllocPhysicalRam((TInt)aSize, p, KBootAlign);
+	aPhys=(TUint32)p;
+	return r;
+}
+static void BootFreeFn(TAny*, TUint32 aPhys, TUint32 aSize){Epoc::FreePhysicalRam(aPhys, (TInt)aSize);}
+
+static void BootCompactFn(TAny* aCtx, TInt aRound, TBootAllocLog& aLog){
+	const TBootZones& z=*(const TBootZones*)aCtx;
+	TRamDefragRequest d;
+	if(aRound==1){
+		BootLog(aLog, aRound, 0, 0, d.DefragRam(TRamDefragRequest::KInheritPriority), EBootCompact);
+		return;
+	}
+	for(TUint32 i=0; i<z.iCount && i<(TUint32)KBootZonesMax; ++i){
+		const TBootZone& zone=z.iZone[i];
+		if(zone.iEnd<zone.iBase || zone.iEnd-zone.iBase>=0x4000000u){continue;}
+		if(zone.iEnd<KBootLo || zone.iBase>=KBootHi+0x2000000u){continue;}
+		BootLog(aLog, aRound, zone.iId, zone.iBase, d.EmptyRamZone(zone.iId, TRamDefragRequest::KInheritPriority), EBootCompact);
+	}
+	BootLog(aLog, aRound, 0, 0, d.DefragRam(TRamDefragRequest::KInheritPriority), EBootCompact);
+}
+#endif
 
 TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 	if(aFunction==RRunBlob::EControlFactoryIdentity){
@@ -514,6 +564,19 @@ TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 	if(aFunction==RRunBlob::EControlSmcProbe){return OneWay(KSmcProbe, KSmcProbeLen);}
 
 	// booter: AllocBoot / LoadChunk / Boot
+	if(aFunction==RRunBlob::EControlBootZones){
+		TInt len=(TInt)a2;
+		if(len<0 || len>(TInt)sizeof(iZones)){return KErrArgument;}
+		iZones.iCount=0;
+		TInt rr=Kern::ThreadRawRead(&Kern::CurrentThread(), a1, &iZones, len);
+		if(rr!=KErrNone){iZones.iCount=0; return rr;}
+		if(len<(TInt)sizeof(TUint32) || iZones.iCount>(TUint32)KBootZonesMax){iZones.iCount=0; return KErrArgument;}
+		return KErrNone;
+	}
+	if(aFunction==RRunBlob::EControlBootAllocLog){
+		TPtrC8 src((const TUint8*)&iAllocLog, sizeof(iAllocLog));
+		return Kern::ThreadDesWrite(&Kern::CurrentThread(), a1, src, 0);
+	}
 	if(aFunction==RRunBlob::EControlAllocBoot){
 		gCalibStartTick=NKern::TickCount();
 		TUint32 size=0;
@@ -535,33 +598,15 @@ TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 		// bad dtb deaths 18.10.2026). linux can't use ram below the chunk and
 		// needs ~60 mb from its start (qemu, cma=0): base <= 0x1a000000.
 		// phone runs: ClaimPhysicalRam pages can't be mapped (-14), a 32 mb
-		// alloc lands too high (-4). so ask for the BIGGEST block symbian can
-		// give (it has to compact and hand out low ram): then nearly all of
-		// linux's ram is ram symbian gave away. out-of-range blocks are held
-		// so the next try lands elsewhere. the requested size is ignored
-		static const TUint32 KSizes[]={0xa000000u, 0x9000000u, 0x8000000u, 0x7000000u, 0x6000000u, 0x5000000u, 0x4000000u, 0x3000000u, 0x2000000u};
-		const TUint32 KLo=0x11600000u, KHi=0x1a000000u;
-		TInt r=KErrNoMemory;
-		// symbian's free ram is fragmented by movable pages and the paging cache,
-		// so between rounds let the kernel compact it (moves movable pages,
-		// drops discardable ones)
-		for(TInt round=0; r!=KErrNone && round<3; ++round){
-			if(round>0){
-				TRamDefragRequest d;
-				d.DefragRam(TRamDefragRequest::KInheritPriority);
-			}
-			TPhysAddr held[4];
-			TUint32 heldsz[4];
-			TInt nheld=0;
-			for(TUint k=0; r!=KErrNone && k<sizeof(KSizes)/sizeof(KSizes[0]); ++k){
-				TPhysAddr p=0;
-				if(Epoc::AllocPhysicalRam((TInt)KSizes[k], p, 21)!=KErrNone){continue;}
-				if(p>=KLo && p<=KHi && p+KSizes[k]<=0x1f000000u){iBootPhys=p; size=KSizes[k]; r=KErrNone;}
-				else if(nheld<4){held[nheld]=p; heldsz[nheld++]=KSizes[k];}
-				else{Epoc::FreePhysicalRam(p, (TInt)KSizes[k]);}
-			}
-			for(TInt i=0; i<nheld; ++i){Epoc::FreePhysicalRam(held[i], (TInt)heldsz[i]);}
-		}
+		// alloc lands too high (-4). so the biggest block symbian can give, in
+		// the low window. the policy (window, holding, compaction rounds) is
+		// boot_alloc.h, host tested in test_boot_alloc.cpp. every attempt lands
+		// in iAllocLog, the app writes it to E:\boot.log (EControlBootAllocLog).
+		// the requested size is ignored
+		TBootAllocOps ops={&iZones, BootAllocFn, BootFreeFn, BootCompactFn};
+		TUint32 picked=0;
+		TInt r=BootAllocPick(ops, picked, size, iAllocLog);
+		iBootPhys=picked;
 		if(r!=KErrNone){return KErrNoMemory;}
 		// all of it stays allocated (no symbian buffers in linux's ram), only
 		// the first 32 mb (Image + dtb) get mapped
@@ -632,8 +677,14 @@ TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 		// isasw handoff page, uncached so the mmu-off kernel sees it. mapped now,
 		// filled with irqs off (symbian may own that ram until it dies)
 		DPlatChunkHw* hc=NULL;
-		if(DPlatChunkHw::New(hc, KIsaHandoffPhys, KIsaHandoffSz, EMapAttrSupRw|EMapAttrFullyBlocking)!=KErrNone){hc=NULL;}
-		if(iHaveIdentity && !hc){return KErrNoMemory;} // never silently lose a promised identity
+		if(DPlatChunkHw::New(hc, KIsaHandoffPhys, KHandoffMapSz, EMapAttrSupRw|EMapAttrFullyBlocking)!=KErrNone){hc=NULL;}
+		DPlatChunkHw* dc=NULL;
+		TInt dspErr=DPlatChunkHw::New(dc, 0x30000000u, 0x4000, EMapAttrSupRo|EMapAttrFullyBlocking);
+		if(dspErr!=KErrNone){dc=NULL;}
+		if(iHaveIdentity && !hc){ // never silently lose a promised identity
+			if(dc){dc->Close(NULL);}
+			return KErrNoMemory;
+		}
 
 #ifdef RB_CALIB_KICK
 		// send securitykext's periodic request now
@@ -651,6 +702,8 @@ TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 		if(hc){
 			SaveIsaHandoff((volatile TUint32*)hc->LinearAddress());
 			WriteCalib((volatile TUint32*)hc->LinearAddress());
+			SaveDspSnap((volatile TUint32*)(hc->LinearAddress()+(KDspSnapPhys-KIsaHandoffPhys)),
+				dc ? (const volatile TUint32*)dc->LinearAddress() : NULL, dspErr);
 			TUint8 packet[E6_ID_SIZE];e6_id_pack(packet,iHaveIdentity ? iIdentity : NULL);
 			volatile TUint8* id=(volatile TUint8*)hc->LinearAddress()+E6_ID_OFFSET;
 			for(TInt n=0;n<E6_ID_SIZE;++n){id[n]=0;}
