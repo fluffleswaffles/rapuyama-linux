@@ -200,14 +200,14 @@ const deviceGroups = [
       { name: 'Nokia 701', image: placeholderImage },
       { name: 'Nokia 808 PureView', image: 'assets/devices/nokia-808-pureview.jpg' },
       { name: 'Nokia 600', image: placeholderImage },
-      { name: 'Vertu Constallation T', image: 'assets/devices/vertu-constellation-t.jpg' }
+      { name: 'Vertu Constallation T', image: 'assets/devices/vertu-constellation-t.jpg' },
+      { name: 'Nokia X5-01', image: 'assets/devices/nokia-x5-01.jpg' },
+      { name: 'Nokia C5-00 5MP (RM-745)', image: 'assets/devices/nokia-c5-00.jpg' }
     ]
   },
   {
     target: 'unknown-cards',
     devices: [
-      { name: 'Nokia X5-01', image: 'assets/devices/nokia-x5-01.jpg' },
-      { name: 'Nokia C5-00 5MP (RM-745)', image: 'assets/devices/nokia-c5-00.jpg' },
       { name: 'Nokia 500', image: 'assets/devices/nokia-500.jpg' }
     ]
   },
