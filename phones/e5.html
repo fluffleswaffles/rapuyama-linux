@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>rapuyama-linux</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-rbsA2VBKQhggwzxH7pPCaAqO46MgnOM80zW1RWuH61DGLwZJEdK2Kadq2F9CUG65" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  </head>
+  <body>
+    <div class="container">
+        <header class="d-flex flex-wrap justify-content-center py-3 mb-4 border-bottom">
+        <a href="../index.html" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-dark text-decoration-none">
+            <svg class="bi me-2" width="40" height="32"><use xlink:href="#bootstrap"/></svg>
+            <span class="fs-4">rapuyama-linux</span>
+        </a>
+        <ul class="nav nav-pills">
+            <li class="nav-item"><a href="../index.html" class="nav-link">Home</a></li>
+            <li class="nav-item"><a href="../install.html" class="nav-link">Install</a></li>
+            <li class="nav-item"><a href="../faq.html" class="nav-link">FAQs</a></li>
+            <li class="nav-item"><a href="https://github.com/fluffleswaffles/rapuyama-linux" class="nav-link"><i class="bi bi-github"></i> Sources</a></li>
+        </ul>
+        </header>
+    </div>
+    <main class="container pb-5">
+        <nav aria-label="Breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="../index.html#supported-devices">Supported devices</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Nokia E6</li>
+            </ol>
+        </nav>
+        <div class="row g-4">
+            <aside class="col-lg-3">
+                <div class="card mb-4">
+                    <div class="bg-light text-center py-4">
+                        <img src="../assets/e5.png" alt="Nokia E5" width="98" height="187">
+                    </div>
+                    <div class="card-body">
+                        <h2 class="h5 card-title">Nokia E5</h2>
+                        <p class="text-secondary mb-2">Maintainers:</p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <a class="badge rounded-pill text-bg-light border text-decoration-none" href="https://github.com/Kapina-Dev">@Kapina-Dev</a>
+                            <a class="badge rounded-pill text-bg-light border text-decoration-none" href="https://github.com/JigokuMaster">@JigokuMaster</a>
+                        </div>
+                    </div>
+                </div>
+                <nav class="list-group" aria-label="Page contents">
+                    <a href="#overview" class="list-group-item list-group-item-action">Overview</a>
+                    <a href="#gallery" class="list-group-item list-group-item-action">Gallery</a>
+                    <a href="#hardware" class="list-group-item list-group-item-action">Hardware</a>
+                    <a href="#status" class="list-group-item list-group-item-action">Support status</a>
+                    <a href="#installation" class="list-group-item list-group-item-action">Installation</a>
+                    <a href="#notes" class="list-group-item list-group-item-action">Notes</a>
+                    <a href="#links" class="list-group-item list-group-item-action">Links</a>
+                </nav>
+            </aside>
+            <div class="col-lg-9">
+                <section id="overview" class="mb-5">
+                    <h1>Nokia E5</h1>
+                    <div class="alert alert-secondary" role="note">Development is paused.</div>
+                    <p class="text-secondary">Nokia E5 is a mid-level QWERTY smartphone, originally running Symbian 9.3. The second rapuyama-linux target, being maintained by two people.</p>
+                </section>
+                <section id="gallery" class="mb-5">
+                    <h2 class="h3 mb-3">Gallery</h2>
+                    <div id="gallery-cards" class="row g-4" data-device="rm-632"></div>
+                    <p>Credits: <a href="https://github.com/Kapina-Dev">Kapina-Dev</a></p>
+                </section>
+                <section id="hardware" class="mb-5">
+                    <h2 class="h3 mb-3">Hardware</h2>
+                    <div class="table-responsive">
+                        <table class="table table-bordered align-middle">
+                            <tbody>
+                                <tr><th scope="row">Model</th><td>RM-632</td></tr>
+                                <tr><th scope="row">SoC</th><td>RAPUYAMA v1, 600 MHz</td></tr>
+                                <tr><th scope="row">GPU</th><td>No GPU</td></tr>
+                                <tr><th scope="row">RAM</th><td>256 MB</td></tr>
+                                <tr><th scope="row">Storage</th><td>512 MB, withc ~250 MB available</td></tr>
+                                <tr><th scope="row">Display</th><td>320x240 TFT</td></tr>
+                            </tbody>
+                        </table>
+                        <p class="text-secondary">This info is taken from LPCwiki (see <a href="#links">Links</a> below)</p>
+                    </div>
+                </section>
+                <section id="status" class="mb-5">
+                    <h2 class="h3 mb-3">Support status</h2>
+                    <div class="table-responsive">
+                        <table class="table table-bordered align-middle">
+                            <thead class="table-light"><tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Notes</th></tr></thead>
+                            <tbody>
+                                <tr><th scope="row">Booting</th><td><span class="badge rounded-pill text-bg-success">Works</span></td><td>Works on FW 101.003</td></tr>
+                                <tr><th scope="row">Display</th><td><span class="badge rounded-pill text-bg-success">Works</span></td><td>Works with KMS/DRM display driver</td></tr>
+                                <tr><th scope="row">Audio</th><td><span class="badge rounded-pill text-bg-dark">Unknown</span></td><td>-</td></tr>
+                                <tr><th scope="row">Modem</th><td><span class="badge rounded-pill text-bg-warning">Partial</span></td><td>3G data works</td></tr>
+                                <tr><th scope="row">Keyboard + HW buttons</th><td><span class="badge rounded-pill text-bg-success">Works</span></td><td>Works with no complaints</td></tr>
+                                <tr><th scope="row">Power button</th><td><span class="badge rounded-pill text-bg-dark">Unknown</span></td><td>-</td></tr>
+                                <tr><th scope="row">Wi-Fi & Bluetooth</th><td><span class="badge rounded-pill text-bg-warning">Partial</span></td><td>WLAN works, bluetooth is unknown</td></tr>
+                                <tr><th scope="row">Camera</th><td><span class="badge rounded-pill text-bg-dark">Unknown</span></td><td>-</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+                <section id="installation" class="mb-5">
+                    <h2 class="h3 mb-3">Installation</h2>
+                    <p>See the <a href="https://github.com/fluffleswaffles/rapuyama-linux/releases">releases page</a> for full installation guide.</p>
+                    <p>Please make sure that you're using the correct release. All release tags for Nokia E5 are marked: vX.XX-e5.</p>
+                    <h3 class="h5">Requirements</h3>
+                    <ul><li>Phone must be hacked</li></ul>
+                    <ul><li>Bluetooth/USB connection is needed for transfering files</li></ul>
+                </section>
+                <section id="notes" class="mb-5">
+                    <h2 class="h3 mb-3">Notes</h2>
+                    <div class="card"><div class="card-body">
+                        <h3 class="h5 card-title">Known issues</h3>
+                        <p class="card-text text-secondary">If any issues occur, please open up a new <a href="https://github.com/fluffleswaffles/rapuyama-linux/issues">issue on Github</a>, following issue templates.</p>
+                    </div></div>
+                </section>
+                <section id="links">
+                    <h2 class="h3 mb-3">Links</h2>
+                    <div class="list-group">
+                        <a href="https://lpcwiki.miraheze.org/wiki/Nokia_E5-00" class="list-group-item-action">Legacy Portable Computing wiki</a>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+    <script src="../assets/phone-specific-gallery.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-kenU1KFdBIe4zVF0s0G1M5b4hcpxyD9F7jL+jjXkk+Q2h455rYXK/7HAuoJl+0I4" crossorigin="anonymous"></script>
+  </body>
+</html>
