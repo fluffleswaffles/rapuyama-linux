@@ -29,13 +29,14 @@ LUID=$(printf '0x%08x' $((UID3 + 1)))
 UHEX=$(printf '%08x' $((UID3)))
 LHEX=$(printf '%08x' $((LUID)))
 
-KH="$ROOT/symbian/oss.FCL.sf.os.kernelhwsrv"
+KH="${KH:-$ROOT/symbian/oss.FCL.sf.os.kernelhwsrv}"
 EKA="$KH/kernel/eka"
 E2E="${E2E:-$ROOT/tools/bin/elf2e32_next}"
 GCCE="${GCCE:-$ROOT/tools/gcce/arm-2012.03/bin/arm-none-symbianelf}"
 DRV="$ROOT/driver"
-STAGE="$DRV/stage"
+STAGE="${STAGE:-$DRV/stage}"
 [ -d "$STAGE" ] || "$DRV/mkstage.sh"
+ISC_INC="${ISC_INC:-$ROOT/symbian/FCL.sf.incubator.modemadaptation/connectivitylayer/isce/iscapi_dll/inc}"
 OUT="${RB_BUILD_ROOT:-$HERE/build}/$NAME"
 SIS_OUT="${RB_SIS_OUT:-$ROOT/out}"
 mkdir -p "$OUT" "$SIS_OUT"
@@ -51,7 +52,7 @@ INC=(
   -I"$STAGE/memmodel" -I"$STAGE/memmodel/epoc"
   -I"$EKA/compsupp/gcce" -I"$EKA/compsupp/symcpp"
   -I"$KH/userlibandfileserver/fileserver/inc"
-  -I"$ROOT/symbian/FCL.sf.incubator.modemadaptation/connectivitylayer/isce/iscapi_dll/inc"
+  -I"$ISC_INC"
   -I"$OUT"
 )
 echo "" > "$OUT/variant_dummy.h"

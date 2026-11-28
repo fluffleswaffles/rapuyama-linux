@@ -53,8 +53,10 @@ static inline TBootVerdict BootCheck(TUint32 aPhys, TUint32 aSize){
 	return EBootTaken;
 }
 
-// KErrNone: aPhys/aSize is ours (the caller frees it). else everything was given back
-static TInt BootAllocPick(const TBootAllocOps& aOps, TUint32& aPhys, TUint32& aSize, TBootAllocLog& aLog){
+// KErrNone: aPhys/aSize is ours (the caller frees it). else everything was given back.
+// aMaxSize: skip the sizes above it. e6bfix's hold (the cfw boot menu) only keeps
+// 32 mb while symbian boots on; linux takes the rest back with e6.lowmem=1 anyway
+static TInt BootAllocPick(const TBootAllocOps& aOps, TUint32& aPhys, TUint32& aSize, TBootAllocLog& aLog, TUint32 aMaxSize=0xffffffffu){
 	aLog.iCount=0;
 	aLog.iLowest=0xffffffffu;
 	for(TInt round=0; round<KBootRounds; ++round){
@@ -63,6 +65,7 @@ static TInt BootAllocPick(const TBootAllocOps& aOps, TUint32& aPhys, TUint32& aS
 		TInt nheld=0, r=KErrNoMemory;
 		for(TUint k=0; r!=KErrNone && k<sizeof(KBootSizes)/sizeof(KBootSizes[0]); ++k){
 			TUint32 size=KBootSizes[k];
+			if(size>aMaxSize){continue;}
 			// the same size again while symbian still has blocks of it: they're all
 			// held, so it has to offer the next one
 			for(;;){

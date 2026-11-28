@@ -1,0 +1,28 @@
+# goes to rapuyama-linux as .github/workflows/e6ota-sign.yml, with ota/server/e6ota.py as .github/e6ota/e6ota.py
+# signs every -e6 release for e6ota: the manifest goes up as the e6ota-manifest asset
+name: e6ota sign
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag
+        required: true
+permissions:
+  contents: write
+jobs:
+  sign:
+    if: endsWith(github.event.release.tag_name || inputs.tag, '-e6')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install cryptography
+      - env:
+          E6OTA_KEY: ${{ secrets.E6OTA_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          python3 .github/e6ota/e6ota.py github-sign --repo "$GITHUB_REPOSITORY" --tag "$TAG" --cfw-repo fluffleswaffles/e6cfw
+          gh release upload "$TAG" e6ota-manifest --clobber

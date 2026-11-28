@@ -602,10 +602,10 @@ TInt DRunBlobChan::Request(TInt aFunction, TAny* a1, TAny* a2){
 		// the low window. the policy (window, holding, compaction rounds) is
 		// boot_alloc.h, host tested in test_boot_alloc.cpp. every attempt lands
 		// in iAllocLog, the app writes it to E:\boot.log (EControlBootAllocLog).
-		// the requested size is ignored
+		// the requested size is the biggest block to try (hold: only 32 mb)
 		TBootAllocOps ops={&iZones, BootAllocFn, BootFreeFn, BootCompactFn};
-		TUint32 picked=0;
-		TInt r=BootAllocPick(ops, picked, size, iAllocLog);
+		TUint32 picked=0, most=size;
+		TInt r=BootAllocPick(ops, picked, size, iAllocLog, most);
 		iBootPhys=picked;
 		if(r!=KErrNone){return KErrNoMemory;}
 		// all of it stays allocated (no symbian buffers in linux's ram), only

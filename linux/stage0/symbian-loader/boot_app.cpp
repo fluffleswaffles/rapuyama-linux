@@ -15,6 +15,7 @@
 #include <u32hal.h> // ram zone hal
 #include "factory_identity.h"
 #include "boot_alloc.h"
+#include <e32property.h> // hold: e6boot's go signal
 #endif
 
 _LIT(KLog, "E:\\boot.log");
@@ -52,6 +53,16 @@ static void Lf(TRefByValue<const TDesC8> f, ...){
 }
 
 static TBool gHeadless=EFalse;
+static TBool gHold=EFalse;
+
+// "hold": the cfw boot menu (e6boot, work/e6cfw) starts us at its menu, where
+// the ram is still free, but linux needs the modem symbian brings up later.
+// so alloc + stream now, tell e6boot we're holding, jump when it says go.
+// properties in e6boot's category, defined by it:
+const TUid KE6boot={0xe1000090};
+const TUint KHoldGo=2;      // e6boot -> us: 1 = go, 2 = give up
+const TUint KHoldReady=3;   // us -> e6boot: 1 = holding, everything loaded
+const TInt KHoldSecs=300;   // nobody said go by then = free it all and leave
 
 static TInt Ask(const TDesC& aLine1, const TDesC& aLine2, const TDesC& aBut1, const TDesC& aBut2, TInt aHeadless){
 	if(gHeadless){
@@ -266,6 +277,7 @@ GLDEF_C TInt E32Main(){
 	TBuf<32> arg;
 	if(User::CommandLineLength()<=arg.MaxLength()){User::CommandLine(arg);}
 	gHeadless=(arg.Find(_L("headless"))>=0);
+	gHold=(arg.Find(_L("hold"))>=0);
 	L(gHeadless ? _L8("boot: started, headless\n") : _L8("boot: started\n"));
 
 #ifdef RB_IMAGE_BOOT
@@ -307,7 +319,9 @@ GLDEF_C TInt E32Main(){
 #ifdef RB_IMAGE_BOOT
 		BootZones(dev);
 #endif
-		r=dev.AllocBoot(KChunkSz, phys);
+		// the biggest block that's low enough, except in hold: symbian boots on
+		// around us then and starves if we keep 160 mb (the phone resets)
+		r=dev.AllocBoot(gHold ? KChunkSz : 0xa000000u, phys);
 		Lf(_L8("AllocBoot=%d phys=%08x\n"), r, phys);
 #ifdef RB_IMAGE_BOOT
 		TUint32 lowest=BootAllocReport(dev);
@@ -401,6 +415,21 @@ GLDEF_C TInt E32Main(){
 #endif
 	}
 #endif
+	if(gHold){
+		TInt rr=RProperty::Set(KE6boot, KHoldReady, 1);
+		Lf(_L8("hold: holding (%d), waiting for go\n"), rr);
+		TInt go=0;
+		for(TInt i=0; i<KHoldSecs*5 && go==0; i++){
+			RProperty::Get(KE6boot, KHoldGo, go);
+			if(go==0){User::After(200000);}
+		}
+		Lf(_L8("hold: go=%d\n"), go);
+		if(go!=1){
+			L(_L8("hold: not going, freeing everything\n"));
+			dev.Close(); gLog.Close(); gFs.Close();
+			return KErrCancel;
+		}
+	}
 	L(_L8("about-to-Boot (one-way)\n"));
 	gLog.Close(); gFs.Close();
 	r=dev.Boot(KZOff, KDtbOff, 0xFFFFFFFFu, 0); // never returns on success
